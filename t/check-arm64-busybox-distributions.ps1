@@ -302,7 +302,7 @@ $products = @{
 $measurements = [Collections.Generic.List[object]]::new()
 $lifecycle = [ordered]@{}
 $installedRoot = Join-Path $outputPath 'installed-git'
-$silentInstall = "/SILENT /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /ALLOWDOWNGRADE=1 /DIR=`"$installedRoot`" /LOG=installer-impact.log"
+$silentInstall = "/SILENT /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /ALLOWDOWNGRADE=1 /TYPE=default /DIR=`"$installedRoot`" /LOG=installer-impact.log"
 
 Invoke-Product -File $products.BaseInstaller -Arguments $silentInstall
 Assert-Git -Root $installedRoot
