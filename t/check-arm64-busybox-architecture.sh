@@ -26,8 +26,15 @@ before="$(cd "$before" && pwd)" ||
 die "Could not resolve the before root"
 after="$(cd "$after" && pwd)" ||
 die "Could not resolve the after root"
-scanner="$(cd "${scanner%/*}" && pwd)/${scanner##*/}" ||
-die "Could not resolve the scanner"
+case "$scanner" in
+*/*)
+	scanner="$(cd "${scanner%/*}" && pwd)/${scanner##*/}" ||
+	die "Could not resolve the scanner"
+	;;
+*)
+	scanner="$PWD/$scanner"
+	;;
+esac
 test -f "$scanner" ||
 die "Missing scanner: $scanner"
 

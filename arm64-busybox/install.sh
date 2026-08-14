@@ -55,58 +55,19 @@ die "Could not hash $busybox"
 test "$busybox_sha256" = "$actual" ||
 die "Installed busybox.exe has unexpected SHA-256: $actual"
 
-mkdir -p /etc ||
-die "Could not create /etc"
-report=/etc/arm64-busybox-replacements.tsv
-retained=/etc/arm64-busybox-retained-paths.tsv
-aliases=/etc/arm64-busybox-aliases.txt
-printf 'path\tapplet\tselection\n' >"$report" ||
-die "Could not initialize $report"
-: >"$aliases" ||
-die "Could not initialize $aliases"
+root_win="$(cygpath -aw /)" &&
+busybox_win="$(cygpath -aw "$busybox")" &&
+materialize_win="$(cygpath -aw "$thisdir/materialize.ps1")" &&
+default_win="$(cygpath -aw "$thisdir/default-replacements.txt")" &&
+experimental_win="$(cygpath -aw "$thisdir/experimental-replacements.txt")" &&
+retained_win="$(cygpath -aw "$thisdir/retained-paths.tsv")" ||
+die "Could not resolve ARM64 BusyBox materialization paths"
 
-materialize () {
-	selection=$1
-	list=$2
-
-	while IFS= read -r path
-	do
-		test -n "$path" || continue
-		mkdir -p "/${path%/*}" &&
-		{
-			rm -f "/$path" &&
-			ln "$busybox" "/$path"
-		} ||
-		cp "$busybox" "/$path" ||
-		die "Could not materialize BusyBox alias /$path"
-		applet=${path##*/}
-		applet=${applet%.exe}
-		printf '%s\t%s\t%s\n' "$path" "$applet" "$selection" >>"$report" ||
-		die "Could not update $report"
-		printf '%s.exe\n' "$applet" >>"$aliases" ||
-		die "Could not update $aliases"
-	done <"$list"
-}
-
-materialize default "$thisdir/default-replacements.txt"
-if test -n "$experimental"
-then
-	materialize experimental "$thisdir/experimental-replacements.txt"
-fi
-
-cp "$thisdir/retained-paths.tsv" "$retained" ||
-die "Could not install the retained-path report"
-if test -n "$experimental"
-then
-	tmp="$retained".tmp
-	cp "$retained" "$tmp" ||
-	die "Could not prepare the experimental retained-path report"
-	while IFS= read -r path
-	do
-		grep -Fv "$path	" "$tmp" >"$retained" &&
-		mv "$retained" "$tmp" ||
-		die "Could not remove $path from the retained-path report"
-	done <"$thisdir/experimental-replacements.txt"
-	mv "$tmp" "$retained" ||
-	die "Could not finalize the experimental retained-path report"
-fi
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$materialize_win" \
+	-Root "$root_win" \
+	-BusyBox "$busybox_win" \
+	-DefaultList "$default_win" \
+	-ExperimentalList "$experimental_win" \
+	-RetainedList "$retained_win" \
+	-Experimental "$(test -n "$experimental" && echo 1 || echo 0)" ||
+die "Could not materialize ARM64 BusyBox aliases"
