@@ -171,11 +171,12 @@ Host package-alias
 
             $knownHosts = Join-Path $userSshDirectory "known_hosts"
             $effective = @(& $ssh -G -F $config -o "UserKnownHostsFile=$knownHosts" `
-                -o "ProxyCommand=cmd.exe /c exit 7" -tt package-alias 2>$null)
-            if ($LASTEXITCODE -ne 0 -or
+                -o "ProxyCommand=cmd.exe /c exit 7" -tt package-alias 2>&1)
+            $configExitCode = $LASTEXITCODE
+            if ($configExitCode -ne 0 -or
                 -not ($effective -match "^proxycommand cmd\.exe /c exit 7$") -or
                 -not ($effective -match "^userknownhostsfile ")) {
-                throw "Config, known_hosts, ProxyCommand, or PTY option parsing failed"
+                throw "Config, known_hosts, ProxyCommand, or PTY option parsing failed (exit $configExitCode): $($effective -join ' | ')"
             }
         } finally {
             if ($userConfigExisted) {
