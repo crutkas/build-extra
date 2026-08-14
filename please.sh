@@ -460,6 +460,18 @@ use_arm64_native_openssh () { # [--root=<directory>]
 		rm -f "$root/tmp/$archive"
 		die "Unexpected package metadata in %s\n" "$archive_cache"
 	}
+	has_msys_openssh=
+	for dir in "$root"/var/lib/pacman/local/openssh-[0-9]*
+	do
+		test -d "$dir" &&
+		has_msys_openssh=t
+	done
+	if test -n "$has_msys_openssh" &&
+		run_arm64_openssh_pacman -Q "$package" >/dev/null 2>&1
+	then
+		run_arm64_openssh_pacman -R --noconfirm openssh ||
+		die "Could not remove MSYS OpenSSH through the native provider\n"
+	fi
 	rm -f "$root/etc/ssh/ssh_config" \
 		"$root/etc/ssh/ssh_config.pacnew" \
 		"$root/etc/ssh/ssh_config.pacsave" ||
