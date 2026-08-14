@@ -395,6 +395,79 @@ bundle_pdbs () { # [--directory=<artifacts-directory] [--unpack=<directory>] [--
 	done
 }
 
+use_arm64_native_openssh () { # [--root=<directory>]
+	root=
+	while case "$1" in
+	--root)
+		shift
+		root="$(cygpath -am "$1")" || exit
+		;;
+	--root=*)
+		root="$(cygpath -am "${1#*=}")" || exit
+		;;
+	-*) die "Unknown option: %s\n" "$1";;
+	*) break;;
+	esac; do shift; done
+	test $# = 0 ||
+	die "Unexpected argument(s): %s\n" "$*"
+	test -n "$root" ||
+	die "Need --root=<directory>\n"
+
+	package=mingw-w64-clang-aarch64-win32-openssh-client
+	version=10.0.0.0-2
+	archive=$package-$version-any.pkg.tar.zst
+	sha256=26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8
+	# Built from crutkas/MINGW-packages c97decf4acf026790b0989e0f08be8142b9f7ec2.
+	url=https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/$archive
+	archive_path=${TMPDIR:-/tmp}/$archive
+
+	if test -f "$archive_path"
+	then
+		actual="$(sha256sum <"$archive_path" | sed 's/ .*//')" ||
+		die "Could not hash %s\n" "$archive_path"
+		test "$sha256" = "$actual" ||
+		rm -f "$archive_path" ||
+		die "Could not remove package with unexpected SHA-256: %s\n" "$archive_path"
+	fi
+	if test ! -f "$archive_path"
+	then
+		curl -fL --retry 3 -o "$archive_path.tmp.$$" "$url" &&
+		mv "$archive_path.tmp.$$" "$archive_path" ||
+		{
+			rm -f "$archive_path.tmp.$$"
+			die "Could not download %s\n" "$url"
+		}
+	fi
+	actual="$(sha256sum <"$archive_path" | sed 's/ .*//')" &&
+	test "$sha256" = "$actual" ||
+	die "Unexpected SHA-256 for %s: %s\n" "$archive_path" "$actual"
+
+	run_arm64_openssh_pacman () {
+		if test / = "$root"
+		then
+			pacman "$@"
+		else
+			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+		fi
+	}
+
+	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$archive_path")" ||
+	die "Unexpected package metadata in %s\n" "$archive_path"
+	if run_arm64_openssh_pacman -Q openssh >/dev/null 2>&1
+	then
+		run_arm64_openssh_pacman -R --noconfirm openssh ||
+		die "Could not remove MSYS OpenSSH through its declared dependencies\n"
+	fi
+	rm -f "$root/etc/ssh/ssh_config" \
+		"$root/etc/ssh/ssh_config.pacnew" \
+		"$root/etc/ssh/ssh_config.pacsave" ||
+	die "Could not remove stale ARM64 OpenSSH configuration\n"
+	run_arm64_openssh_pacman -U --noconfirm "$archive_path" &&
+	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
+	run_arm64_openssh_pacman -Qkk "$package" ||
+	die "Could not install and verify %s\n" "$package"
+}
+
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
 	git_sdk_path=/
 	output_path=
@@ -690,7 +763,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			fi &&
 			printf '\n# For the /etc/msystem.d/ check\n/etc/msystem.d/\n\n' >>"$sparse_checkout_file" &&
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
-			ARM64_OPENSSH_SKIP_PREPARE=1 ARCH=$architecture "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
+			{ test aarch64 != "$architecture" ||
+				use_arm64_native_openssh --root="$output_path"; } &&
+			ARCH=$architecture "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
 			;;
 		esac &&
@@ -725,14 +800,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		;;
 	esac &&
 	git -C "$output_path" checkout -- &&
-	if test build-installers = "$mode" &&
-		test aarch64 = "$architecture" &&
-		test 1 = "$USE_ARM64_WIN32_OPENSSH"
-	then
-		PACMAN="$output_path/usr/bin/pacman.exe" \
-		"${this_script_path%/*}/install-arm64-openssh.sh" \
-			--root="$output_path"
-	fi &&
+	{ test build-installers != "$mode" ||
+		test aarch64 != "$architecture" ||
+		use_arm64_native_openssh --root="$output_path"; } &&
 	if test ! -f "$output_path/etc/profile"
 	then
 		if test minimal-sdk = $mode
