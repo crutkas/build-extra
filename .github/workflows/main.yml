@@ -65,7 +65,12 @@ jobs:
           exit $?
 
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
+            arm64-busybox/ \
             check-for-missing-dlls.sh \
+            post-install.bat \
+            t/check-arm64-busybox.sh \
+            t/check-arm64-busybox.ps1 \
+            t/check-arm64-busybox-architecture.sh \
             t/check-arm64-native-tools.sh \
             t/check-arm64-native-tools.ps1)" ||
           echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
@@ -169,6 +174,13 @@ jobs:
           artifacts="$(basename "${{ matrix.directory }}")-artifacts-${{ matrix.architecture.name }}" &&
           mkdir -p "$artifacts" &&
           ./"${{ matrix.directory }}"/release.sh --output="$PWD/$artifacts/" 0-test &&
+          if test mingit = "${{ matrix.directory }}" &&
+            test aarch64 = "${{ matrix.architecture.name }}"
+          then
+            mkdir -p "$artifacts/busybox" &&
+            ./mingit/release.sh --busybox \
+              --output="$PWD/$artifacts/busybox/" 0-test
+          fi &&
           echo "result=$artifacts" >>$GITHUB_OUTPUT
       - uses: actions/upload-artifact@v7
         with:
@@ -206,6 +218,10 @@ jobs:
           # cannot test SSH keys in read-only mode, skip test for now
           sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
           sh -x $checklist
+      - name: validate ARM64 BusyBox installer payload
+        if: matrix.directory == 'installer' && matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: ./t/check-arm64-busybox.ps1 -Root "$env:ProgramFiles\Git"
       - name: extract Portable Git
         if: matrix.directory == 'portable'
         shell: pwsh
@@ -230,6 +246,39 @@ jobs:
           test "${root%portable-git}" != "$root" &&
           git.exe version --build-options >version &&
           cat version
+      - name: validate ARM64 BusyBox portable payload
+        if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: ./t/check-arm64-busybox.ps1 -Root (Convert-Path portable-git)
+      - name: extract and validate ARM64 MinGit modes
+        if: matrix.directory == 'mingit' && matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/*.zip" |
+           Select-Object -First 1
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath mingit
+          & ./mingit/cmd/git.exe version --build-options
+          if ($LASTEXITCODE -ne 0) {
+           throw "Standard MinGit validation failed"
+          }
+          ./t/check-arm64-busybox.ps1 `
+           -Root (Convert-Path mingit) `
+           -AllowMissingReplacements
+
+          $busyboxZip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/busybox/*.zip" |
+           Select-Object -First 1
+          Expand-Archive -LiteralPath $busyboxZip.FullName -DestinationPath mingit-busybox
+          & ./mingit-busybox/cmd/git.exe version --build-options
+          if ($LASTEXITCODE -ne 0) {
+           throw "BusyBox MinGit Git validation failed"
+          }
+          ./t/check-arm64-busybox.ps1 `
+           -Root (Convert-Path mingit-busybox) `
+           -AllowMissingReplacements
+          & ./mingit-busybox/clangarm64/bin/ash.exe -c "uname -m"
+          if ($LASTEXITCODE -ne 0) {
+           throw "BusyBox MinGit shell validation failed"
+          }
   sdk-artifacts:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true'
@@ -389,6 +438,16 @@ jobs:
             --branch=${{ matrix.arch.sdk-branch || 'main' }} --filter=blob:none \
             https://github.com/git-for-windows/${{ matrix.arch.sdk-repo }} .sdk
       - name: build build-installers-${{ matrix.arch.name }} artifact
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: |
+          GFW_ARM64_BUSYBOX=0 \
+          ./please.sh create-sdk-artifact \
+            --architecture=${{ matrix.arch.name }} \
+            --sdk=.sdk \
+            --out=sdk-artifact-before \
+            build-installers
+      - name: build build-installers-${{ matrix.arch.name }} artifact
         shell: bash
         run: |
           set -x &&
@@ -409,6 +468,44 @@ jobs:
       - name: check for missing DLLs (MinGit)
         shell: bash
         run: MINIMAL_GIT=1 ./check-for-missing-dlls.sh
+      - name: check for missing DLLs (BusyBox MinGit)
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: MINIMAL_GIT=1 MINIMAL_GIT_WITH_BUSYBOX=1 ./check-for-missing-dlls.sh
+      - name: load the fork-local payload scanner
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/pull/1/head &&
+          test 9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19 = \
+            "$(git rev-parse FETCH_HEAD)" &&
+          git show FETCH_HEAD:pe-imports.ps1 >pe-imports-pr1.ps1 &&
+          echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *pe-imports-pr1.ps1' |
+            sha256sum -c -
+      - name: compare ARM64 payload architectures
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: |
+          ./t/check-arm64-busybox-architecture.sh \
+            --before=sdk-artifact-before \
+            --after=sdk-artifact \
+            --scanner=pe-imports-pr1.ps1
+      - uses: actions/upload-artifact@v7
+        if: matrix.arch.name == 'aarch64'
+        with:
+          name: arm64-busybox-architecture-report
+          path: arm64-busybox-architecture-report.txt
+      - name: check ARM64 BusyBox compatibility
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: ./t/check-arm64-busybox.sh
+      - name: check ARM64 BusyBox replacement PEs
+        if: matrix.arch.name == 'aarch64'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-busybox.ps1 `
+            -Root (Convert-Path sdk-artifact) `
+            -Scanner (Convert-Path pe-imports-pr1.ps1)
       - name: check native ARM64 tools from Git Bash
         if: matrix.arch.name == 'aarch64'
         shell: bash

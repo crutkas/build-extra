@@ -690,7 +690,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			fi &&
 			printf '\n# For the /etc/msystem.d/ check\n/etc/msystem.d/\n\n' >>"$sparse_checkout_file" &&
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
-			ARCH=$architecture "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
+			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
+			"$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
 			;;
 		esac &&
@@ -725,6 +726,11 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		;;
 	esac &&
 	git -C "$output_path" checkout -- &&
+	if test build-installers = "$mode" && test aarch64 = "$architecture"
+	then
+		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
+			"${this_script_path%/*}/arm64-busybox/install.sh"
+	fi &&
 	if test ! -f "$output_path/etc/profile"
 	then
 		if test minimal-sdk = $mode

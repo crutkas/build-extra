@@ -42,6 +42,14 @@
 	usr\bin\dash.exe -c '/usr/bin/dash usr/bin/rebaseall -p'
 )
 
+@IF EXIST clangarm64\bin\busybox.exe @IF EXIST etc\arm64-busybox-aliases.txt @(
+	@SET "busybox_alias_failed="
+	@FOR /F "usebackq delims=" %%P IN ("etc\arm64-busybox-aliases.txt") DO @(
+		@DEL /F /Q "usr\bin\%%P" 2>NUL
+		@MKLINK /H "usr\bin\%%P" "clangarm64\bin\busybox.exe" >NUL 2>&1 || @COPY /Y "clangarm64\bin\busybox.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+	)
+)
+
 @echo "running post-install"
 @REM Run the post-install scripts
 @usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
@@ -51,3 +59,5 @@
 
 @REM Remove this script
 @DEL post-install.bat
+
+@IF DEFINED busybox_alias_failed @EXIT /B 1

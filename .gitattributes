@@ -11,6 +11,7 @@
 *.zip -text
 *.gz -text
 *.xz -text
+*.zst -text
 /installer/InnoSetup/*.e32 -text
 /installer/InnoSetup/*.e64 -text
 *.bat eol=crlf

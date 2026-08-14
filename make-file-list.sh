@@ -5,6 +5,9 @@ die () {
 	exit 1
 }
 
+thisdir="$(cd "$(dirname "$0")" && pwd)" ||
+die "Could not determine the build-extra directory"
+
 test -n "$ARCH" ||
 die "Need ARCH to be set"
 
@@ -29,6 +32,10 @@ aarch64)
 	die "Architecture ${ARCH} not supported"
 	;;
 esac
+
+test 1 = "$GFW_ARM64_BUSYBOX_DEFER" ||
+ARCH=$ARCH "$thisdir/arm64-busybox/install.sh" ||
+die "Could not install native ARM64 BusyBox"
 
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
@@ -407,7 +414,10 @@ LC_CTYPE=C.UTF-8 grep --perl-regexp -v -e '^/usr/(lib|share)/terminfo/(?!.*/(cyg
 sed 's/^\///' | sort | uniq
 
 test -z "$PACKAGE_VERSIONS_FILE" || {
+	test aarch64 != "$ARCH" || test 0 = "${GFW_ARM64_BUSYBOX:-1}" ||
+	ARM64_BUSYBOX_PACKAGE=mingw-w64-clang-aarch64-busybox
 	pacman -Q filesystem $SH_FOR_REBASE rebase \
+		$ARM64_BUSYBOX_PACKAGE \
 		$(test -n "$MINIMAL_GIT" || echo util-linux unzip \
 			mingw-w64-$PACMAN_ARCH-xpdf-tools) \
 		>>"$PACKAGE_VERSIONS_FILE" 2>"$pacman_stderr" || {
@@ -442,6 +452,17 @@ $ETC_GITATTRIBUTES
 usr/bin/rebase.exe
 usr/bin/rebaseall
 EOF
+
+if test aarch64 = "$ARCH" && test 0 != "${GFW_ARM64_BUSYBOX:-1}"
+then
+	cat <<-EOF
+	clangarm64/bin/busybox.exe
+	clangarm64/share/busybox/arm64-payload-map.json
+	etc/arm64-busybox-aliases.txt
+	etc/arm64-busybox-replacements.tsv
+	etc/arm64-busybox-retained-paths.tsv
+	EOF
+fi
 
 test -z "$MINIMAL_GIT_WITH_BUSYBOX" ||
 echo $MSYSTEM_LOWER/bin/busybox.exe
