@@ -40,6 +40,13 @@ using Microsoft.Win32.SafeHandles;
 
 public static class FileStorageInfo
 {
+    public const uint FILE_SHARE_READ = 0x00000001;
+    public const uint FILE_SHARE_WRITE = 0x00000002;
+    public const uint FILE_SHARE_DELETE = 0x00000004;
+    public const uint OPEN_EXISTING = 3;
+    public const uint FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000;
+    public const uint FILE_FLAG_BACKUP_SEMANTICS = 0x02000000;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct FILETIME
     {
@@ -74,6 +81,16 @@ public static class FileStorageInfo
         public bool Directory;
     }
 
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern SafeFileHandle CreateFileW(
+        string fileName,
+        uint desiredAccess,
+        uint shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
+
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool GetFileInformationByHandle(
         SafeFileHandle handle,
@@ -91,23 +108,32 @@ public static class FileStorageInfo
 function Get-FileStorage {
     param([Parameter(Mandatory = $true)][string]$Path)
 
-    $stream = [IO.File]::Open(
+    $handle = [FileStorageInfo]::CreateFileW(
         $Path,
-        [IO.FileMode]::Open,
-        [IO.FileAccess]::Read,
-        [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete
+        0,
+        [FileStorageInfo]::FILE_SHARE_READ -bor
+            [FileStorageInfo]::FILE_SHARE_WRITE -bor
+            [FileStorageInfo]::FILE_SHARE_DELETE,
+        [IntPtr]::Zero,
+        [FileStorageInfo]::OPEN_EXISTING,
+        [FileStorageInfo]::FILE_FLAG_OPEN_REPARSE_POINT -bor
+            [FileStorageInfo]::FILE_FLAG_BACKUP_SEMANTICS,
+        [IntPtr]::Zero
     )
+    if ($handle.IsInvalid) {
+        throw "Could not open $Path for storage measurement"
+    }
     try {
         $handleInfo = [FileStorageInfo+BY_HANDLE_FILE_INFORMATION]::new()
         if (-not [FileStorageInfo]::GetFileInformationByHandle(
-            $stream.SafeFileHandle,
+            $handle,
             [ref]$handleInfo
         )) {
             throw "Could not get the file ID for $Path"
         }
         $standardInfo = [FileStorageInfo+FILE_STANDARD_INFO]::new()
         if (-not [FileStorageInfo]::GetFileInformationByHandleEx(
-            $stream.SafeFileHandle,
+            $handle,
             1,
             [ref]$standardInfo,
             [Runtime.InteropServices.Marshal]::SizeOf($standardInfo)
@@ -125,7 +151,7 @@ function Get-FileStorage {
         }
     }
     finally {
-        $stream.Dispose()
+        $handle.Dispose()
     }
 }
 
