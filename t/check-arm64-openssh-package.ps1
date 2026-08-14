@@ -262,7 +262,8 @@ try {
     $actualPackageHash = Get-Sha256 $Package
     Assert-Equal $expectedPackageHash $actualPackageHash "Unexpected package SHA-256"
 
-    $archiveFiles = @(& tar -tf $Package) | ForEach-Object { $_ -replace "^\./", "" }
+    $tar = Join-Path $env:SystemRoot "System32\tar.exe"
+    $archiveFiles = @(& $tar -tf $Package) | ForEach-Object { $_ -replace "^\./", "" }
     if ($LASTEXITCODE -ne 0) {
         throw "Could not list $Package"
     }
@@ -272,7 +273,7 @@ try {
     Assert-Equal 27 $payloadFiles.Count "Unexpected package payload file count"
 
     New-Item -ItemType Directory -Path $trash | Out-Null
-    & tar -xf $Package -C $trash
+    & $tar -xf $Package -C $trash
     if ($LASTEXITCODE -ne 0) {
         throw "Could not extract $Package"
     }
@@ -414,6 +415,16 @@ try {
         $qkk = @(& $pacman --root $SdkRoot -Qkk $packageName 2>&1)
         if ($LASTEXITCODE -ne 0) {
             throw "pacman -Qkk failed: $($qkk -join ' | ')"
+        }
+        $installedDesc = Join-Path $SdkRoot (
+            "var\lib\pacman\local\$packageName-$packageVersion\desc"
+        )
+        $descLines = Get-Content -LiteralPath $installedDesc
+        $providesIndex = [Array]::IndexOf($descLines, "%PROVIDES%")
+        if ($providesIndex -lt 0 -or
+            $providesIndex + 1 -ge $descLines.Count -or
+            $descLines[$providesIndex + 1] -ne "openssh") {
+            throw "The installed native package does not satisfy the OpenSSH dependency"
         }
         $ownedFiles = @(& $pacman --root $SdkRoot -Ql $packageName |
             ForEach-Object {
