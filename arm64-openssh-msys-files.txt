@@ -1,0 +1,11 @@
+usr/bin/scp.exe
+usr/bin/sftp.exe
+usr/bin/ssh-add.exe
+usr/bin/ssh-agent.exe
+usr/bin/ssh-keygen.exe
+usr/bin/ssh-keyscan.exe
+usr/bin/ssh.exe
+usr/lib/ssh/sftp-server.exe
+usr/lib/ssh/ssh-keysign.exe
+usr/lib/ssh/ssh-pkcs11-helper.exe
+usr/lib/ssh/ssh-sk-helper.exe
