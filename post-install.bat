@@ -54,6 +54,12 @@
 	)
 )
 
+@REM Win32 OpenSSH rejects system configuration writable by other users.
+@IF EXIST clangarm64\bin\git.exe @IF NOT EXIST unins000.exe @IF EXIST etc\ssh\ssh_config @(
+	@ICACLS etc\ssh\ssh_config /inheritance:r /grant:r "%USERNAME%:F" "*S-1-5-18:F" "*S-1-5-32-544:F" >NUL
+	@IF ERRORLEVEL 1 @EXIT /B 1
+)
+
 @echo "running post-install"
 @REM Run the post-install scripts
 @usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
