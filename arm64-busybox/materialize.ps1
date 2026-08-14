@@ -6,6 +6,9 @@ param(
     [string]$BusyBox,
 
     [Parameter(Mandatory = $true)]
+    [string]$Shim,
+
+    [Parameter(Mandatory = $true)]
     [string]$DefaultList,
 
     [Parameter(Mandatory = $true)]
@@ -15,12 +18,22 @@ param(
     [string]$RetainedList,
 
     [ValidateSet(0, 1)]
-    [int]$Experimental = 0
+    [int]$Experimental = 0,
+
+    [ValidateSet(0, 1)]
+    [int]$ForceCopy = 0
 )
 
 $ErrorActionPreference = 'Stop'
 $rootPath = (Resolve-Path -LiteralPath $Root).Path
 $busyboxPath = (Resolve-Path -LiteralPath $BusyBox).Path
+$shimPath = (Resolve-Path -LiteralPath $Shim).Path
+$installedShimPath = Join-Path $rootPath 'clangarm64\bin\busybox-shim.exe'
+$installedShimDirectory = Split-Path -Parent $installedShimPath
+New-Item -ItemType Directory -Force -Path $installedShimDirectory | Out-Null
+if ($shimPath -ne $installedShimPath) {
+    Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+}
 $defaultPaths = @(Get-Content -LiteralPath $DefaultList)
 $experimentalPaths = @(Get-Content -LiteralPath $ExperimentalList)
 $selected = [Collections.Generic.List[object]]::new()
@@ -41,12 +54,16 @@ foreach ($replacement in $selected) {
     $parent = Split-Path -Parent $destination
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
-    try {
-        New-Item -ItemType HardLink -Path $destination -Target $busyboxPath |
-            Out-Null
-    }
-    catch {
-        Copy-Item -LiteralPath $busyboxPath -Destination $destination
+    if (-not $ForceCopy) {
+        try {
+            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath |
+                Out-Null
+        }
+        catch {
+            Copy-Item -LiteralPath $installedShimPath -Destination $destination
+        }
+    } else {
+        Copy-Item -LiteralPath $installedShimPath -Destination $destination
     }
 
     $alias = [IO.Path]::GetFileName($replacement.Path)

@@ -12,6 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $expectedPackageHash = '93c5bc40010b58db0de29bd4eac3b87fa48d6c0e140c620208b1cd3d6722b499'
 $expectedBusyBoxHash = 'afe7768285d5bd415fc2440a74bdf6e3c828cd1aca8dd2b36fcdf9b4cc8054bf'
+$expectedShimHash = '49ee6f040be4cb42cb5c7ef3dd5e25c8f431bcfbe1d2587d75c55967bbfe8959'
 $expectedPackageVersion = 'mingw-w64-clang-aarch64-busybox 1.38.0.git.e7299058-1'
 $expectedReplacementCount = if ($Experimental) { 84 } else { 59 }
 $expectedRetainedCount = if ($Experimental) { 53 } else { 78 }
@@ -39,6 +40,7 @@ $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $packageName = 'mingw-w64-clang-aarch64-busybox-1.38.0.git.e7299058-1-any.pkg.tar.zst'
 $packagePath = Join-Path $repoRoot "arm64-busybox\$packageName"
 $busyboxPath = Join-Path $rootPath 'clangarm64\bin\busybox.exe'
+$shimPath = Join-Path $rootPath 'clangarm64\bin\busybox-shim.exe'
 $replacementPath = Join-Path $rootPath 'etc\arm64-busybox-replacements.tsv'
 $retainedPath = Join-Path $rootPath 'etc\arm64-busybox-retained-paths.tsv'
 $aliasesPath = Join-Path $rootPath 'etc\arm64-busybox-aliases.txt'
@@ -55,6 +57,13 @@ if ($busyboxHash -ne $expectedBusyBoxHash) {
 }
 if ((Get-PeMachine -Path $busyboxPath) -ne 0xAA64) {
     throw "$busyboxPath is not ARM64"
+}
+$shimHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $shimPath).Hash.ToLowerInvariant()
+if ($shimHash -ne $expectedShimHash) {
+    throw "Unexpected busybox-shim.exe SHA-256: $shimHash"
+}
+if ((Get-PeMachine -Path $shimPath) -ne 0xAA64) {
+    throw "$shimPath is not ARM64"
 }
 
 $replacements = @(Import-Csv -Delimiter "`t" -LiteralPath $replacementPath)
@@ -81,8 +90,8 @@ foreach ($replacement in $replacements) {
         throw "$($replacement.path) has PE machine 0x$($machine.ToString('X4')), expected 0xAA64"
     }
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
-    if ($hash -ne $expectedBusyBoxHash) {
-        throw "$($replacement.path) is not the exact packaged busybox.exe"
+    if ($hash -ne $expectedShimHash) {
+        throw "$($replacement.path) is not the compact ARM64 BusyBox shim"
     }
     $expectedAlias = [IO.Path]::GetFileName($replacement.path)
     if ($aliases -notcontains $expectedAlias) {

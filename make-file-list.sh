@@ -457,6 +457,7 @@ if test aarch64 = "$ARCH" && test 0 != "${GFW_ARM64_BUSYBOX:-1}"
 then
 	cat <<-EOF
 	clangarm64/bin/busybox.exe
+	clangarm64/bin/busybox-shim.exe
 	clangarm64/share/busybox/arm64-payload-map.json
 	etc/arm64-busybox-aliases.txt
 	etc/arm64-busybox-replacements.tsv

@@ -71,6 +71,7 @@ jobs:
             t/check-arm64-busybox.sh \
             t/check-arm64-busybox.ps1 \
             t/check-arm64-busybox-architecture.sh \
+            t/check-arm64-busybox-distributions.ps1 \
             t/check-arm64-native-tools.sh \
             t/check-arm64-native-tools.ps1)" ||
           echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
@@ -514,3 +515,75 @@ jobs:
         if: matrix.arch.name == 'aarch64'
         shell: pwsh
         run: ./t/check-arm64-native-tools.ps1 -Root (Convert-Path sdk-artifact)
+  arm64-busybox-impact:
+    needs: determine-packages
+    if: needs.determine-packages.outputs.check-for-missing-dlls == 'true'
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: prepare exact base source and SDK
+        shell: bash
+        run: |
+          test 39ffc22208aa99e287a9f433431fb9a56f443b62 = \
+            "$(git rev-parse origin/crutkas-arm64-native-leaf-tools)" &&
+          git worktree add --detach base-source \
+            39ffc22208aa99e287a9f433431fb9a56f443b62 &&
+          git clone --bare --depth=1 --single-branch --branch=main \
+            --filter=blob:none \
+            https://github.com/git-for-windows/git-sdk-arm64 .sdk
+      - name: stage base and integrated SDKs
+        shell: bash
+        run: |
+          ./base-source/please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
+            --out=sdk-base \
+            build-installers &&
+          ./please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
+            --out=sdk-integrated \
+            build-installers
+      - name: build base and integrated distributions
+        shell: bash
+        run: |
+          build_products () {
+            sdk=$1
+            source=$2
+            output=$3
+            mkdir -p "$output/mingit-busybox" &&
+            "$sdk/git-cmd.exe" --command=usr\\bin\\bash.exe -lc "
+              set -e
+              cd '$source'
+              ./installer/release.sh --output='$output' 0-test
+              ./portable/release.sh --output='$output' 0-test
+              ./mingit/release.sh --output='$output' 0-test
+              ./mingit/release.sh --busybox \
+                --output='$output/mingit-busybox' 0-test
+            "
+          }
+
+          root=$PWD &&
+          build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
+          build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
+      - name: measure distributions and lifecycle
+        shell: pwsh
+        run: |
+          ./t/check-arm64-busybox-distributions.ps1 `
+            -BaseInstaller impact/base/Git-0-test-arm64.exe `
+            -IntegratedInstaller impact/integrated/Git-0-test-arm64.exe `
+            -BasePortable impact/base/PortableGit-0-test-arm64.7z.exe `
+            -IntegratedPortable impact/integrated/PortableGit-0-test-arm64.7z.exe `
+            -BaseMinGit impact/base/MinGit-0-test-arm64.zip `
+            -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
+            -BaseBusyBoxMinGit impact/base/mingit-busybox/MinGit-0-test-arm64.zip `
+            -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
+            -OutputDirectory impact/measurements
+      - uses: actions/upload-artifact@v7
+        with:
+          name: arm64-busybox-distribution-impact
+          path: |
+            impact/measurements/arm64-busybox-distribution-impact.json
+            impact/measurements/arm64-busybox-distribution-impact.md

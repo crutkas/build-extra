@@ -42,11 +42,15 @@
 	usr\bin\dash.exe -c '/usr/bin/dash usr/bin/rebaseall -p'
 )
 
-@IF EXIST clangarm64\bin\busybox.exe @IF EXIST etc\arm64-busybox-aliases.txt @(
+@IF EXIST clangarm64\bin\busybox.exe @IF EXIST clangarm64\bin\busybox-shim.exe @IF EXIST etc\arm64-busybox-aliases.txt @(
 	@SET "busybox_alias_failed="
 	@FOR /F "usebackq delims=" %%P IN ("etc\arm64-busybox-aliases.txt") DO @(
 		@DEL /F /Q "usr\bin\%%P" 2>NUL
-		@MKLINK /H "usr\bin\%%P" "clangarm64\bin\busybox.exe" >NUL 2>&1 || @COPY /Y "clangarm64\bin\busybox.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+		@IF "%GFW_ARM64_BUSYBOX_FORCE_COPY%" == "1" @(
+			@COPY /Y "clangarm64\bin\busybox-shim.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+		) ELSE @(
+			@MKLINK /H "usr\bin\%%P" "clangarm64\bin\busybox-shim.exe" >NUL 2>&1 || @COPY /Y "clangarm64\bin\busybox-shim.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+		)
 	)
 )
 
@@ -57,7 +61,10 @@
 @REM Unset environment variables set by this script
 @SET "version="
 
+@IF DEFINED busybox_alias_failed @(
+	@DEL post-install.bat
+	@EXIT /B 1
+)
+
 @REM Remove this script
 @DEL post-install.bat
-
-@IF DEFINED busybox_alias_failed @EXIT /B 1
