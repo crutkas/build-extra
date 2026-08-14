@@ -145,18 +145,18 @@ try {
             throw "ssh-keygen could not generate an Ed25519 key"
         }
 
-        $home = Join-Path $trash "home"
-        New-Item -ItemType Directory -Path (Join-Path $home ".ssh") | Out-Null
+        $testHome = Join-Path $trash "home"
+        New-Item -ItemType Directory -Path (Join-Path $testHome ".ssh") | Out-Null
         @"
 Host package-alias
     HostName 127.0.0.1
     Port 1
     User integration
-"@ | Set-Content -Encoding ascii -LiteralPath (Join-Path $home ".ssh\config")
+"@ | Set-Content -Encoding ascii -LiteralPath (Join-Path $testHome ".ssh\config")
         $oldHome = $env:HOME
         $oldUserProfile = $env:USERPROFILE
-        $env:HOME = $home
-        $env:USERPROFILE = $home
+        $env:HOME = $testHome
+        $env:USERPROFILE = $testHome
         try {
             $effective = @(& $ssh -G package-alias 2>$null)
             if ($LASTEXITCODE -ne 0 -or
@@ -167,7 +167,7 @@ Host package-alias
             }
 
             $config = Join-Path $trash "etc\ssh\ssh_config"
-            $knownHosts = Join-Path $home ".ssh\known_hosts"
+            $knownHosts = Join-Path $testHome ".ssh\known_hosts"
             $effective = @(& $ssh -G -F $config -o "UserKnownHostsFile=$knownHosts" `
                 -o "ProxyCommand=cmd.exe /c exit 7" -tt package-alias 2>$null)
             if ($LASTEXITCODE -ne 0 -or
