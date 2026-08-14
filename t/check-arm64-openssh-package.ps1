@@ -366,7 +366,7 @@ try {
     } else {
         $runtimeLayout = $requiredLayout
     }
-    foreach ($relative in $runtimeLayout) {
+    foreach ($relative in $requiredLayout) {
         if ($payloadFiles -notcontains $relative) {
             throw "Required package path is missing: $relative"
         }
@@ -469,7 +469,7 @@ try {
 
     if ($RuntimeRoot) {
         $RuntimeRoot = (Resolve-Path -LiteralPath $RuntimeRoot).Path
-        foreach ($relative in $requiredLayout) {
+        foreach ($relative in $runtimeLayout) {
             if (-not (Test-Path -LiteralPath (
                 Join-Path $RuntimeRoot ($relative.Replace("/", "\"))))) {
                 throw "Runtime path is missing: $relative"

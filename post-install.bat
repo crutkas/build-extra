@@ -42,18 +42,18 @@
 	usr\bin\dash.exe -c '/usr/bin/dash usr/bin/rebaseall -p'
 )
 
-@REM Win32 OpenSSH rejects system configuration writable by other users.
-@IF NOT EXIST clangarm64\bin\git.exe @GOTO run_post_install
-@IF EXIST unins000.exe @GOTO run_post_install
-@IF NOT EXIST etc\ssh\ssh_config @GOTO run_post_install
-@ICACLS etc\ssh\ssh_config /inheritance:r /grant:r "%USERNAME%:F" "*S-1-5-18:F" "*S-1-5-32-544:F" >NUL
-@IF ERRORLEVEL 1 @EXIT /B 1
-
-:run_post_install
 @echo "running post-install"
 @REM Run the post-install scripts
 @usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
 
+@REM Win32 OpenSSH rejects system configuration writable by other users.
+@IF NOT EXIST clangarm64\bin\git.exe @GOTO cleanup
+@IF EXIST unins000.exe @GOTO cleanup
+@IF NOT EXIST etc\ssh\ssh_config @GOTO cleanup
+@ICACLS etc\ssh\ssh_config /inheritance:r /grant:r "%USERNAME%:F" "*S-1-5-18:F" "*S-1-5-32-544:F" >NUL
+@IF ERRORLEVEL 1 @EXIT /B 1
+
+:cleanup
 @REM Unset environment variables set by this script
 @SET "version="
 
