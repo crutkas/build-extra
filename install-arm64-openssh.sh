@@ -42,7 +42,7 @@ test -n "$package" ||
 package=${TMPDIR:-/tmp}/$archive
 
 verify_archive () {
-	actual=$(sha256sum "$package" | sed 's/ .*//') ||
+	actual=$(sha256sum <"$package" | sed 's/ .*//') ||
 	{
 		echo "Could not hash $package" >&2
 		return 1
