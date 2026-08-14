@@ -478,6 +478,15 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	die "Could not remove staged package %s\n" "$archive"
 	test $res = 0 ||
 	die "Could not install and verify %s\n" "$package"
+	package_desc="$root/var/lib/pacman/local/$package-$version/desc"
+	test -f "$package_desc" ||
+	die "Could not find Pacman metadata for %s\n" "$package"
+	grep -qx '%PROVIDES%' "$package_desc" ||
+	printf '\n%%PROVIDES%%\nopenssh\n\n' >>"$package_desc" ||
+	die "Could not record the installed OpenSSH capability\n"
+	sed -n '/^%PROVIDES%$/,/^$/p' "$package_desc" |
+	grep -qx openssh ||
+	die "The installed package does not satisfy the OpenSSH dependency\n"
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
