@@ -408,8 +408,10 @@ try {
         if ($LASTEXITCODE -ne 0 -or $installed -ne "$packageName $packageVersion") {
             throw "The SDK does not own the expected native package: $installed"
         }
-        & $pacman --root $SdkRoot -Q openssh *> $null
-        if ($LASTEXITCODE -eq 0) {
+        $msysOpenSsh = @(Get-ChildItem -LiteralPath (
+            Join-Path $SdkRoot "var\lib\pacman\local"
+        ) -Directory -Filter "openssh-[0-9]*")
+        if ($msysOpenSsh.Count -ne 0) {
             throw "The SDK still owns MSYS openssh"
         }
         $qkk = @(& $pacman --root $SdkRoot -Qkk $packageName 2>&1)
