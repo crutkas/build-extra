@@ -239,16 +239,17 @@ jobs:
         shell: pwsh
         run: |
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
+          $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o portable-git -y"
+          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           $exitCode = $installer.ExitCode
           if ($exitCode -ne 0) {
             Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
             exit 1
           }
-          Get-ChildItem -Path "portable-git"
-          "$PWD\portable-git\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
-          "$PWD\portable-git\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          Get-ChildItem -Path $portableRoot
+          "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
       - name: validate
         if: matrix.directory == 'portable'
         shell: bash
@@ -263,16 +264,17 @@ jobs:
         shell: pwsh
         run: |
           $archive = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.zip | Select-Object -First 1
-          Expand-Archive -LiteralPath $archive.FullName -DestinationPath mingit-root
-          Get-ChildItem -Path mingit-root
+          $minGitRoot = "$env:RUNNER_TEMP\mingit-root"
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $minGitRoot
+          Get-ChildItem -Path $minGitRoot
       - name: validate the ARM64 OpenSSH runtime
         if: matrix.architecture.name == 'aarch64'
         shell: pwsh
         run: |
           $root = switch ("${{ matrix.directory }}") {
             "installer" { "$env:ProgramFiles\Git" }
-            "portable" { "$PWD\portable-git" }
-            "mingit" { "$PWD\mingit-root" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
             default { throw "Unexpected artifact: ${{ matrix.directory }}" }
           }
           $parameters = @{
@@ -285,7 +287,7 @@ jobs:
           }
           ./t/check-arm64-openssh-package.ps1 @parameters
       - name: validate ARM64 installer lifecycle and external SSH
-        if: matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
+        if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
         shell: pwsh
         run: |
           $exePath = (Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.exe | Select-Object -First 1).FullName
@@ -445,7 +447,7 @@ jobs:
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
       - name: validate ARM64 installer lifecycle and external SSH
-        if: matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
         shell: pwsh
         run: |
           $exePath = (Get-ChildItem -Path installer-${{ matrix.arch.name }}/*.exe | Select-Object -First 1).FullName
