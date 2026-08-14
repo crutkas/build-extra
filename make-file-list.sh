@@ -157,7 +157,8 @@ mingw-w64-$PACMAN_ARCH-zstd"
 	then
 		pacman -Q $package_list >"$PACKAGE_VERSIONS_FILE" 2>"$pacman_stderr"
 		res=$?
-		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2
+		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2 ||
+		true
 	fi &&
 	pacman -Ql $package_list 2>"$pacman_stderr" |
 	grep -v '/$' |
