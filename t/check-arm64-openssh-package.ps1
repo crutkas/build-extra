@@ -264,3 +264,5 @@ Host package-alias
         Remove-Item -Recurse -Force -LiteralPath $trash
     }
 }
+
+exit 0
