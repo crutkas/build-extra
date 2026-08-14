@@ -283,9 +283,10 @@ jobs:
             RuntimeRoot = $root
           }
           if ("${{ matrix.directory }}" -eq "mingit") {
-            $parameters["MinGit"] = $true
+            ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
+          } else {
+            ./t/check-arm64-openssh-package.ps1 @parameters
           }
-          ./t/check-arm64-openssh-package.ps1 @parameters
       - name: validate ARM64 installer lifecycle and external SSH
         if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
         shell: pwsh
