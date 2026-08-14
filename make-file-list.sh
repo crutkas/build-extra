@@ -403,7 +403,8 @@ else
 		grep -v \
 			-e '^/usr/bin/\(bunzip2\|bzcat\|bzip2\|bzip2recover\)\.exe$' \
 			-e '^/usr/bin/\(nettle-hash\|nettle-lfib-stream\|nettle-pbkdf2\|pkcs1-conv\|sexp-conv\)\.exe$' \
-			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$'
+			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$' \
+			-e '^/usr/bin/msys-edit-0\.dll$'
 		cat <<-EOF
 		/clangarm64/bin/nettle-hash.exe
 		/clangarm64/bin/nettle-lfib-stream.exe
