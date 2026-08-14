@@ -508,7 +508,19 @@ try {
         $runtimeFiles = @(Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File)
         $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
         Write-Host "Runtime files: $($runtimeFiles.Count); installed bytes: $runtimeBytes"
-        if (-not $MinGit.IsPresent) {
+        if ($MinGit.IsPresent) {
+            $minGitSsh = Join-Path $RuntimeRoot "cmd\ssh.cmd"
+            if (-not (Test-Path -LiteralPath $minGitSsh)) {
+                throw "MinGit does not contain the ARM64 OpenSSH launcher"
+            }
+            $minGitPolicy = @(& $env:ComSpec /d /s /c `
+                "`"$minGitSsh`" -G package-default" 2>&1)
+            if ($LASTEXITCODE -ne 0 -or
+                -not ($minGitPolicy -match "^pubkeyacceptedalgorithms .*ssh-rsa") -or
+                ($minGitPolicy -match "ssh-dss")) {
+                throw "MinGit did not load the packaged global policy: $($minGitPolicy -join ' | ')"
+            }
+        } else {
             Test-OpenSshBehavior $RuntimeRoot
         }
     } else {
