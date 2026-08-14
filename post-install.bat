@@ -42,12 +42,29 @@
 	usr\bin\dash.exe -c '/usr/bin/dash usr/bin/rebaseall -p'
 )
 
+@IF EXIST clangarm64\bin\busybox.exe @IF EXIST clangarm64\bin\busybox-shim.exe @IF EXIST etc\arm64-busybox-aliases.txt @(
+	@SET "busybox_alias_failed="
+	@FOR /F "usebackq delims=" %%P IN ("etc\arm64-busybox-aliases.txt") DO @(
+		@DEL /F /Q "usr\bin\%%P" 2>NUL
+		@IF "%GFW_ARM64_BUSYBOX_FORCE_COPY%" == "1" @(
+			@COPY /Y "clangarm64\bin\busybox-shim.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+		) ELSE @(
+			@MKLINK /H "usr\bin\%%P" "clangarm64\bin\busybox-shim.exe" >NUL 2>&1 || @COPY /Y "clangarm64\bin\busybox-shim.exe" "usr\bin\%%P" >NUL || @SET "busybox_alias_failed=1"
+		)
+	)
+)
+
 @echo "running post-install"
 @REM Run the post-install scripts
 @usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
 
 @REM Unset environment variables set by this script
 @SET "version="
+
+@IF DEFINED busybox_alias_failed @(
+	@DEL post-install.bat
+	@EXIT /B 1
+)
 
 @REM Remove this script
 @DEL post-install.bat
