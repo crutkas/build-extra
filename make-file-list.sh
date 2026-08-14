@@ -419,6 +419,12 @@ else
 		EOF
 	}
 fi |
+if test aarch64 = "$ARCH" && test -n "$MINIMAL_GIT"
+then
+	grep -v '^/usr/bin/msys-\(crypt-2\|crypto-3\)\.dll$'
+else
+	cat
+fi |
 LC_CTYPE=C.UTF-8 grep --perl-regexp -v -e '^/usr/(lib|share)/terminfo/(?!.*/(cygwin|dumb|ms-terminal|screen.*|xterm.*)$)' |
 sed 's/^\///' | sort | uniq
 
