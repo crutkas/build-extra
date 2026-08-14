@@ -11,7 +11,8 @@ die "Could not determine the repository root"
 grep -Fq 'OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client' \
 	"$root/make-file-list.sh" &&
 grep -Fq 'OPENSSH_PACKAGE=openssh' "$root/make-file-list.sh" &&
-grep -Fq 'run_arm64_openssh_pacman -R --noconfirm openssh' "$root/please.sh" &&
+grep -Fq 'run_arm64_openssh_pacman -R --noconfirm $remove_packages' \
+	"$root/please.sh" &&
 grep -Fq '26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8' \
 	"$root/please.sh" &&
 grep -Fq 'c97decf4acf026790b0989e0f08be8142b9f7ec2' "$root/please.sh" &&
