@@ -262,13 +262,13 @@ tool mv utf8-copy utf8-moved &&
 test unicode = "$(tool cat utf8-moved)" ||
 die "UTF-8 filename handling failed"
 
-/usr/bin/sleep 30 &
-sleep_pid=$!
-kill -TERM "$sleep_pid" ||
-die "Could not signal GNU sleep"
-wait "$sleep_pid"
-test 0 != $? ||
-die "GNU sleep ignored SIGTERM"
+signal_seen=
+trap 'signal_seen=t' TERM
+kill -TERM $$ ||
+die "Could not deliver SIGTERM to Git Bash"
+trap - TERM
+test t = "$signal_seen" ||
+die "Git Bash did not run the SIGTERM trap"
 
 export PATH="$bindir:$PATH"
 export GIT_CONFIG_NOSYSTEM=1

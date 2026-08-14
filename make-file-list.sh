@@ -464,8 +464,11 @@ then
 	EOF
 fi
 
-test -z "$MINIMAL_GIT_WITH_BUSYBOX" ||
-echo $MSYSTEM_LOWER/bin/busybox.exe
+if test -n "$MINIMAL_GIT_WITH_BUSYBOX" &&
+	{ test aarch64 != "$ARCH" || test 0 = "${GFW_ARM64_BUSYBOX:-1}"; }
+then
+	echo $MSYSTEM_LOWER/bin/busybox.exe
+fi
 
 if test -z "$MINIMAL_GIT_WITH_BUSYBOX"
 then
