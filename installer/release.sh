@@ -324,7 +324,7 @@ then
 	then
 		../install-arm64-openssh.sh --print-package-files |
 		sort >sorted-openssh-file-list.txt &&
-		inno_defines="$inno_defines$LF#define REMOVE_ARM64_OPENSSH_KEYSIGN 1"
+		inno_defines="$inno_defines$LF#define REMOVE_ARM64_OPENSSH_LEGACY_FILES 1"
 	else
 		pacman -Ql openssh 2>pacman.stderr |
 		sed -n 's|^openssh /\(.*[^/]\)$|\1|p' |
