@@ -444,8 +444,7 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	mkdir -p "$root/tmp" &&
 	cp "$archive_cache" "$root/tmp/$archive" ||
 	die "Could not stage %s in the target SDK\n" "$archive"
-	package_path="$(cygpath -au "$root/tmp/$archive")" ||
-	die "Could not normalize the staged package path\n"
+	package_path=$root/tmp/$archive
 
 	run_arm64_openssh_pacman () {
 		if test / = "$root"
@@ -461,19 +460,17 @@ use_arm64_native_openssh () { # [--root=<directory>]
 		rm -f "$root/tmp/$archive"
 		die "Unexpected package metadata in %s\n" "$archive_cache"
 	}
-	remove_packages=openssh
-	run_arm64_openssh_pacman -Q git >/dev/null 2>&1 &&
-	remove_packages="$remove_packages git"
-	if run_arm64_openssh_pacman -Q openssh >/dev/null 2>&1
-	then
-		run_arm64_openssh_pacman -R --noconfirm $remove_packages ||
-		die "Could not remove MSYS Git and OpenSSH through their declared dependencies\n"
-	fi
 	rm -f "$root/etc/ssh/ssh_config" \
 		"$root/etc/ssh/ssh_config.pacnew" \
 		"$root/etc/ssh/ssh_config.pacsave" ||
 	die "Could not remove stale ARM64 OpenSSH configuration\n"
-	run_arm64_openssh_pacman -U --noconfirm "$package_path" &&
+	openssh_version="$(run_arm64_openssh_pacman -Q openssh 2>/dev/null |
+		sed -n 's/^openssh //p')" ||
+	openssh_version=
+	test -n "$openssh_version" ||
+	openssh_version=1
+	run_arm64_openssh_pacman -U --noconfirm \
+		--assume-installed "openssh=$openssh_version" "$package_path" &&
 	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
 	run_arm64_openssh_pacman -Qkk "$package"
 	res=$?
