@@ -404,7 +404,7 @@ try {
     if ($SdkRoot) {
         $SdkRoot = (Resolve-Path -LiteralPath $SdkRoot).Path
         $pacman = Join-Path $SdkRoot "usr\bin\pacman.exe"
-        $installed = @(& $pacman --root $SdkRoot -Q $packageName 2>&1)
+        $installed = @(& $pacman --root $SdkRoot -Q $packageName 2>$null)
         if ($LASTEXITCODE -ne 0 -or $installed -ne "$packageName $packageVersion") {
             throw "The SDK does not own the expected native package: $installed"
         }
