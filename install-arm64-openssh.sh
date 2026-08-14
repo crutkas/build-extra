@@ -40,6 +40,12 @@ test -f "$msys_files" || die "MSYS OpenSSH file manifest is missing: $msys_files
 
 test -n "$package" ||
 package=${TMPDIR:-/tmp}/$archive
+case "$package" in
+[A-Za-z]:[\\/]*)
+	package="$(cygpath -au "$package")" ||
+	die "Could not normalize the package path"
+	;;
+esac
 
 verify_archive () {
 	actual=$(sha256sum <"$package" | sed 's/ .*//') ||
