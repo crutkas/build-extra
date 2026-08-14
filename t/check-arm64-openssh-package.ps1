@@ -145,18 +145,21 @@ try {
             throw "ssh-keygen could not generate an Ed25519 key"
         }
 
-        $testHome = Join-Path $trash "home"
-        New-Item -ItemType Directory -Path (Join-Path $testHome ".ssh") | Out-Null
+        $profileHome = [Environment]::GetFolderPath("UserProfile")
+        $userSshDirectory = Join-Path $profileHome ".ssh"
+        $userConfig = Join-Path $userSshDirectory "config"
+        $userConfigExisted = Test-Path -LiteralPath $userConfig
+        if ($userConfigExisted) {
+            $savedUserConfig = [IO.File]::ReadAllBytes($userConfig)
+        }
+        New-Item -ItemType Directory -Force -Path $userSshDirectory | Out-Null
         @"
 Host package-alias
     HostName 127.0.0.1
     Port 1
     User integration
-"@ | Set-Content -Encoding ascii -LiteralPath (Join-Path $testHome ".ssh\config")
-        $oldHome = $env:HOME
-        $oldUserProfile = $env:USERPROFILE
-        $env:HOME = $testHome
-        $env:USERPROFILE = $testHome
+"@ | Set-Content -Encoding ascii -LiteralPath $userConfig
+        $config = Join-Path $trash "etc\ssh\ssh_config"
         try {
             $effective = @(& $ssh -G package-alias 2>$null)
             if ($LASTEXITCODE -ne 0 -or
@@ -166,8 +169,7 @@ Host package-alias
                 throw "The native client did not load the user configuration"
             }
 
-            $config = Join-Path $trash "etc\ssh\ssh_config"
-            $knownHosts = Join-Path $testHome ".ssh\known_hosts"
+            $knownHosts = Join-Path $userSshDirectory "known_hosts"
             $effective = @(& $ssh -G -F $config -o "UserKnownHostsFile=$knownHosts" `
                 -o "ProxyCommand=cmd.exe /c exit 7" -tt package-alias 2>$null)
             if ($LASTEXITCODE -ne 0 -or
@@ -176,8 +178,11 @@ Host package-alias
                 throw "Config, known_hosts, ProxyCommand, or PTY option parsing failed"
             }
         } finally {
-            $env:HOME = $oldHome
-            $env:USERPROFILE = $oldUserProfile
+            if ($userConfigExisted) {
+                [IO.File]::WriteAllBytes($userConfig, $savedUserConfig)
+            } else {
+                Remove-Item -Force -LiteralPath $userConfig
+            }
         }
 
         $oldTrace = $env:GIT_TRACE
