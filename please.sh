@@ -419,28 +419,32 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	sha256=26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8
 	# Built from crutkas/MINGW-packages c97decf4acf026790b0989e0f08be8142b9f7ec2.
 	url=https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/$archive
-	archive_path=${TMPDIR:-/tmp}/$archive
+	archive_cache=${TMPDIR:-/tmp}/$archive
 
-	if test -f "$archive_path"
+	if test -f "$archive_cache"
 	then
-		actual="$(sha256sum <"$archive_path" | sed 's/ .*//')" ||
-		die "Could not hash %s\n" "$archive_path"
+		actual="$(sha256sum <"$archive_cache" | sed 's/ .*//')" ||
+		die "Could not hash %s\n" "$archive_cache"
 		test "$sha256" = "$actual" ||
-		rm -f "$archive_path" ||
-		die "Could not remove package with unexpected SHA-256: %s\n" "$archive_path"
+		rm -f "$archive_cache" ||
+		die "Could not remove package with unexpected SHA-256: %s\n" "$archive_cache"
 	fi
-	if test ! -f "$archive_path"
+	if test ! -f "$archive_cache"
 	then
-		curl -fL --retry 3 -o "$archive_path.tmp.$$" "$url" &&
-		mv "$archive_path.tmp.$$" "$archive_path" ||
+		curl -fL --retry 3 -o "$archive_cache.tmp.$$" "$url" &&
+		mv "$archive_cache.tmp.$$" "$archive_cache" ||
 		{
-			rm -f "$archive_path.tmp.$$"
+			rm -f "$archive_cache.tmp.$$"
 			die "Could not download %s\n" "$url"
 		}
 	fi
-	actual="$(sha256sum <"$archive_path" | sed 's/ .*//')" &&
+	actual="$(sha256sum <"$archive_cache" | sed 's/ .*//')" &&
 	test "$sha256" = "$actual" ||
-	die "Unexpected SHA-256 for %s: %s\n" "$archive_path" "$actual"
+	die "Unexpected SHA-256 for %s: %s\n" "$archive_cache" "$actual"
+	mkdir -p "$root/tmp" &&
+	cp "$archive_cache" "$root/tmp/$archive" ||
+	die "Could not stage %s in the target SDK\n" "$archive"
+	package_path=/tmp/$archive
 
 	run_arm64_openssh_pacman () {
 		if test / = "$root"
@@ -451,8 +455,11 @@ use_arm64_native_openssh () { # [--root=<directory>]
 		fi
 	}
 
-	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$archive_path")" ||
-	die "Unexpected package metadata in %s\n" "$archive_path"
+	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$package_path")" ||
+	{
+		rm -f "$root/tmp/$archive"
+		die "Unexpected package metadata in %s\n" "$archive_cache"
+	}
 	if run_arm64_openssh_pacman -Q openssh >/dev/null 2>&1
 	then
 		run_arm64_openssh_pacman -R --noconfirm openssh ||
@@ -462,9 +469,13 @@ use_arm64_native_openssh () { # [--root=<directory>]
 		"$root/etc/ssh/ssh_config.pacnew" \
 		"$root/etc/ssh/ssh_config.pacsave" ||
 	die "Could not remove stale ARM64 OpenSSH configuration\n"
-	run_arm64_openssh_pacman -U --noconfirm "$archive_path" &&
+	run_arm64_openssh_pacman -U --noconfirm "$package_path" &&
 	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
-	run_arm64_openssh_pacman -Qkk "$package" ||
+	run_arm64_openssh_pacman -Qkk "$package"
+	res=$?
+	rm -f "$root/tmp/$archive" ||
+	die "Could not remove staged package %s\n" "$archive"
+	test $res = 0 ||
 	die "Could not install and verify %s\n" "$package"
 }
 
