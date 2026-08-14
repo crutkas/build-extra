@@ -195,8 +195,8 @@ Host included-policy
             throw "sftp did not report its usage normally"
         }
         $agentUsage = @(& $sshAgent -? 2>&1)
-        if ($LASTEXITCODE -eq 0 -or -not ($agentUsage -match "usage: ssh-agent")) {
-            throw "ssh-agent did not report its usage normally"
+        if (-not ($agentUsage -match "usage: ssh-agent")) {
+            throw "ssh-agent did not report its usage normally: $($agentUsage -join ' | ')"
         }
         $addResult = @(& $sshAdd -l 2>&1)
         if ($LASTEXITCODE -eq 0 -or
