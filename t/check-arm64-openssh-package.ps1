@@ -159,7 +159,9 @@ Host package-alias
     Port 1
     User integration
 "@ | Set-Content -Encoding ascii -LiteralPath $userConfig
-        $config = Join-Path $trash "etc\ssh\ssh_config"
+        $packageConfig = Join-Path $trash "etc\ssh\ssh_config"
+        $behaviorConfig = Join-Path $trash "ssh_config"
+        "Host *" | Set-Content -Encoding ascii -LiteralPath $behaviorConfig
         try {
             $effective = @(& $ssh -G package-alias 2>$null)
             if ($LASTEXITCODE -ne 0 -or
@@ -169,8 +171,14 @@ Host package-alias
                 throw "The native client did not load the user configuration"
             }
 
+            $packageConfigResult = @(& $ssh -G -F $packageConfig package-alias 2>&1)
+            if ($LASTEXITCODE -ne 255 -or
+                -not ($packageConfigResult -match "Bad key types '.*ssh-dss")) {
+                throw "The package ssh_config compatibility gate changed; reevaluate the opt-in"
+            }
+
             $knownHosts = Join-Path $userSshDirectory "known_hosts"
-            $effective = @(& $ssh -G -F $config -o "UserKnownHostsFile=$knownHosts" `
+            $effective = @(& $ssh -G -F $behaviorConfig -o "UserKnownHostsFile=$knownHosts" `
                 -o "ProxyCommand=cmd.exe /c exit 7" -tt package-alias 2>&1)
             $configExitCode = $LASTEXITCODE
             if ($configExitCode -ne 0 -or
@@ -200,7 +208,7 @@ Host package-alias
 
             $env:GIT_SSH = $null
             $sshForShell = $ssh -replace "\\", "/"
-            $configForShell = $config -replace "\\", "/"
+            $configForShell = $behaviorConfig -replace "\\", "/"
             $env:GIT_SSH_COMMAND = "'$sshForShell' -F '$configForShell'"
             $trace = @(& git ls-remote "ssh://git@127.0.0.1:1/repo" 2>&1)
             if ($LASTEXITCODE -eq 0 -or -not ($trace -match [regex]::Escape($sshForShell))) {
@@ -216,7 +224,9 @@ Host package-alias
     $installedSize = ($expectedFiles | ForEach-Object {
         (Get-Item -LiteralPath (Join-Path $trash ($_ -replace "/", "\"))).Length
     } | Measure-Object -Sum).Sum
-    $selectedFiles = @($expectedFiles | Where-Object { $_ -notlike "usr/share/doc/*" })
+    $selectedFiles = @($expectedFiles | Where-Object {
+        $_ -notlike "usr/share/doc/*" -and $_ -ne "etc/ssh/ssh_config"
+    })
     $selectedSize = ($selectedFiles | ForEach-Object {
         (Get-Item -LiteralPath (Join-Path $trash ($_ -replace "/", "\"))).Length
     } | Measure-Object -Sum).Sum
@@ -224,8 +234,8 @@ Host package-alias
     $common = @($baselineRows.Path | Where-Object { $selectedFiles -contains $_ })
     $removed = @($baselineRows.Path | Where-Object { $selectedFiles -notcontains $_ })
     $added = @($selectedFiles | Where-Object { $baselineRows.Path -notcontains $_ })
-    if ($baselineRows.Count -ne 16 -or $selectedFiles.Count -ne 17 -or
-        $common.Count -ne 11 -or $removed.Count -ne 5 -or $added.Count -ne 6) {
+    if ($baselineRows.Count -ne 16 -or $selectedFiles.Count -ne 16 -or
+        $common.Count -ne 10 -or $removed.Count -ne 6 -or $added.Count -ne 6) {
         throw "Unexpected full artifact path delta"
     }
 
@@ -245,7 +255,7 @@ Host package-alias
     Write-Host "Package payload bytes: $installedSize"
     Write-Host "Full artifact OpenSSH bytes: $baselineSize -> $selectedSize ($($selectedSize - $baselineSize))"
     Write-Host "MinGit OpenSSH bytes: $minGitBaselineSize -> $minGitNativeSize ($($minGitNativeSize - $minGitBaselineSize))"
-    Write-Host "Full artifact paths: 11 replaced, 5 removed, 6 added"
+    Write-Host "Full artifact paths: 10 replaced, 6 removed, 6 added"
     Write-Host "PE architecture delta: x64 -11, arm64 +14"
     Write-Host "Projected v2.55.0.4 counts: anycpu 90, arm64 223, x64 421, x86 1"
     Write-Host "ARM64 OpenSSH package checks passed"

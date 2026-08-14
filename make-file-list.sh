@@ -431,6 +431,12 @@ else
 		-e "^\\($(echo $EXTRA_FILE_EXCLUDES |
 			sed 's/ /\\|/g')\\)\$"
 fi |
+if test -z "$ARM64_OPENSSH"
+then
+	cat
+else
+	grep -v '^/etc/ssh/ssh_config$'
+fi |
 if test aarch64 != "$ARCH" || test -n "$MINIMAL_GIT"
 then
 	cat

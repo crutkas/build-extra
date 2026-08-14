@@ -43,12 +43,13 @@ comm -23 "$tmp/msys" "$tmp/native" >"$tmp/removed"
 test usr/lib/ssh/ssh-keysign.exe = "$(cat "$tmp/removed")" ||
 die "ssh-keysign.exe must be the only removed baseline path"
 
-grep -v '^usr/share/doc/' "$tmp/native" >"$tmp/native-payload"
+grep -v -e '^usr/share/doc/' -e '^etc/ssh/ssh_config$' \
+	"$tmp/native" >"$tmp/native-payload"
 comm -12 "$tmp/msys-payload" "$tmp/native-payload" >"$tmp/payload-replaced"
 comm -23 "$tmp/msys-payload" "$tmp/native-payload" >"$tmp/payload-removed"
 comm -13 "$tmp/msys-payload" "$tmp/native-payload" >"$tmp/payload-added"
-test 11 = "$(wc -l <"$tmp/payload-replaced" | tr -d ' ')" &&
-test 5 = "$(wc -l <"$tmp/payload-removed" | tr -d ' ')" &&
+test 10 = "$(wc -l <"$tmp/payload-replaced" | tr -d ' ')" &&
+test 6 = "$(wc -l <"$tmp/payload-removed" | tr -d ' ')" &&
 test 6 = "$(wc -l <"$tmp/payload-added" | tr -d ' ')" ||
 die "Unexpected full artifact path delta"
 
@@ -59,7 +60,7 @@ die "ssh-pageant must remain outside the native package"
 
 grep -Fq 'USE_ARM64_WIN32_OPENSSH' "$root/make-file-list.sh" &&
 grep -Fq 'arm64-win32-openssh' "$root/installer/release.sh" &&
-grep -Fq 'REMOVE_ARM64_OPENSSH_KEYSIGN' "$root/installer/install.iss" ||
+grep -Fq 'REMOVE_ARM64_OPENSSH_LEGACY_FILES' "$root/installer/install.iss" ||
 die "The opt-in selection or installer cleanup is not wired"
 
 sh -n "$root/install-arm64-openssh.sh" &&
