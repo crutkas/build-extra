@@ -325,6 +325,19 @@ $uninstaller = Get-ChildItem -LiteralPath $installedRoot -Filter 'unins*.exe' |
 Invoke-Product -File $uninstaller.FullName -Arguments '/VERYSILENT /SILENT /NORESTART /SUPPRESSMSGBOXES'
 $lifecycle.InstallerUninstallRemovedAliases =
     -not (Test-Path -LiteralPath $repairTarget)
+if (Test-Path -LiteralPath $installedRoot) {
+    Remove-Item -LiteralPath $installedRoot -Recurse -Force
+}
+
+Invoke-Product -File $products.IntegratedInstaller -Arguments $silentInstall
+Assert-Integrated -Root $installedRoot
+$measurements.Add((Measure-Tree -Label 'installed-full-clean-hardlinks' -Root $installedRoot -Product $products.IntegratedInstaller))
+$uninstaller = Get-ChildItem -LiteralPath $installedRoot -Filter 'unins*.exe' |
+    Select-Object -First 1
+Invoke-Product -File $uninstaller.FullName -Arguments '/VERYSILENT /SILENT /NORESTART /SUPPRESSMSGBOXES'
+if (Test-Path -LiteralPath $installedRoot) {
+    Remove-Item -LiteralPath $installedRoot -Recurse -Force
+}
 
 $previousForceCopy = $env:GFW_ARM64_BUSYBOX_FORCE_COPY
 try {
@@ -343,6 +356,9 @@ $measurements.Add((Measure-Tree -Label 'installed-full-compact-copy-fallback' -R
 $uninstaller = Get-ChildItem -LiteralPath $installedRoot -Filter 'unins*.exe' |
     Select-Object -First 1
 Invoke-Product -File $uninstaller.FullName -Arguments '/VERYSILENT /SILENT /NORESTART /SUPPRESSMSGBOXES'
+if (Test-Path -LiteralPath $installedRoot) {
+    Remove-Item -LiteralPath $installedRoot -Recurse -Force
+}
 
 $basePortableRoot = Join-Path $outputPath 'portable-base'
 $integratedPortableRoot = Join-Path $outputPath 'portable-integrated'
@@ -386,6 +402,7 @@ foreach ($required in 'InstallerRepairRestoredAlias',
 
 $hardlinkLabels = 'installed-full-update-hardlinks',
     'installed-full-repair-hardlinks',
+    'installed-full-clean-hardlinks',
     'extracted-portable-hardlinks'
 foreach ($label in $hardlinkLabels) {
     $measurement = $measurements | Where-Object Label -eq $label
