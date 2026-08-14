@@ -7,6 +7,7 @@ env:
 
 jobs:
   determine-packages:
+    if: github.repository != 'crutkas/build-extra' || github.head_ref != 'crutkas-integrate-arm64-openssh' || github.event.pull_request.head.repo.full_name != 'crutkas/build-extra'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -587,3 +588,33 @@ jobs:
           path: |
             impact/measurements/arm64-busybox-distribution-impact.json
             impact/measurements/arm64-busybox-distribution-impact.md
+  arm64-openssh:
+    if: github.repository == 'crutkas/build-extra' && github.head_ref == 'crutkas-integrate-arm64-openssh' && github.event.pull_request.head.repo.full_name == 'crutkas/build-extra'
+    runs-on: windows-11-arm
+    steps:
+      - name: check out the fork-local PR
+        shell: pwsh
+        run: |
+          git init .
+          git fetch --no-tags --depth=1 https://github.com/crutkas/build-extra.git ${{ github.event.pull_request.head.sha }}
+          git checkout --detach FETCH_HEAD
+      - name: download the fork-local OpenSSH package
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-1-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-1-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: validate integration selection
+        shell: bash
+        run: |
+          ./install-arm64-openssh.sh \
+            --package="$RUNNER_TEMP/win32-openssh.pkg.tar.zst" \
+            --verify-only &&
+          ./t/check-arm64-openssh-integration.sh
+      - name: validate payload with the fork-local scanner
+        shell: pwsh
+        run: |
+          git fetch --no-tags --depth=1 https://github.com/crutkas/build-extra.git 9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19
+          git show FETCH_HEAD:pe-imports.ps1 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\pe-imports.ps1"
+          ./t/check-arm64-openssh-package.ps1 `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner "$env:RUNNER_TEMP\pe-imports.ps1"
