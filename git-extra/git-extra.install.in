@@ -193,6 +193,11 @@ test -d "$TMPDIR" || test ! -d "$TMP" || {\
 	# Re-enable ssh-rsa and at least AES256-cbc and AES128-cbc, as they are
 	# still used e.g. in Azure Repos
 	test ! -f /etc/ssh/ssh_config || {
+		# The native ARM64 configuration already enables ssh-rsa* globally.
+		azure_pubkey_policy='PubkeyAcceptedAlgorithms +ssh-rsa'
+		test /clangarm64 != '@@MINGW_PREFIX@@' ||
+		azure_pubkey_policy=
+
 		# Revert change by prior versions of git-extra.
 		! grep -q '^Ciphers [a-z].*cbc' /etc/ssh/ssh_config ||
 		sed -i -e 's/^Ciphers [a-z].*cbc/#   &/' /etc/ssh/ssh_config
@@ -201,21 +206,23 @@ test -d "$TMPDIR" || test ! -d "$TMP" || {\
 		! grep -q '^Ciphers\s\++' /etc/ssh/ssh_config ||
 		sed -i -e '/^# Added by git-extra/{N;/^\(.*\n\)\?Ciphers +[a-z].*cbc/d}' /etc/ssh/ssh_config
 
-		grep -q '^Host\s\+ssh\.dev\.azure\.com' /etc/ssh/ssh_config ||
-		printf '%s\n%s\n\t%s\n\t%s\n' \
-			'# Added by git-extra' \
-			'Host ssh.dev.azure.com' \
-			'HostkeyAlgorithms +ssh-rsa' \
-			'PubkeyAcceptedAlgorithms +ssh-rsa' \
-			>>/etc/ssh/ssh_config
+		grep -q '^Host\s\+ssh\.dev\.azure\.com' /etc/ssh/ssh_config || {
+			printf '%s\n%s\n\t%s\n' \
+				'# Added by git-extra' \
+				'Host ssh.dev.azure.com' \
+				'HostkeyAlgorithms +ssh-rsa'
+			test -z "$azure_pubkey_policy" ||
+			printf '\t%s\n' "$azure_pubkey_policy"
+		} >>/etc/ssh/ssh_config
 
-		grep -q '^Host\s\+\*\.visualstudio\.com' /etc/ssh/ssh_config ||
-		printf '%s\n%s\n\t%s\n\t%s\n' \
-			'# Added by git-extra' \
-			'Host *.visualstudio.com' \
-			'HostkeyAlgorithms +ssh-rsa' \
-			'PubkeyAcceptedAlgorithms +ssh-rsa' \
-			>>/etc/ssh/ssh_config
+		grep -q '^Host\s\+\*\.visualstudio\.com' /etc/ssh/ssh_config || {
+			printf '%s\n%s\n\t%s\n' \
+				'# Added by git-extra' \
+				'Host *.visualstudio.com' \
+				'HostkeyAlgorithms +ssh-rsa'
+			test -z "$azure_pubkey_policy" ||
+			printf '\t%s\n' "$azure_pubkey_policy"
+		} >>/etc/ssh/ssh_config
 	}
 
 	# Enable color and syntax-highlighting in GNU nano

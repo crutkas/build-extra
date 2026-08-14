@@ -319,18 +319,19 @@ fi
 echo "$LIST" | sort >sorted-file-list.txt
 if type -p pacman.exe >/dev/null 2>&1
 then
-	if test aarch64 = "$ARCH" &&
-		test -f /etc/arm64-win32-openssh
+	if test aarch64 = "$ARCH"
 	then
-		../install-arm64-openssh.sh --print-package-files |
-		sort >sorted-openssh-file-list.txt &&
+		openssh_package=mingw-w64-clang-aarch64-win32-openssh-client
 		inno_defines="$inno_defines$LF#define REMOVE_ARM64_OPENSSH_LEGACY_FILES 1"
 	else
-		pacman -Ql openssh 2>pacman.stderr |
-		sed -n 's|^openssh /\(.*[^/]\)$|\1|p' |
-		sort >sorted-openssh-file-list.txt &&
-		grep -v 'database file for .* does not exist' <pacman.stderr >&2
-	fi
+		openssh_package=openssh
+	fi &&
+	pacman -Q "$openssh_package" >/dev/null &&
+	pacman -Ql "$openssh_package" 2>pacman.stderr |
+	sed -n "s|^$openssh_package /\\(.*[^/]\\)\$|\\1|p" |
+	sort >sorted-openssh-file-list.txt &&
+	{ grep -v 'database file for .* does not exist' <pacman.stderr >&2 ||
+		true; } &&
 	openssh_deletes="$(comm -12 sorted-file-list.txt sorted-openssh-file-list.txt |
 		sed -e 'y/\//\\/' -e "s|.*|    if not DeleteFile(AppDir+'\\\\&') then\n        Result:=False;|")"
 	inno_defines="$inno_defines$LF[Code]${LF}function DeleteOpenSSHFiles():Boolean;${LF}var$LF    AppDir:String;${LF}begin$LF    AppDir:=ExpandConstant('{app}');$LF    Result:=True;"
