@@ -3562,6 +3562,12 @@ begin
         Optionally "skip" installing bundled SSH binaries conflicting with external OpenSSH:
     }
 
+#ifdef REMOVE_ARM64_OPENSSH_KEYSIGN
+    if FileExists(AppDir+'\usr\lib\ssh\ssh-keysign.exe') and
+       not DeleteFile(AppDir+'\usr\lib\ssh\ssh-keysign.exe') then
+        LogError('Failed to remove unsupported ssh-keysign.exe');
+#endif
+
 #ifdef DELETE_OPENSSH_FILES
     if (SSHChoicePage<>NIL) and (RdbSSH[GS_ExternalOpenSSH].Checked) then begin
         WizardForm.StatusLabel.Caption:='Removing bundled Git OpenSSH binaries';
