@@ -359,9 +359,13 @@ try {
         "usr/lib/ssh/ssh-pkcs11-helper.exe",
         "usr/lib/ssh/ssh-sk-helper.exe"
     )
-    $runtimeLayout = @($requiredLayout | Where-Object {
-        -not $MinGit -or $_ -ne "usr/lib/ssh/sftp-server.exe"
-    })
+    if ($MinGit.IsPresent) {
+        $runtimeLayout = @($requiredLayout | Where-Object {
+            $_ -ne "usr/lib/ssh/sftp-server.exe"
+        })
+    } else {
+        $runtimeLayout = $requiredLayout
+    }
     foreach ($relative in $runtimeLayout) {
         if ($payloadFiles -notcontains $relative) {
             throw "Required package path is missing: $relative"
@@ -474,7 +478,7 @@ try {
         if (Test-Path -LiteralPath (Join-Path $RuntimeRoot "usr\lib\ssh\ssh-keysign.exe")) {
             throw "ssh-keysign is present in the runtime artifact"
         }
-        if (-not $MinGit -and
+        if (-not $MinGit.IsPresent -and
             -not (Test-Path -LiteralPath (Join-Path $RuntimeRoot "usr\bin\ssh-pageant.exe"))) {
             throw "ssh-pageant is not present as a separate runtime component"
         }
@@ -504,7 +508,7 @@ try {
         $runtimeFiles = @(Get-ChildItem -LiteralPath $RuntimeRoot -Recurse -File)
         $runtimeBytes = ($runtimeFiles | Measure-Object -Property Length -Sum).Sum
         Write-Host "Runtime files: $($runtimeFiles.Count); installed bytes: $runtimeBytes"
-        if (-not $MinGit) {
+        if (-not $MinGit.IsPresent) {
             Test-OpenSshBehavior $RuntimeRoot
         }
     } else {

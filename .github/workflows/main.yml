@@ -256,16 +256,17 @@ jobs:
         shell: pwsh
         run: |
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
+          $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o portable-git -y"
+          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           $exitCode = $installer.ExitCode
           if ($exitCode -ne 0) {
             Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
             exit 1
           }
-          Get-ChildItem -Path "portable-git"
-          "$PWD\portable-git\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
-          "$PWD\portable-git\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          Get-ChildItem -Path $portableRoot
+          "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
       - name: validate
         if: matrix.directory == 'portable'
         shell: bash
@@ -278,33 +279,35 @@ jobs:
       - name: validate ARM64 BusyBox portable payload
         if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
         shell: pwsh
-        run: ./t/check-arm64-busybox.ps1 -Root (Convert-Path portable-git)
+        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git"
       - name: extract and validate ARM64 MinGit modes
         if: matrix.directory == 'mingit' && matrix.architecture.name == 'aarch64'
         shell: pwsh
         run: |
           $zip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/*.zip" |
            Select-Object -First 1
-          Expand-Archive -LiteralPath $zip.FullName -DestinationPath mingit
-          & ./mingit/cmd/git.exe version --build-options
+          $minGitRoot = "$env:RUNNER_TEMP\mingit-root"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $minGitRoot
+          & "$minGitRoot/cmd/git.exe" version --build-options
           if ($LASTEXITCODE -ne 0) {
            throw "Standard MinGit validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root (Convert-Path mingit) `
+           -Root $minGitRoot `
            -AllowMissingReplacements
 
           $busyboxZip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/busybox/*.zip" |
            Select-Object -First 1
-          Expand-Archive -LiteralPath $busyboxZip.FullName -DestinationPath mingit-busybox
-          & ./mingit-busybox/cmd/git.exe version --build-options
+          $busyboxMinGitRoot = "$env:RUNNER_TEMP\mingit-busybox-root"
+          Expand-Archive -LiteralPath $busyboxZip.FullName -DestinationPath $busyboxMinGitRoot
+          & "$busyboxMinGitRoot/cmd/git.exe" version --build-options
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit Git validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root (Convert-Path mingit-busybox) `
+           -Root $busyboxMinGitRoot `
            -AllowMissingReplacements
-          & ./mingit-busybox/clangarm64/bin/ash.exe -c "uname -m"
+          & "$busyboxMinGitRoot/clangarm64/bin/ash.exe" -c "uname -m"
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit shell validation failed"
           }
@@ -314,8 +317,8 @@ jobs:
         run: |
           $root = switch ("${{ matrix.directory }}") {
             "installer" { "$env:ProgramFiles\Git" }
-            "portable" { "$PWD\portable-git" }
-            "mingit" { "$PWD\mingit" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
             default { throw "Unexpected artifact: ${{ matrix.directory }}" }
           }
           $parameters = @{
@@ -328,7 +331,7 @@ jobs:
           }
           ./t/check-arm64-openssh-package.ps1 @parameters
       - name: validate ARM64 installer lifecycle and external SSH
-        if: matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
+        if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
         shell: pwsh
         run: |
           $exePath = (Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.exe | Select-Object -First 1).FullName
@@ -488,7 +491,7 @@ jobs:
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
       - name: validate ARM64 installer lifecycle and external SSH
-        if: matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
         shell: pwsh
         run: |
           $exePath = (Get-ChildItem -Path installer-${{ matrix.arch.name }}/*.exe | Select-Object -First 1).FullName
