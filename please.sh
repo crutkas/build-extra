@@ -499,6 +499,22 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	sed -n '/^%PROVIDES%$/,/^$/p' "$package_desc" |
 	grep -qx openssh ||
 	die "The installed package does not satisfy the OpenSSH dependency\n"
+	ssh_config="$root/etc/ssh/ssh_config"
+	test -f "$ssh_config" ||
+	die "Could not find the native OpenSSH system configuration\n"
+	{
+		printf '%s\n%s\n\t%s\n\t%s\n%s\n\t%s\n\t%s\n\n' \
+			'# Added by git-extra' \
+			'Host ssh.dev.azure.com' \
+			'HostkeyAlgorithms +ssh-rsa' \
+			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+			'Host *.visualstudio.com' \
+			'HostkeyAlgorithms +ssh-rsa' \
+			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa'
+		cat "$ssh_config"
+	} >"$ssh_config.new" &&
+	mv "$ssh_config.new" "$ssh_config" ||
+	die "Could not configure Azure SSH compatibility\n"
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>

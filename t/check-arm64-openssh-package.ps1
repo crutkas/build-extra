@@ -482,9 +482,22 @@ try {
             -not (Test-Path -LiteralPath (Join-Path $RuntimeRoot "usr\bin\ssh-pageant.exe"))) {
             throw "ssh-pageant is not present as a separate runtime component"
         }
-        Assert-Equal $expectedConfigHash (
-            Get-Sha256 (Join-Path $RuntimeRoot "etc\ssh\ssh_config")
-        ) "Runtime ssh_config differs from the package"
+        $runtimeConfigPath = Join-Path $RuntimeRoot "etc\ssh\ssh_config"
+        $azurePolicy = @"
+# Added by git-extra
+Host ssh.dev.azure.com
+	HostkeyAlgorithms +ssh-rsa
+	PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa
+Host *.visualstudio.com
+	HostkeyAlgorithms +ssh-rsa
+	PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa
+
+"@ -replace "`r`n", "`n"
+        $runtimeConfig = [IO.File]::ReadAllText($runtimeConfigPath)
+        $packagedConfig = [IO.File]::ReadAllText($packageConfig)
+        if ($runtimeConfig -ne "$azurePolicy$packagedConfig") {
+            throw "Runtime ssh_config differs from the package plus Azure policy"
+        }
         $runtimePackageVersions = Join-Path $RuntimeRoot "etc\package-versions.txt"
         if (-not (Test-Path -LiteralPath $runtimePackageVersions) -or
             -not (Select-String -Quiet -SimpleMatch "$packageName $packageVersion" `
