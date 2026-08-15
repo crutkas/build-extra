@@ -181,7 +181,12 @@ LogLevel DEBUG3
             "-o StrictHostKeyChecking=no " +
             "-o UserKnownHostsFile='$knownHostsForShell'"
         $fixtureRemote = "$($env:USERNAME)@ssh.dev.azure.com:azure-fixture"
-        Invoke-Git @("clone", $fixtureRemote, $clone)
+        try {
+            Invoke-Git @("clone", $fixtureRemote, $clone)
+        } catch {
+            $serverDetails = Get-Content -Raw -LiteralPath $serverLog
+            throw "$_`nAzure-like sshd log:`n$serverDetails"
+        }
 
         "two" | Set-Content -Encoding ascii -LiteralPath (Join-Path $seed "fixture.txt")
         Invoke-Git @("-C", $seed, "commit", "-am", "fixture two")
