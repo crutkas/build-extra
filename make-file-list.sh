@@ -33,27 +33,15 @@ esac
 this_script_dir="$(cd "$(dirname "$0")" && pwd -W)" ||
 die "Could not determine this script's dir"
 
-ARM64_OPENSSH=
-ARM64_OPENSSH_PACKAGE=
-ARM64_OPENSSH_STATIC=
 OPENSSH_PACKAGE=openssh
-# Win32 OpenSSH reads its global configuration from ProgramData instead of
-# Git for Windows' /etc/ssh, so keep the native substitution opt-in for now.
-if test aarch64 = "$ARCH" &&
-	{ test 1 = "$USE_ARM64_WIN32_OPENSSH" ||
-	  test -f /etc/arm64-win32-openssh; }
-then
-	ARM64_OPENSSH=t
-	test -n "$ARM64_OPENSSH_SKIP_PREPARE" ||
-	test -f /var/lib/pacman/local/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-1/files ||
-	"$this_script_dir/install-arm64-openssh.sh" --root=/ ||
-	die "Could not prepare the native ARM64 OpenSSH client"
-fi
 
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
-test -z "$ARM64_OPENSSH" ||
-PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
+if test aarch64 = "$ARCH"
+then
+	OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
+	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
+fi
 EXTRA_FILE_EXCLUDES=
 UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX"
@@ -169,26 +157,13 @@ mingw-w64-$PACMAN_ARCH-zstd"
 	then
 		pacman -Q $package_list >"$PACKAGE_VERSIONS_FILE" 2>"$pacman_stderr"
 		res=$?
-		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2
-		test $res = 0 &&
-		if test -n "$ARM64_OPENSSH_STATIC"
-		then
-			printf '%s %s\n' \
-				"$("$this_script_dir/install-arm64-openssh.sh" --print-package-name)" \
-				"$("$this_script_dir/install-arm64-openssh.sh" --print-package-version)" \
-				>>"$PACKAGE_VERSIONS_FILE"
-		fi
+		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2 ||
+		true
 	fi &&
 	pacman -Ql $package_list 2>"$pacman_stderr" |
 	grep -v '/$' |
 	sed 's/^[^ ]* //'
 	res=$?
-	if test $res = 0 && test -n "$ARM64_OPENSSH_STATIC"
-	then
-		sed -e 's/\r$//' -e 's|^|/|' \
-			"$this_script_dir/arm64-openssh-client-files.txt"
-		res=$?
-	fi
 
 	grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2
 	return $res
@@ -205,24 +180,13 @@ has_pacman_package () {
 	return 1
 }
 
-if test -n "$ARM64_OPENSSH"
-then
-	if has_pacman_package mingw-w64-clang-aarch64-win32-openssh-client
-	then
-		ARM64_OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
-	else
-		ARM64_OPENSSH_STATIC=t
-	fi
-	OPENSSH_PACKAGE=$ARM64_OPENSSH_PACKAGE
-fi
-
 has_pacman_package mingw-w64-$PACMAN_ARCH-curl-winssl &&
 LIBCURL_EXTRA=mingw-w64-$PACMAN_ARCH-curl-openssl-alternate ||
 LIBCURL_EXTRA=
 
 # Packages that have been added after Git SDK 1.0.0 was released...
 required=
-for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $LIBCURL_EXTRA \
+for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $OPENSSH_PACKAGE $LIBCURL_EXTRA \
 	$(test -n "$MINIMAL_GIT" || echo \
 		mingw-w64-$PACMAN_ARCH-connect unzip docx2txt \
 		mingw-w64-$PACMAN_ARCH-antiword mingw-w64-$PACMAN_ARCH-odt2txt \
@@ -431,12 +395,6 @@ else
 		-e "^\\($(echo $EXTRA_FILE_EXCLUDES |
 			sed 's/ /\\|/g')\\)\$"
 fi |
-if test -z "$ARM64_OPENSSH"
-then
-	cat
-else
-	grep -v '^/etc/ssh/ssh_config$'
-fi |
 if test aarch64 != "$ARCH" || test -n "$MINIMAL_GIT"
 then
 	cat
@@ -445,13 +403,20 @@ else
 		grep -v \
 			-e '^/usr/bin/\(bunzip2\|bzcat\|bzip2\|bzip2recover\)\.exe$' \
 			-e '^/usr/bin/\(nettle-hash\|nettle-lfib-stream\|nettle-pbkdf2\|pkcs1-conv\|sexp-conv\)\.exe$' \
-			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$'
+			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$' \
+			-e '^/usr/bin/msys-edit-0\.dll$'
 		cat <<-EOF
 		/clangarm64/bin/nettle-hash.exe
 		/clangarm64/bin/nettle-lfib-stream.exe
 		/clangarm64/bin/nettle-pbkdf2.exe
 		EOF
 	}
+fi |
+if test aarch64 = "$ARCH" && test -n "$MINIMAL_GIT"
+then
+	grep -v '^/usr/bin/msys-\(crypt-2\|crypto-3\)\.dll$'
+else
+	cat
 fi |
 LC_CTYPE=C.UTF-8 grep --perl-regexp -v -e '^/usr/(lib|share)/terminfo/(?!.*/(cygwin|dumb|ms-terminal|screen.*|xterm.*)$)' |
 sed 's/^\///' | sort | uniq
@@ -492,8 +457,6 @@ $ETC_GITATTRIBUTES
 usr/bin/rebase.exe
 usr/bin/rebaseall
 EOF
-test -z "$ARM64_OPENSSH" ||
-echo etc/arm64-win32-openssh
 
 test -z "$MINIMAL_GIT_WITH_BUSYBOX" ||
 echo $MSYSTEM_LOWER/bin/busybox.exe

@@ -83,6 +83,13 @@ die "Could not copy license file"
 mkdir -p "$SCRIPT_PATH"/root/etc ||
 die "Could not make etc/"
 
+if test aarch64 = "$ARCH"
+then
+	mkdir -p "$SCRIPT_PATH"/root/cmd &&
+	cp "$SCRIPT_PATH"/ssh.cmd "$SCRIPT_PATH"/root/cmd/ssh.cmd ||
+	die "Could not install the ARM64 OpenSSH launcher"
+fi
+
 test -z "$include_pdbs" || {
 	find "$SCRIPT_PATH/root" -name \*.pdb -exec rm {} \; &&
 	"$SCRIPT_PATH"/../please.sh bundle-pdbs \

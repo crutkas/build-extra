@@ -201,21 +201,40 @@ test -d "$TMPDIR" || test ! -d "$TMP" || {\
 		! grep -q '^Ciphers\s\++' /etc/ssh/ssh_config ||
 		sed -i -e '/^# Added by git-extra/{N;/^\(.*\n\)\?Ciphers +[a-z].*cbc/d}' /etc/ssh/ssh_config
 
-		grep -q '^Host\s\+ssh\.dev\.azure\.com' /etc/ssh/ssh_config ||
-		printf '%s\n%s\n\t%s\n\t%s\n' \
-			'# Added by git-extra' \
-			'Host ssh.dev.azure.com' \
-			'HostkeyAlgorithms +ssh-rsa' \
-			'PubkeyAcceptedAlgorithms +ssh-rsa' \
-			>>/etc/ssh/ssh_config
+		if test /clangarm64 = '@@MINGW_PREFIX@@'
+		then
+			grep -q '^Host\s\+ssh\.dev\.azure\.com' /etc/ssh/ssh_config || {
+				{
+					printf '%s\n%s\n\t%s\n\t%s\n%s\n\t%s\n\t%s\n%s\n\n' \
+						'# Added by git-extra' \
+						'Host ssh.dev.azure.com' \
+						'HostkeyAlgorithms +ssh-rsa' \
+						'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+						'Host *.visualstudio.com' \
+						'HostkeyAlgorithms +ssh-rsa' \
+						'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+						'Host *'
+					cat /etc/ssh/ssh_config
+				} >/etc/ssh/ssh_config.new &&
+				mv /etc/ssh/ssh_config.new /etc/ssh/ssh_config
+			}
+		else
+			grep -q '^Host\s\+ssh\.dev\.azure\.com' /etc/ssh/ssh_config ||
+			printf '%s\n%s\n\t%s\n\t%s\n' \
+				'# Added by git-extra' \
+				'Host ssh.dev.azure.com' \
+				'HostkeyAlgorithms +ssh-rsa' \
+				'PubkeyAcceptedAlgorithms +ssh-rsa' \
+				>>/etc/ssh/ssh_config
 
-		grep -q '^Host\s\+\*\.visualstudio\.com' /etc/ssh/ssh_config ||
-		printf '%s\n%s\n\t%s\n\t%s\n' \
-			'# Added by git-extra' \
-			'Host *.visualstudio.com' \
-			'HostkeyAlgorithms +ssh-rsa' \
-			'PubkeyAcceptedAlgorithms +ssh-rsa' \
-			>>/etc/ssh/ssh_config
+			grep -q '^Host\s\+\*\.visualstudio\.com' /etc/ssh/ssh_config ||
+			printf '%s\n%s\n\t%s\n\t%s\n' \
+				'# Added by git-extra' \
+				'Host *.visualstudio.com' \
+				'HostkeyAlgorithms +ssh-rsa' \
+				'PubkeyAcceptedAlgorithms +ssh-rsa' \
+				>>/etc/ssh/ssh_config
+		fi
 	}
 
 	# Enable color and syntax-highlighting in GNU nano

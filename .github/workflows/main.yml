@@ -7,7 +7,6 @@ env:
 
 jobs:
   determine-packages:
-    if: github.repository != 'crutkas/build-extra' || github.head_ref != 'crutkas-integrate-arm64-openssh' || github.event.pull_request.head.repo.full_name != 'crutkas/build-extra'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -68,7 +67,10 @@ jobs:
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
             check-for-missing-dlls.sh \
             t/check-arm64-native-tools.sh \
-            t/check-arm64-native-tools.ps1)" ||
+            t/check-arm64-native-tools.ps1 \
+            t/check-arm64-openssh-integration.sh \
+            t/check-arm64-openssh-installer.ps1 \
+            t/check-arm64-openssh-package.ps1)" ||
           echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -109,6 +111,12 @@ jobs:
         with:
           name: ${{ steps.build.outputs.result }}
           path: ${{ steps.build.outputs.result }}
+      - name: measure ARM64 artifact downloads
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath "${{ steps.build.outputs.result }}" -File |
+            ForEach-Object { Write-Host "$($_.Name): $($_.Length) bytes" }
       - name: ensure that the Git worktree is still clean
         shell: bash
         run: |
@@ -163,6 +171,20 @@ jobs:
           cygpath -aw "$PWD/sdk-artifact/usr/bin" >>$GITHUB_PATH &&
           cygpath -aw "$PWD/sdk-artifact/${{ matrix.architecture.mingw-prefix }}/bin" >>$GITHUB_PATH &&
           echo "MSYSTEM=${{ matrix.architecture.msystem }}" >>$GITHUB_ENV
+      - name: download the verified ARM64 OpenSSH package
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: validate the Pacman-owned ARM64 OpenSSH package
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-openssh-package.ps1 `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1) `
+            -SdkRoot (Convert-Path sdk-artifact)
       - name: build ${{ matrix.directory }}/
         shell: bash
         id: build
@@ -196,6 +218,8 @@ jobs:
       - name: validate
         if: matrix.directory == 'installer'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -204,24 +228,30 @@ jobs:
           git.exe version --build-options >version &&
           cat version &&
           checklist=installer/run-checklist.sh &&
-          # cannot test SSH keys in read-only mode, skip test for now
-          sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
+          if test aarch64 != "${{ matrix.architecture.name }}"
+          then
+            # Keep the existing read-only fallback outside ARM64.
+            sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
+          else
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
+          fi &&
           sh -x $checklist
       - name: extract Portable Git
         if: matrix.directory == 'portable'
         shell: pwsh
         run: |
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
+          $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o portable-git -y"
+          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           $exitCode = $installer.ExitCode
           if ($exitCode -ne 0) {
             Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
             exit 1
           }
-          Get-ChildItem -Path "portable-git"
-          "$PWD\portable-git\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
-          "$PWD\portable-git\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          Get-ChildItem -Path $portableRoot
+          "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
       - name: validate
         if: matrix.directory == 'portable'
         shell: bash
@@ -231,6 +261,43 @@ jobs:
           test "${root%portable-git}" != "$root" &&
           git.exe version --build-options >version &&
           cat version
+      - name: extract MinGit
+        if: matrix.directory == 'mingit'
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.zip | Select-Object -First 1
+          $minGitRoot = "$env:RUNNER_TEMP\mingit-root"
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $minGitRoot
+          Get-ChildItem -Path $minGitRoot
+      - name: validate the ARM64 OpenSSH runtime
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $root = switch ("${{ matrix.directory }}") {
+            "installer" { "$env:ProgramFiles\Git" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
+            default { throw "Unexpected artifact: ${{ matrix.directory }}" }
+          }
+          $parameters = @{
+            Package = "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst"
+            Scanner = (Convert-Path ./pe-imports.ps1)
+            RuntimeRoot = $root
+          }
+          if ("${{ matrix.directory }}" -eq "mingit") {
+            ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
+          } else {
+            ./t/check-arm64-openssh-package.ps1 @parameters
+          }
+      - name: validate ARM64 installer lifecycle and external SSH
+        if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
+        shell: pwsh
+        run: |
+          $exePath = (Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.exe | Select-Object -First 1).FullName
+          ./t/check-arm64-openssh-installer.ps1 `
+            -Installer $exePath `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1)
   sdk-artifacts:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true'
@@ -284,6 +351,14 @@ jobs:
         shell: bash
         run: |
           set -x &&
+          if test aarch64 = "${{ matrix.arch.name }}" &&
+            test build-installers = "${{ matrix.artifact }}"
+          then
+            fixture_server="$(cygpath -au "$RUNNER_TEMP/azure-ssh-server")" &&
+            git --git-dir=.sdk worktree add --detach "$fixture_server" HEAD &&
+            echo "AZURE_SSH_SERVER_ROOT=$(cygpath -aw "$fixture_server")" \
+              >>$GITHUB_ENV
+          fi &&
           case "${{ matrix.artifact }}" in
           full)
             git --git-dir=.sdk worktree add --detach sdk-artifact
@@ -296,6 +371,11 @@ jobs:
               ${{ matrix.artifact }}
             ;;
           esac &&
+          if test aarch64 = "${{ matrix.arch.name }}" &&
+            test full = "${{ matrix.artifact }}"
+          then
+            ./please.sh use-arm64-native-openssh --root=sdk-artifact
+          fi &&
           ls -la sdk-artifact/ &&
           version="$(sdk-artifact/${{ matrix.arch.mingw-prefix }}/bin/git.exe version)" &&
           echo "git-version=$version" >>$GITHUB_OUTPUT &&
@@ -304,6 +384,20 @@ jobs:
           cygpath -aw "$PWD/sdk-artifact/${{ matrix.arch.mingw-prefix }}/bin" >>$GITHUB_PATH &&
           echo "MSYSTEM=${{ matrix.arch.msystem }}" >>$GITHUB_ENV &&
           cat $GITHUB_PATH
+      - name: download the verified ARM64 OpenSSH package
+        if: matrix.arch.name == 'aarch64' && (matrix.artifact == 'build-installers' || matrix.artifact == 'full')
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: validate the Pacman-owned ARM64 OpenSSH package
+        if: matrix.arch.name == 'aarch64' && (matrix.artifact == 'build-installers' || matrix.artifact == 'full')
+        shell: pwsh
+        run: |
+          ./t/check-arm64-openssh-package.ps1 `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1) `
+            -SdkRoot (Convert-Path sdk-artifact)
       - name: build installer
         if: matrix.artifact == 'build-installers'
         shell: bash
@@ -313,6 +407,12 @@ jobs:
         with:
           name: installer-${{ matrix.arch.name }}
           path: installer-${{ matrix.arch.name }}
+      - name: measure ARM64 installer download
+        if: matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath installer-${{ matrix.arch.name }} -File |
+            ForEach-Object { Write-Host "$($_.Name): $($_.Length) bytes" }
       - name: run the installer
         if: matrix.artifact == 'build-installers'
         shell: pwsh
@@ -339,6 +439,8 @@ jobs:
       - name: validate
         if: matrix.artifact == 'build-installers'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -348,10 +450,31 @@ jobs:
           cat version &&
           grep "${{ steps.build-artifact.outputs.git-version }}" version &&
           checklist=installer/run-checklist.sh &&
-          # cannot test SSH keys in read-only mode, skip test for now
-          sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
+          if test aarch64 != "${{ matrix.arch.name }}"
+          then
+            # Keep the existing read-only fallback outside ARM64.
+            sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
+          else
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
+          fi &&
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
+      - name: validate local Azure-like Git over SSH
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-azure-ssh-fixture.ps1 `
+            -ClientRoot "$env:ProgramFiles\Git" `
+            -ServerRoot "$env:AZURE_SSH_SERVER_ROOT"
+      - name: validate ARM64 installer lifecycle and external SSH
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          $exePath = (Get-ChildItem -Path installer-${{ matrix.arch.name }}/*.exe | Select-Object -First 1).FullName
+          ./t/check-arm64-openssh-installer.ps1 `
+            -Installer $exePath `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1)
   check-for-missing-dlls:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true' || needs.determine-packages.outputs.check-for-missing-dlls == 'true'
@@ -418,33 +541,3 @@ jobs:
         if: matrix.arch.name == 'aarch64'
         shell: pwsh
         run: ./t/check-arm64-native-tools.ps1 -Root (Convert-Path sdk-artifact)
-  arm64-openssh:
-    if: github.repository == 'crutkas/build-extra' && github.head_ref == 'crutkas-integrate-arm64-openssh' && github.event.pull_request.head.repo.full_name == 'crutkas/build-extra'
-    runs-on: windows-11-arm
-    steps:
-      - name: check out the fork-local PR
-        shell: pwsh
-        run: |
-          git init .
-          git fetch --no-tags --depth=1 https://github.com/crutkas/build-extra.git ${{ github.event.pull_request.head.sha }}
-          git checkout --detach FETCH_HEAD
-      - name: download the fork-local OpenSSH package
-        shell: pwsh
-        run: |
-          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-1-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-1-any.pkg.tar.zst"
-          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
-      - name: validate integration selection
-        shell: bash
-        run: |
-          ./install-arm64-openssh.sh \
-            --package="$RUNNER_TEMP/win32-openssh.pkg.tar.zst" \
-            --verify-only &&
-          ./t/check-arm64-openssh-integration.sh
-      - name: validate payload with the fork-local scanner
-        shell: pwsh
-        run: |
-          git fetch --no-tags --depth=1 https://github.com/crutkas/build-extra.git 9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19
-          git show FETCH_HEAD:pe-imports.ps1 | Set-Content -Encoding utf8 "$env:RUNNER_TEMP\pe-imports.ps1"
-          ./t/check-arm64-openssh-package.ps1 `
-            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
-            -Scanner "$env:RUNNER_TEMP\pe-imports.ps1"

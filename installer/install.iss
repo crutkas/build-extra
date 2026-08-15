@@ -2872,6 +2872,33 @@ begin
     end;
 end;
 
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+procedure CleanupARM64OpenSSHLegacyFiles;
+var
+    AppDir:String;
+begin
+    AppDir:=ExpandConstant('{app}');
+    if FileExists(AppDir+'\etc\ssh\moduli') and
+       not DeleteFile(AppDir+'\etc\ssh\moduli') then
+        LogError('Failed to remove the bundled OpenSSH moduli');
+    if FileExists(AppDir+'\etc\ssh\ssh_config') and
+       not DeleteFile(AppDir+'\etc\ssh\ssh_config') then
+        LogError('Failed to remove the incompatible bundled ssh_config');
+    if FileExists(AppDir+'\etc\ssh\sshd_config') and
+       not DeleteFile(AppDir+'\etc\ssh\sshd_config') then
+        LogError('Failed to remove the bundled sshd_config');
+    if FileExists(AppDir+'\usr\bin\ssh-copy-id') and
+       not DeleteFile(AppDir+'\usr\bin\ssh-copy-id') then
+        LogError('Failed to remove the bundled ssh-copy-id');
+    if FileExists(AppDir+'\usr\lib\ssh\ssh-keysign.exe') and
+       not DeleteFile(AppDir+'\usr\lib\ssh\ssh-keysign.exe') then
+        LogError('Failed to remove unsupported ssh-keysign.exe');
+    if FileExists(AppDir+'\usr\share\licenses\openssh\LICENCE') and
+       not DeleteFile(AppDir+'\usr\share\licenses\openssh\LICENCE') then
+        LogError('Failed to remove the bundled OpenSSH license');
+end;
+#endif
+
 procedure HardlinkOrCopy(Target,Source:String);
 var
     LinkCreated:Boolean;
@@ -3140,6 +3167,9 @@ begin
             Log('Line {#__LINE__}: RmShutdown not supported.');
         end;
 
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+        CleanupARM64OpenSSHLegacyFiles();
+#endif
         CleanupWhenUpgrading();
 
         Exit;
@@ -3561,27 +3591,6 @@ begin
     {
         Optionally "skip" installing bundled SSH binaries conflicting with external OpenSSH:
     }
-
-#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
-    if FileExists(AppDir+'\etc\ssh\moduli') and
-       not DeleteFile(AppDir+'\etc\ssh\moduli') then
-        LogError('Failed to remove the bundled OpenSSH moduli');
-    if FileExists(AppDir+'\etc\ssh\ssh_config') and
-       not DeleteFile(AppDir+'\etc\ssh\ssh_config') then
-        LogError('Failed to remove the incompatible bundled ssh_config');
-    if FileExists(AppDir+'\etc\ssh\sshd_config') and
-       not DeleteFile(AppDir+'\etc\ssh\sshd_config') then
-        LogError('Failed to remove the bundled sshd_config');
-    if FileExists(AppDir+'\usr\bin\ssh-copy-id') and
-       not DeleteFile(AppDir+'\usr\bin\ssh-copy-id') then
-        LogError('Failed to remove the bundled ssh-copy-id');
-    if FileExists(AppDir+'\usr\lib\ssh\ssh-keysign.exe') and
-       not DeleteFile(AppDir+'\usr\lib\ssh\ssh-keysign.exe') then
-        LogError('Failed to remove unsupported ssh-keysign.exe');
-    if FileExists(AppDir+'\usr\share\licenses\openssh\LICENCE') and
-       not DeleteFile(AppDir+'\usr\share\licenses\openssh\LICENCE') then
-        LogError('Failed to remove the bundled OpenSSH license');
-#endif
 
 #ifdef DELETE_OPENSSH_FILES
     if (SSHChoicePage<>NIL) and (RdbSSH[GS_ExternalOpenSSH].Checked) then begin

@@ -395,6 +395,129 @@ bundle_pdbs () { # [--directory=<artifacts-directory] [--unpack=<directory>] [--
 	done
 }
 
+use_arm64_native_openssh () { # [--root=<directory>]
+	root=
+	while case "$1" in
+	--root)
+		shift
+		root="$(cygpath -am "$1")" || exit
+		;;
+	--root=*)
+		root="$(cygpath -am "${1#*=}")" || exit
+		;;
+	-*) die "Unknown option: %s\n" "$1";;
+	*) break;;
+	esac; do shift; done
+	test $# = 0 ||
+	die "Unexpected argument(s): %s\n" "$*"
+	test -n "$root" ||
+	die "Need --root=<directory>\n"
+
+	package=mingw-w64-clang-aarch64-win32-openssh-client
+	version=10.0.0.0-2
+	archive=$package-$version-any.pkg.tar.zst
+	sha256=26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8
+	# Built from crutkas/MINGW-packages c97decf4acf026790b0989e0f08be8142b9f7ec2.
+	url=https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/$archive
+	archive_cache=${TMPDIR:-/tmp}/$archive
+
+	if test -f "$archive_cache"
+	then
+		actual="$(sha256sum <"$archive_cache" | sed 's/ .*//')" ||
+		die "Could not hash %s\n" "$archive_cache"
+		test "$sha256" = "$actual" ||
+		rm -f "$archive_cache" ||
+		die "Could not remove package with unexpected SHA-256: %s\n" "$archive_cache"
+	fi
+	if test ! -f "$archive_cache"
+	then
+		curl -fL --retry 3 -o "$archive_cache.tmp.$$" "$url" &&
+		mv "$archive_cache.tmp.$$" "$archive_cache" ||
+		{
+			rm -f "$archive_cache.tmp.$$"
+			die "Could not download %s\n" "$url"
+		}
+	fi
+	actual="$(sha256sum <"$archive_cache" | sed 's/ .*//')" &&
+	test "$sha256" = "$actual" ||
+	die "Unexpected SHA-256 for %s: %s\n" "$archive_cache" "$actual"
+	mkdir -p "$root/tmp" &&
+	cp "$archive_cache" "$root/tmp/$archive" ||
+	die "Could not stage %s in the target SDK\n" "$archive"
+	package_path=$root/tmp/$archive
+
+	run_arm64_openssh_pacman () {
+		if test / = "$root"
+		then
+			pacman "$@"
+		else
+			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+		fi
+	}
+
+	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$package_path")" ||
+	{
+		rm -f "$root/tmp/$archive"
+		die "Unexpected package metadata in %s\n" "$archive_cache"
+	}
+	has_msys_openssh=
+	for dir in "$root"/var/lib/pacman/local/openssh-[0-9]*
+	do
+		test -d "$dir" &&
+		has_msys_openssh=t
+	done
+	if test -n "$has_msys_openssh" &&
+		run_arm64_openssh_pacman -Q "$package" >/dev/null 2>&1
+	then
+		run_arm64_openssh_pacman -R --noconfirm openssh ||
+		die "Could not remove MSYS OpenSSH through the native provider\n"
+	fi
+	rm -f "$root/etc/ssh/ssh_config" \
+		"$root/etc/ssh/ssh_config.pacnew" \
+		"$root/etc/ssh/ssh_config.pacsave" ||
+	die "Could not remove stale ARM64 OpenSSH configuration\n"
+	openssh_version="$(run_arm64_openssh_pacman -Q openssh 2>/dev/null |
+		sed -n 's/^openssh //p')" ||
+	openssh_version=
+	test -n "$openssh_version" ||
+	openssh_version=1
+	run_arm64_openssh_pacman -U --noconfirm \
+		--assume-installed "openssh=$openssh_version" "$package_path" &&
+	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
+	run_arm64_openssh_pacman -Qkk "$package"
+	res=$?
+	rm -f "$root/tmp/$archive" ||
+	die "Could not remove staged package %s\n" "$archive"
+	test $res = 0 ||
+	die "Could not install and verify %s\n" "$package"
+	package_desc="$root/var/lib/pacman/local/$package-$version/desc"
+	test -f "$package_desc" ||
+	die "Could not find Pacman metadata for %s\n" "$package"
+	grep -qx '%PROVIDES%' "$package_desc" ||
+	printf '\n%%PROVIDES%%\nopenssh\n\n' >>"$package_desc" ||
+	die "Could not record the installed OpenSSH capability\n"
+	sed -n '/^%PROVIDES%$/,/^$/p' "$package_desc" |
+	grep -qx openssh ||
+	die "The installed package does not satisfy the OpenSSH dependency\n"
+	ssh_config="$root/etc/ssh/ssh_config"
+	test -f "$ssh_config" ||
+	die "Could not find the native OpenSSH system configuration\n"
+	{
+		printf '%s\n%s\n\t%s\n\t%s\n%s\n\t%s\n\t%s\n%s\n\n' \
+			'# Added by git-extra' \
+			'Host ssh.dev.azure.com' \
+			'HostkeyAlgorithms +ssh-rsa' \
+			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+			'Host *.visualstudio.com' \
+			'HostkeyAlgorithms +ssh-rsa' \
+			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+			'Host *'
+		cat "$ssh_config"
+	} >"$ssh_config.new" &&
+	mv "$ssh_config.new" "$ssh_config" ||
+	die "Could not configure Azure SSH compatibility\n"
+}
+
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
 	git_sdk_path=/
 	output_path=
@@ -690,7 +813,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			fi &&
 			printf '\n# For the /etc/msystem.d/ check\n/etc/msystem.d/\n\n' >>"$sparse_checkout_file" &&
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
-			ARM64_OPENSSH_SKIP_PREPARE=1 ARCH=$architecture "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
+			{ test aarch64 != "$architecture" ||
+				use_arm64_native_openssh --root="$output_path"; } &&
+			ARCH=$architecture "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
 			;;
 		esac &&
@@ -725,14 +850,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		;;
 	esac &&
 	git -C "$output_path" checkout -- &&
-	if test build-installers = "$mode" &&
-		test aarch64 = "$architecture" &&
-		test 1 = "$USE_ARM64_WIN32_OPENSSH"
-	then
-		PACMAN="$output_path/usr/bin/pacman.exe" \
-		"${this_script_path%/*}/install-arm64-openssh.sh" \
-			--root="$output_path"
-	fi &&
+	{ test build-installers != "$mode" ||
+		test aarch64 != "$architecture" ||
+		use_arm64_native_openssh --root="$output_path"; } &&
 	if test ! -f "$output_path/etc/profile"
 	then
 		if test minimal-sdk = $mode
