@@ -94,7 +94,7 @@ function Test-OpenSshBehavior([string]$Root) {
     if ($LASTEXITCODE -ne 0 -or $version -notmatch "OpenSSH_for_Windows_10\.0") {
         throw "Unexpected ssh -V result: $version"
     }
-    $packagedPolicy = @(& $ssh -G package-default 2>&1)
+    $packagedPolicy = @(& $ssh -G -T package-default 2>&1)
     if ($LASTEXITCODE -ne 0 -or
         -not ($packagedPolicy -match "^pubkeyacceptedalgorithms .*ssh-rsa") -or
         ($packagedPolicy -match "ssh-dss")) {
@@ -137,11 +137,11 @@ Host precedence
     User user-policy
 "@ | Set-Content -Encoding ascii -LiteralPath $userConfig
 
-        $effective = @(& $ssh -G executable-relative 2>&1)
+        $effective = @(& $ssh -G -T executable-relative 2>&1)
         if ($LASTEXITCODE -ne 0 -or $effective -notcontains "port 2222") {
             throw "ssh.exe did not load ../../etc/ssh/ssh_config"
         }
-        $effective = @(& $ssh -G precedence 2>&1)
+        $effective = @(& $ssh -G -T precedence 2>&1)
         if ($LASTEXITCODE -ne 0 -or $effective -notcontains "user user-policy") {
             throw "The user configuration did not take precedence over the global configuration"
         }
@@ -151,7 +151,7 @@ Host precedence
     User command-file-policy
     Port 2200
 "@ | Set-Content -Encoding ascii -LiteralPath $overrideConfig
-        $effective = @(& $ssh -G -F $overrideConfig precedence 2>&1)
+        $effective = @(& $ssh -G -T -F $overrideConfig precedence 2>&1)
         if ($LASTEXITCODE -ne 0 -or
             $effective -notcontains "user command-file-policy" -or
             $effective -notcontains "port 2200") {
@@ -164,14 +164,14 @@ Host included-policy
 "@ | Set-Content -Encoding ascii -LiteralPath $includeConfig
         "Include `"$($includeConfig.Replace('\', '/'))`"" |
             Set-Content -Encoding ascii -LiteralPath $mainConfig
-        $effective = @(& $ssh -G -F $mainConfig included-policy 2>&1)
+        $effective = @(& $ssh -G -T -F $mainConfig included-policy 2>&1)
         if ($LASTEXITCODE -ne 0 -or $effective -notcontains "user include-policy") {
             throw "Include did not load the referenced configuration"
         }
 
         "UnsupportedDirective value" |
             Set-Content -Encoding ascii -LiteralPath $malformedConfig
-        $malformed = @(& $ssh -G -F $malformedConfig malformed 2>&1)
+        $malformed = @(& $ssh -G -T -F $malformedConfig malformed 2>&1)
         if ($LASTEXITCODE -ne 255 -or -not ($malformed -match "Bad configuration option")) {
             throw "Malformed configuration was not rejected: $($malformed -join ' | ')"
         }
@@ -252,7 +252,7 @@ Host included-policy
             Remove-Item -Force -LiteralPath $userConfig -ErrorAction SilentlyContinue
         }
     }
-    $azure = @(& $ssh -G ssh.dev.azure.com 2>&1)
+    $azure = @(& $ssh -G -T ssh.dev.azure.com 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "The native client rejected the Azure SSH policy: $($azure -join ' | ')"
     }
@@ -528,7 +528,7 @@ try {
                 throw "MinGit does not contain the ARM64 OpenSSH launcher"
             }
             $minGitPolicy = @(& $env:ComSpec /d /s /c `
-                "`"$minGitSsh`" -G package-default" 2>&1)
+                "`"$minGitSsh`" -G -T package-default" 2>&1)
             if ($LASTEXITCODE -ne 0 -or
                 -not ($minGitPolicy -match "^pubkeyacceptedalgorithms .*ssh-rsa") -or
                 ($minGitPolicy -match "ssh-dss")) {
