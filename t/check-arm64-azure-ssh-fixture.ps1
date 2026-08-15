@@ -112,8 +112,8 @@ PrintMotd no
 PermitTTY no
 AllowTcpForwarding no
 AllowAgentForwarding no
-HostKeyAlgorithms ssh-rsa
-PubkeyAcceptedAlgorithms ssh-rsa
+HostKeyAlgorithms rsa-sha2-512,rsa-sha2-256
+PubkeyAcceptedAlgorithms rsa-sha2-512,rsa-sha2-256
 AllowUsers $env:USERNAME
 ForceCommand /usr/bin/bash.exe /fixture-command.sh
 LogLevel DEBUG3
@@ -165,7 +165,7 @@ LogLevel DEBUG3
     if ($LASTEXITCODE -ne 0 -or
         $hostKeyPolicy.Count -ne 1 -or
         $pubkeyPolicy.Count -ne 1 -or
-        (",$hostKeyPolicy," -notmatch ",ssh-rsa,") -or
+        (",$hostKeyPolicy," -notmatch ",rsa-sha2-512,") -or
         (",$pubkeyPolicy," -notmatch ",ssh-rsa,")) {
         throw "The native client did not apply Azure's RSA policy to the fixture"
     }

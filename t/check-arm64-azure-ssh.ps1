@@ -35,27 +35,75 @@ try {
             throw "Azure SSH check is missing $path"
         }
     }
+    $isArm64 = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq `
+        [Runtime.InteropServices.Architecture]::Arm64
 
-    if (-not (Select-String -Quiet -LiteralPath $globalConfig -Pattern `
-        "^(PubkeyAcceptedKeyTypes\s+.*ssh-rsa|\s*PubkeyAcceptedAlgorithms\s+\+ssh-rsa)\s*$")) {
-        throw "The executable-relative global config lacks RSA user-key policy"
+    New-Item -ItemType Directory -Path $trash | Out-Null
+    $profileHome = [Environment]::GetFolderPath("UserProfile")
+    $userConfig = Join-Path $profileHome ".ssh\config"
+    $userConfigExisted = Test-Path -LiteralPath $userConfig
+    if ($userConfigExisted) {
+        $savedUserConfig = [IO.File]::ReadAllBytes($userConfig)
+        Remove-Item -Force -LiteralPath $userConfig
     }
+    try {
+        $effective = @(& $ssh -G ssh.dev.azure.com 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            throw "The native client rejected the Azure policy: $($effective -join ' | ')"
+        }
 
-    $effective = @(& $ssh -G ssh.dev.azure.com 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "The native client rejected the Azure policy: $($effective -join ' | ')"
+        if ($isArm64) {
+            $relativeRoot = Join-Path $trash "relative-root"
+            $relativeBin = Join-Path $relativeRoot "usr\bin"
+            $relativeEtc = Join-Path $relativeRoot "etc\ssh"
+            New-Item -ItemType Directory -Force -Path $relativeBin, $relativeEtc |
+                Out-Null
+            Copy-Item -LiteralPath $ssh -Destination $relativeBin
+            $sourceBin = Join-Path $Root "usr\bin"
+            Copy-Item -LiteralPath (
+                Join-Path $sourceBin "libcrypto.dll"
+            ) -Destination $relativeBin
+            $relativeConfig = Join-Path $relativeEtc "ssh_config"
+            @"
+Host ssh.dev.azure.com
+    User azure-policy-probe
+    PubkeyAcceptedKeyTypes ssh-ed25519*,ssh-rsa*,ecdsa-sha2*
+"@ | Set-Content -Encoding ascii -LiteralPath $relativeConfig
+            & icacls.exe $relativeConfig /inheritance:r *> $null
+            & icacls.exe $relativeConfig /remove:g `
+                "*S-1-5-11" "*S-1-5-32-545" "*S-1-1-0" *> $null
+            & icacls.exe $relativeConfig /grant:r `
+                "$($env:USERNAME):F" "*S-1-5-18:F" "*S-1-5-32-544:F" *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not secure the executable-relative policy probe"
+            }
+            $relativeSsh = Join-Path $relativeBin "ssh.exe"
+            $relativeEffective = @(& $relativeSsh -G ssh.dev.azure.com 2>&1)
+            if ($LASTEXITCODE -ne 0) {
+                throw "The executable-relative policy probe failed: $($relativeEffective -join ' | ')"
+            }
+        }
+    } finally {
+        if ($userConfigExisted) {
+            [IO.File]::WriteAllBytes($userConfig, $savedUserConfig)
+        }
     }
     $effectiveText = $effective -join "`n"
     Assert-Match $effectiveText "(?m)^hostname ssh\.dev\.azure\.com$" `
         "The native client resolved an unexpected Azure hostname"
+    if ($isArm64) {
+        Assert-Match ($relativeEffective -join "`n") `
+            "(?m)^user azure-policy-probe$" `
+            "The native client did not consume its executable-relative global config"
+    }
     $hostKeyAlgorithms = "," + (
         Get-EffectiveOption $effective "hostkeyalgorithms"
     ) + ","
     $pubkeyAlgorithms = "," + (
         Get-EffectiveOption $effective "pubkeyacceptedalgorithms"
     ) + ","
-    if ($hostKeyAlgorithms -notmatch ",ssh-rsa,") {
-        throw "The effective Azure host-key policy lacks ssh-rsa"
+    if ($hostKeyAlgorithms -notmatch ",rsa-sha2-512,") {
+        throw "The effective Azure host-key policy lacks RSA/SHA-2"
     }
     if ($pubkeyAlgorithms -notmatch ",ssh-rsa,") {
         throw "The effective Azure user-key policy lacks ssh-rsa"
@@ -82,7 +130,6 @@ try {
         $tcp.Dispose()
     }
 
-    New-Item -ItemType Directory -Path $trash | Out-Null
     $probeKey = Join-Path $trash "unauthorized-rsa"
     $knownHosts = Join-Path $trash "known_hosts"
     & $sshKeygen -q -t rsa -b 3072 -N "" -f $probeKey
