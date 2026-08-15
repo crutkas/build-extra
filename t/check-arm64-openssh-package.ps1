@@ -491,6 +491,7 @@ try {
             "Host *.visualstudio.com",
             "`tHostkeyAlgorithms +ssh-rsa",
             "`tPubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa",
+            "Host *",
             ""
         )
         $runtimeConfig = @(Get-Content -LiteralPath $runtimeConfigPath)
