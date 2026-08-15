@@ -97,9 +97,9 @@ scan () {
 	die "Could not scan the $label payload"
 }
 
-scan leaf "$leaf_root" "$leaf_source"
-scan busybox "$busybox_root" "$busybox_source"
-scan combined "$combined_root" "$combined_source"
+scan current-leaf "$leaf_root" "$leaf_source"
+scan current-busybox "$busybox_root" "$busybox_source"
+scan current-combined "$combined_root" "$combined_source"
 
 assert_machines () {
 	label=$1
@@ -115,9 +115,9 @@ assert_machines () {
 }
 
 assert_machines release
-assert_machines leaf
-assert_machines busybox
-assert_machines combined
+assert_machines current-leaf
+assert_machines current-busybox
+assert_machines current-combined
 
 added_or_replaced () {
 	before=$1
@@ -141,9 +141,8 @@ added_or_replaced () {
 	die "$after introduced a non-ARM64 PE"
 }
 
-added_or_replaced release leaf "$tmp/leaf.changed"
-added_or_replaced leaf busybox "$tmp/busybox.changed"
-added_or_replaced busybox combined "$tmp/combined.changed"
+added_or_replaced current-leaf current-busybox "$tmp/busybox.changed"
+added_or_replaced current-busybox current-combined "$tmp/combined.changed"
 
 x64_to_arm64 () {
 	before=$1
@@ -157,8 +156,8 @@ x64_to_arm64 () {
 		"$tmp/$before.tsv" "$tmp/$after.tsv" >"$output"
 }
 
-x64_to_arm64 leaf busybox "$tmp/busybox.replaced"
-x64_to_arm64 busybox combined "$tmp/openssh.replaced"
+x64_to_arm64 current-leaf current-busybox "$tmp/busybox.replaced"
+x64_to_arm64 current-busybox current-combined "$tmp/openssh.replaced"
 cut -f1 "$tmp/busybox.replaced" | sort >"$tmp/busybox.paths"
 sort "$thisdir/../arm64-busybox/default-replacements.txt" >"$tmp/busybox.expected"
 diff -u "$tmp/busybox.expected" "$tmp/busybox.paths" ||
@@ -169,6 +168,126 @@ test 59 = "$busybox_replaced" ||
 die "Expected 59 BusyBox x64-to-ARM64 paths, found $busybox_replaced"
 test 11 = "$openssh_replaced" ||
 die "Expected 11 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
+
+manifest_row () {
+	manifest=$1
+	path=$2
+	architecture=$3
+	row="$(awk -F '	' -v path="$path" -v architecture="$architecture" \
+		'$1 == path && $2 == architecture { print }' "$manifest")"
+	test -n "$row" ||
+	die "Missing $architecture scanner row for $path in ${manifest##*/}"
+	test 1 = "$(printf '%s\n' "$row" | wc -l)" ||
+	die "Found multiple $architecture scanner rows for $path in ${manifest##*/}"
+	printf '%s\n' "$row"
+}
+
+remove_manifest_path () {
+	manifest=$1
+	path=$2
+	awk -F '	' -v path="$path" '$1 != path' "$manifest" >"$manifest.new" &&
+	mv "$manifest.new" "$manifest" ||
+	die "Could not remove $path from ${manifest##*/}"
+}
+
+cp "$tmp/release.tsv" "$tmp/leaf.tsv" ||
+die "Could not initialize the leaf manifest"
+cat >"$tmp/leaf-x64.paths" <<-\EOF
+	usr/bin/bunzip2.exe
+	usr/bin/bzcat.exe
+	usr/bin/bzip2.exe
+	usr/bin/bzip2recover.exe
+	usr/bin/nettle-hash.exe
+	usr/bin/nettle-lfib-stream.exe
+	usr/bin/nettle-pbkdf2.exe
+	usr/bin/p11-kit.exe
+	usr/bin/pkcs1-conv.exe
+	usr/bin/sexp-conv.exe
+	usr/bin/trust.exe
+	EOF
+cat >"$tmp/leaf-arm64.paths" <<-\EOF
+	clangarm64/bin/bunzip2.exe
+	clangarm64/bin/bzcat.exe
+	clangarm64/bin/bzip2.exe
+	clangarm64/bin/bzip2recover.exe
+	clangarm64/bin/nettle-hash.exe
+	clangarm64/bin/nettle-lfib-stream.exe
+	clangarm64/bin/nettle-pbkdf2.exe
+	clangarm64/bin/p11-kit.exe
+	clangarm64/bin/pkcs1-conv.exe
+	clangarm64/bin/sexp-conv.exe
+	clangarm64/bin/trust.exe
+	EOF
+leaf_removed=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/leaf.tsv" "$path" x64 >/dev/null
+	remove_manifest_path "$tmp/leaf.tsv" "$path"
+	leaf_removed=$((leaf_removed + 1))
+done <"$tmp/leaf-x64.paths"
+test 11 = "$leaf_removed" ||
+die "Expected 11 leaf-tool x64 removals, found $leaf_removed"
+leaf_added=0
+while IFS= read -r path
+do
+	row="$(manifest_row "$tmp/current-leaf.tsv" "$path" arm64)"
+	if ! awk -F '	' -v path="$path" '$1 == path { found = 1 } END { exit !found }' \
+		"$tmp/leaf.tsv"
+	then
+		printf '%s\n' "$row" >>"$tmp/leaf.tsv" ||
+		die "Could not add $path to the leaf manifest"
+		leaf_added=$((leaf_added + 1))
+	fi
+done <"$tmp/leaf-arm64.paths"
+test 3 = "$leaf_added" ||
+die "Expected 3 leaf-tool ARM64 additions, found $leaf_added"
+sort -o "$tmp/leaf.tsv" "$tmp/leaf.tsv"
+
+cp "$tmp/leaf.tsv" "$tmp/busybox.tsv" ||
+die "Could not initialize the BusyBox manifest"
+while IFS= read -r path
+do
+	manifest_row "$tmp/busybox.tsv" "$path" x64 >/dev/null
+	row="$(manifest_row "$tmp/current-busybox.tsv" "$path" arm64)"
+	remove_manifest_path "$tmp/busybox.tsv" "$path"
+	printf '%s\n' "$row" >>"$tmp/busybox.tsv" ||
+	die "Could not add $path to the BusyBox manifest"
+done <"$thisdir/../arm64-busybox/default-replacements.txt"
+sort -o "$tmp/busybox.tsv" "$tmp/busybox.tsv"
+
+cp "$tmp/busybox.tsv" "$tmp/combined.tsv" ||
+die "Could not initialize the combined manifest"
+while IFS='	' read -r path architecture machine
+do
+	manifest_row "$tmp/combined.tsv" "$path" x64 >/dev/null
+	row="$(manifest_row "$tmp/current-combined.tsv" "$path" arm64)"
+	remove_manifest_path "$tmp/combined.tsv" "$path"
+	printf '%s\n' "$row" >>"$tmp/combined.tsv" ||
+	die "Could not add $path to the combined manifest"
+done <"$tmp/openssh.replaced"
+sort -o "$tmp/combined.tsv" "$tmp/combined.tsv"
+
+added_or_replaced release leaf "$tmp/leaf.changed"
+added_or_replaced leaf busybox "$tmp/busybox.normalized.changed"
+added_or_replaced busybox combined "$tmp/combined.normalized.changed"
+for label in leaf busybox combined
+do
+	awk -F '	' '$2 != "arm64" && $2 != "anycpu" {
+		print $1 "\t" $2
+	}' "$tmp/$label.tsv" | sort -u >"$tmp/$label.foreign"
+done
+awk -F '	' '$2 != "arm64" && $2 != "anycpu" {
+	print $1 "\t" $2
+}' "$tmp/release.tsv" | sort -u >"$tmp/release.foreign"
+for label in leaf busybox combined
+do
+	comm -13 "$tmp/release.foreign" "$tmp/$label.foreign" \
+		>"$tmp/$label.new-foreign"
+	test ! -s "$tmp/$label.new-foreign" || {
+		cat "$tmp/$label.new-foreign" >&2
+		die "$label introduced a foreign-architecture path"
+	}
+done
 
 count () {
 	awk -F '	' -v architecture="$2" \
@@ -190,6 +309,20 @@ test -59 = "$((busybox_x64 - leaf_x64))" ||
 die "BusyBox did not remove exactly 59 x64 PEs"
 test -11 = "$((combined_x64 - busybox_x64))" ||
 die "OpenSSH did not remove exactly 11 x64 PEs"
+test 3 = "$((leaf_arm64 - release_arm64))" ||
+die "The native leaf tools did not add exactly 3 ARM64 PEs"
+test 59 = "$((busybox_arm64 - leaf_arm64))" ||
+die "BusyBox did not add exactly 59 ARM64 PEs"
+test 11 = "$((combined_arm64 - busybox_arm64))" ||
+die "OpenSSH did not add exactly 11 ARM64 PEs"
+test "$release_x86" = "$leaf_x86" &&
+test "$release_x86" = "$busybox_x86" &&
+test "$release_x86" = "$combined_x86" ||
+die "The combined payload changed the x86 PE count"
+test "$release_anycpu" = "$leaf_anycpu" &&
+test "$release_anycpu" = "$busybox_anycpu" &&
+test "$release_anycpu" = "$combined_anycpu" ||
+die "The combined payload changed the CLR AnyCPU PE count"
 
 report="$thisdir/../arm64-combined-architecture-report.txt"
 {
@@ -217,8 +350,8 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	openssh_x64_delta=$((combined_x64 - busybox_x64))
 	combined_x64_delta=$((combined_x64 - release_x64))
 	leaf_added_or_replaced_arm64_pes=$(wc -l <"$tmp/leaf.changed")
-	busybox_added_or_replaced_arm64_pes=$(wc -l <"$tmp/busybox.changed")
-	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/combined.changed")
+	busybox_added_or_replaced_arm64_pes=$(wc -l <"$tmp/busybox.normalized.changed")
+	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/combined.normalized.changed")
 	busybox_x64_to_arm64_paths=$busybox_replaced
 	openssh_x64_to_arm64_paths=$openssh_replaced
 	new_foreign_architecture_paths=0
