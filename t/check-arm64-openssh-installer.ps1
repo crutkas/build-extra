@@ -48,12 +48,10 @@ foreach ($relative in @(
         throw "Legacy path survived repair/update: $relative"
     }
 }
-$configHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (
-    Join-Path $AppRoot "etc\ssh\ssh_config"
-)).Hash.ToLowerInvariant()
-if ($configHash -ne "8afa8d96895abae6a4770bde0916b985b28bef5979b016da5621d65f92e1c3de") {
-    throw "Repair/update did not restore the packaged ssh_config"
-}
+& "$PSScriptRoot\check-arm64-openssh-package.ps1" `
+    -Package $Package `
+    -Scanner $Scanner `
+    -RuntimeRoot $AppRoot
 
 $uninstaller = Join-Path $AppRoot "unins000.exe"
 $uninstall = Start-Process -PassThru -Wait -FilePath $uninstaller `
