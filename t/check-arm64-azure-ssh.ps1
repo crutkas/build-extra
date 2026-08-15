@@ -36,10 +36,11 @@ try {
         }
     }
 
-    $globalPolicy = Get-Content -Raw -LiteralPath $globalConfig
-    Assert-Match $globalPolicy `
-        "(?m)^(PubkeyAcceptedKeyTypes\s+.*ssh-rsa|\s*PubkeyAcceptedAlgorithms\s+\+ssh-rsa)\s*$" `
-        "The executable-relative global config lacks RSA user-key policy"
+    $globalPolicy = @(Get-Content -LiteralPath $globalConfig)
+    if (-not ($globalPolicy -match `
+        "^(PubkeyAcceptedKeyTypes\s+.*ssh-rsa|\s*PubkeyAcceptedAlgorithms\s+\+ssh-rsa)\s*$")) {
+        throw "The executable-relative global config lacks RSA user-key policy"
+    }
 
     $effective = @(& $ssh -G ssh.dev.azure.com 2>&1)
     if ($LASTEXITCODE -ne 0) {
