@@ -18,8 +18,10 @@ grep -Fq '26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8' \
 grep -Fq 'c97decf4acf026790b0989e0f08be8142b9f7ec2' "$root/please.sh" &&
 grep -Fq 'pacman -Ql "$openssh_package"' "$root/installer/release.sh" &&
 grep -Fq 'REMOVE_ARM64_OPENSSH_LEGACY_FILES' "$root/installer/install.iss" &&
-grep -Fq "test /clangarm64 != '@@MINGW_PREFIX@@'" \
+grep -Fq "test /clangarm64 = '@@MINGW_PREFIX@@'" \
 	"$root/git-extra/git-extra.install.in" &&
+grep -Fq 'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+	"$root/please.sh" &&
 grep -Fq 'git ls-remote git@ssh.dev.azure.com:v3/git-for-windows/git/git main' \
 	"$root/installer/run-checklist.sh" ||
 die "The default package, provenance, cleanup, or Azure gate is not wired"
