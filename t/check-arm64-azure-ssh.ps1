@@ -36,8 +36,7 @@ try {
         }
     }
 
-    $globalPolicy = @(Get-Content -LiteralPath $globalConfig)
-    if (-not ($globalPolicy -match `
+    if (-not (Select-String -Quiet -LiteralPath $globalConfig -Pattern `
         "^(PubkeyAcceptedKeyTypes\s+.*ssh-rsa|\s*PubkeyAcceptedAlgorithms\s+\+ssh-rsa)\s*$")) {
         throw "The executable-relative global config lacks RSA user-key policy"
     }
