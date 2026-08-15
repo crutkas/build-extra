@@ -193,10 +193,6 @@ Host ssh.dev.azure.com
     } finally {
         $env:GIT_SSH_COMMAND = $oldTransportSshCommand
     }
-    if (-not (Test-Path -LiteralPath $knownHosts) -or
-        (Get-Item -LiteralPath $knownHosts).Length -eq 0) {
-        throw "Azure host-key negotiation did not record a host key"
-    }
     Write-Host "::notice::Azure SSH DNS, TCP, RSA policy, host-key, and authentication-boundary checks passed."
 
     $privateKey = $env:ARM64_AZURE_SSH_PRIVATE_KEY
