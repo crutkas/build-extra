@@ -123,10 +123,16 @@ LogLevel DEBUG3
     if ($LASTEXITCODE -ne 0) {
         throw "The Azure-like SSH server configuration is invalid"
     }
-    $server = Start-Process -PassThru -WindowStyle Hidden `
-        -FilePath $sshd `
-        -ArgumentList @("-D", "-e", "-f", $config) `
-        -RedirectStandardError $serverLog
+    $oldServerPath = $env:PATH
+    try {
+        $env:PATH = "$(Join-Path $ServerRoot 'usr\bin');$oldServerPath"
+        $server = Start-Process -PassThru -WindowStyle Hidden `
+            -FilePath $sshd `
+            -ArgumentList @("-D", "-e", "-f", $config) `
+            -RedirectStandardError $serverLog
+    } finally {
+        $env:PATH = $oldServerPath
+    }
 
     $ready = $false
     for ($attempt = 0; $attempt -lt 50; $attempt++) {
@@ -152,7 +158,7 @@ LogLevel DEBUG3
         throw "The Azure-like SSH server did not begin listening"
     }
 
-    $effective = @(& $ssh -G `
+    $effective = @(& $ssh -G -T `
         -o HostName=127.0.0.1 `
         -o "Port=$port" `
         ssh.dev.azure.com 2>&1)

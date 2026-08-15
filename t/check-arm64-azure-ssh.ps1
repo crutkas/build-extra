@@ -47,7 +47,7 @@ try {
         Remove-Item -Force -LiteralPath $userConfig
     }
     try {
-        $effective = @(& $ssh -G ssh.dev.azure.com 2>&1)
+        $effective = @(& $ssh -G -T ssh.dev.azure.com 2>&1)
         if ($LASTEXITCODE -ne 0) {
             throw "The native client rejected the Azure policy: $($effective -join ' | ')"
         }
@@ -78,7 +78,7 @@ Host ssh.dev.azure.com
                 throw "Could not secure the executable-relative policy probe"
             }
             $relativeSsh = Join-Path $relativeBin "ssh.exe"
-            $relativeEffective = @(& $relativeSsh -G ssh.dev.azure.com 2>&1)
+            $relativeEffective = @(& $relativeSsh -G -T ssh.dev.azure.com 2>&1)
             if ($LASTEXITCODE -ne 0) {
                 throw "The executable-relative policy probe failed: $($relativeEffective -join ' | ')"
             }
