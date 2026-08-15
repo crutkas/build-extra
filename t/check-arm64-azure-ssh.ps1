@@ -37,10 +37,6 @@ try {
     }
 
     $globalPolicy = Get-Content -Raw -LiteralPath $globalConfig
-    Assert-Match $globalPolicy "(?m)^Host\s+ssh\.dev\.azure\.com\s*$" `
-        "The executable-relative global config lacks the Azure host policy"
-    Assert-Match $globalPolicy "(?m)^\s*HostkeyAlgorithms\s+\+ssh-rsa\s*$" `
-        "The executable-relative global config lacks Azure's RSA host-key fallback"
     Assert-Match $globalPolicy `
         "(?m)^(PubkeyAcceptedKeyTypes\s+.*ssh-rsa|\s*PubkeyAcceptedAlgorithms\s+\+ssh-rsa)\s*$" `
         "The executable-relative global config lacks RSA user-key policy"

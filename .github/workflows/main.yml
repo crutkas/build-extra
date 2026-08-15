@@ -366,6 +366,7 @@ jobs:
               /usr/bin/sshd.exe \
               '/usr/lib/ssh/sshd-*.exe' \
               /etc/nsswitch.conf &&
+            git -C "$fixture_server" checkout -- &&
             echo "AZURE_SSH_SERVER_ROOT=$(cygpath -aw "$fixture_server")" \
               >>$GITHUB_ENV
           fi &&
