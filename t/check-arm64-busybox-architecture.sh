@@ -180,8 +180,8 @@ busybox_replaced=$(wc -l <"$tmp/busybox.replaced")
 openssh_replaced=$(wc -l <"$tmp/openssh.replaced")
 test 59 = "$busybox_replaced" ||
 die "Expected 59 BusyBox x64-to-ARM64 paths, found $busybox_replaced"
-test 11 = "$openssh_replaced" ||
-die "Expected 11 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
+test 10 = "$openssh_replaced" ||
+die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
 test 14 = "$(wc -l <"$tmp/combined.changed")" ||
@@ -199,6 +199,37 @@ manifest_row () {
 	die "Found multiple $architecture scanner rows for $path in ${manifest##*/}"
 	printf '%s\n' "$row"
 }
+
+cat >"$tmp/legacy-openssh.paths" <<-\EOF
+	usr/bin/scp.exe
+	usr/bin/sftp.exe
+	usr/bin/ssh-add.exe
+	usr/bin/ssh-agent.exe
+	usr/bin/ssh-keygen.exe
+	usr/bin/ssh-keyscan.exe
+	usr/bin/ssh.exe
+	usr/lib/ssh/sftp-server.exe
+	usr/lib/ssh/ssh-keysign.exe
+	usr/lib/ssh/ssh-pkcs11-helper.exe
+	usr/lib/ssh/ssh-sk-helper.exe
+	EOF
+legacy_openssh=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/release.tsv" "$path" x64 >/dev/null
+	if test usr/lib/ssh/ssh-keysign.exe = "$path"
+	then
+		! awk -F '	' -v path="$path" \
+			'$1 == path { found = 1 } END { exit !found }' \
+			"$tmp/current-combined.tsv" ||
+		die "$path remains in the combined payload"
+	else
+		manifest_row "$tmp/current-combined.tsv" "$path" arm64 >/dev/null
+	fi
+	legacy_openssh=$((legacy_openssh + 1))
+done <"$tmp/legacy-openssh.paths"
+test 11 = "$legacy_openssh" ||
+die "Expected 11 legacy OpenSSH PEs, checked $legacy_openssh"
 
 remove_manifest_path () {
 	manifest=$1
@@ -334,6 +365,8 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/combined.changed")
 	busybox_x64_to_arm64_paths=$busybox_replaced
 	openssh_x64_to_arm64_paths=$openssh_replaced
+	legacy_openssh_x64_paths_checked=$legacy_openssh
+	legacy_openssh_removed_paths=1
 	busybox_removed_pe_paths=$(wc -l <"$tmp/busybox.removed")
 	openssh_removed_pe_paths=$(wc -l <"$tmp/combined.removed")
 	new_foreign_architecture_paths=0
