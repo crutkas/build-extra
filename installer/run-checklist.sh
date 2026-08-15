@@ -20,7 +20,7 @@ case "$(git version)" in *2.40.*|*2.[123][0-9].*) true;; *) exit 123;; esac
 
 if test -n "$GIT_FOR_WINDOWS_AZURE_SSH_CHECK"
 then
-	powershell.exe -NoProfile -ExecutionPolicy Bypass \
+	pwsh.exe -NoProfile \
 		-File "$GIT_FOR_WINDOWS_AZURE_SSH_CHECK" \
 		-Root "$(cygpath -aw /)"
 else
