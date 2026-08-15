@@ -107,7 +107,6 @@ ChallengeResponseAuthentication no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
 StrictModes no
-UsePAM no
 UseDNS no
 PrintMotd no
 PermitTTY no
@@ -153,9 +152,7 @@ LogLevel DEBUG3
         throw "The Azure-like SSH server did not begin listening"
     }
 
-    $emptyUserConfig = Join-Path $trash "empty-user-config"
-    "" | Set-Content -Encoding ascii -LiteralPath $emptyUserConfig
-    $effective = @(& $ssh -G -F $emptyUserConfig `
+    $effective = @(& $ssh -G `
         -o HostName=127.0.0.1 `
         -o "Port=$port" `
         ssh.dev.azure.com 2>&1)
@@ -178,8 +175,7 @@ LogLevel DEBUG3
         $sshForShell = $ssh.Replace("\", "/")
         $keyForShell = $userKey.Replace("\", "/")
         $knownHostsForShell = $knownHosts.Replace("\", "/")
-        $configForShell = $emptyUserConfig.Replace("\", "/")
-        $env:GIT_SSH_COMMAND = "'$sshForShell' -F '$configForShell' " +
+        $env:GIT_SSH_COMMAND = "'$sshForShell' " +
             "-i '$keyForShell' -o IdentitiesOnly=yes -o BatchMode=yes " +
             "-o HostName=127.0.0.1 -o Port=$port " +
             "-o StrictHostKeyChecking=no " +
