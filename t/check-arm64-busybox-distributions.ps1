@@ -1,9 +1,15 @@
 param(
     [Parameter(Mandatory = $true)]
+    [string]$ReleasedInstaller,
+
+    [Parameter(Mandatory = $true)]
     [string]$BaseInstaller,
 
     [Parameter(Mandatory = $true)]
     [string]$IntegratedInstaller,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ReleasedPortable,
 
     [Parameter(Mandatory = $true)]
     [string]$BasePortable,
@@ -12,16 +18,28 @@ param(
     [string]$IntegratedPortable,
 
     [Parameter(Mandatory = $true)]
+    [string]$ReleasedMinGit,
+
+    [Parameter(Mandatory = $true)]
     [string]$BaseMinGit,
 
     [Parameter(Mandatory = $true)]
     [string]$IntegratedMinGit,
 
     [Parameter(Mandatory = $true)]
+    [string]$ReleasedBusyBoxMinGit,
+
+    [Parameter(Mandatory = $true)]
     [string]$BaseBusyBoxMinGit,
 
     [Parameter(Mandatory = $true)]
     [string]$IntegratedBusyBoxMinGit,
+
+    [Parameter(Mandatory = $true)]
+    [string]$OpenSshPackage,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Scanner,
 
     [Parameter(Mandatory = $true)]
     [string]$OutputDirectory
@@ -251,14 +269,28 @@ function Assert-Git {
 function Assert-Integrated {
     param(
         [Parameter(Mandatory = $true)][string]$Root,
-        [switch]$AllowMissingReplacements
+        [switch]$AllowMissingReplacements,
+        [switch]$MinGit
     )
 
-    $arguments = @{
+    $busyBoxArguments = @{
         Root = $Root
         AllowMissingReplacements = $AllowMissingReplacements
     }
-    & (Join-Path $PSScriptRoot 'check-arm64-busybox.ps1') @arguments
+    & (Join-Path $PSScriptRoot 'check-arm64-busybox.ps1') @busyBoxArguments
+
+    $openSshArguments = @{
+        Package = $OpenSshPackage
+        Scanner = $Scanner
+        RuntimeRoot = $Root
+    }
+    if ($MinGit) {
+        & (Join-Path $PSScriptRoot 'check-arm64-openssh-package.ps1') `
+            @openSshArguments -MinGit
+    } else {
+        & (Join-Path $PSScriptRoot 'check-arm64-openssh-package.ps1') `
+            @openSshArguments
+    }
 }
 
 function Expand-Portable {
@@ -290,19 +322,35 @@ function Expand-Portable {
 }
 
 $products = @{
+    ReleasedInstaller = (Resolve-Path -LiteralPath $ReleasedInstaller).Path
     BaseInstaller = (Resolve-Path -LiteralPath $BaseInstaller).Path
     IntegratedInstaller = (Resolve-Path -LiteralPath $IntegratedInstaller).Path
+    ReleasedPortable = (Resolve-Path -LiteralPath $ReleasedPortable).Path
     BasePortable = (Resolve-Path -LiteralPath $BasePortable).Path
     IntegratedPortable = (Resolve-Path -LiteralPath $IntegratedPortable).Path
+    ReleasedMinGit = (Resolve-Path -LiteralPath $ReleasedMinGit).Path
     BaseMinGit = (Resolve-Path -LiteralPath $BaseMinGit).Path
     IntegratedMinGit = (Resolve-Path -LiteralPath $IntegratedMinGit).Path
+    ReleasedBusyBoxMinGit = (Resolve-Path -LiteralPath $ReleasedBusyBoxMinGit).Path
     BaseBusyBoxMinGit = (Resolve-Path -LiteralPath $BaseBusyBoxMinGit).Path
     IntegratedBusyBoxMinGit = (Resolve-Path -LiteralPath $IntegratedBusyBoxMinGit).Path
 }
+$OpenSshPackage = (Resolve-Path -LiteralPath $OpenSshPackage).Path
+$Scanner = (Resolve-Path -LiteralPath $Scanner).Path
 $measurements = [Collections.Generic.List[object]]::new()
 $lifecycle = [ordered]@{}
 $installedRoot = Join-Path $outputPath 'installed-git'
 $silentInstall = "/SILENT /VERYSILENT /NORESTART /SUPPRESSMSGBOXES /ALLOWDOWNGRADE=1 /TYPE=default /DIR=`"$installedRoot`" /LOG=installer-impact.log"
+
+Invoke-Product -File $products.ReleasedInstaller -Arguments $silentInstall
+Assert-Git -Root $installedRoot
+$measurements.Add((Measure-Tree -Label 'installed-full-release' -Root $installedRoot -Product $products.ReleasedInstaller))
+$uninstaller = Get-ChildItem -LiteralPath $installedRoot -Filter 'unins*.exe' |
+    Select-Object -First 1
+Invoke-Product -File $uninstaller.FullName -Arguments '/VERYSILENT /SILENT /NORESTART /SUPPRESSMSGBOXES'
+if (Test-Path -LiteralPath $installedRoot) {
+    Remove-Item -LiteralPath $installedRoot -Recurse -Force
+}
 
 Invoke-Product -File $products.BaseInstaller -Arguments $silentInstall
 Assert-Git -Root $installedRoot
@@ -360,9 +408,13 @@ if (Test-Path -LiteralPath $installedRoot) {
     Remove-Item -LiteralPath $installedRoot -Recurse -Force
 }
 
+$releasedPortableRoot = Join-Path $outputPath 'portable-release'
 $basePortableRoot = Join-Path $outputPath 'portable-base'
 $integratedPortableRoot = Join-Path $outputPath 'portable-integrated'
 $fallbackPortableRoot = Join-Path $outputPath 'portable-copy-fallback'
+Expand-Portable -Product $products.ReleasedPortable -Destination $releasedPortableRoot
+Assert-Git -Root $releasedPortableRoot
+$measurements.Add((Measure-Tree -Label 'extracted-portable-release' -Root $releasedPortableRoot -Product $products.ReleasedPortable))
 Expand-Portable -Product $products.BasePortable -Destination $basePortableRoot
 Assert-Git -Root $basePortableRoot
 $measurements.Add((Measure-Tree -Label 'extracted-portable-base' -Root $basePortableRoot -Product $products.BasePortable))
@@ -378,8 +430,10 @@ $lifecycle.PortableExtractionPreservedAliases =
     (Test-Path -LiteralPath (Join-Path $integratedPortableRoot 'usr\bin\cat.exe'))
 
 foreach ($item in @(
+    @{ Label = 'standard-mingit-release'; Product = $products.ReleasedMinGit; Directory = 'mingit-release'; Integrated = $false },
     @{ Label = 'standard-mingit-base'; Product = $products.BaseMinGit; Directory = 'mingit-base'; Integrated = $false },
     @{ Label = 'standard-mingit-integrated'; Product = $products.IntegratedMinGit; Directory = 'mingit-integrated'; Integrated = $true },
+    @{ Label = 'busybox-mingit-release'; Product = $products.ReleasedBusyBoxMinGit; Directory = 'busybox-mingit-release'; Integrated = $false },
     @{ Label = 'busybox-mingit-base'; Product = $products.BaseBusyBoxMinGit; Directory = 'busybox-mingit-base'; Integrated = $false },
     @{ Label = 'busybox-mingit-integrated'; Product = $products.IntegratedBusyBoxMinGit; Directory = 'busybox-mingit-integrated'; Integrated = $true }
 )) {
@@ -387,7 +441,7 @@ foreach ($item in @(
     Expand-Archive -LiteralPath $item.Product -DestinationPath $root
     Assert-Git -Root $root
     if ($item.Integrated) {
-        Assert-Integrated -Root $root -AllowMissingReplacements
+        Assert-Integrated -Root $root -AllowMissingReplacements -MinGit
     }
     $measurements.Add((Measure-Tree -Label $item.Label -Root $root -Product $item.Product))
 }
@@ -426,17 +480,75 @@ foreach ($label in $fallbackLabels) {
     }
 }
 
+$deltas = [Collections.Generic.List[object]]::new()
+function Add-Delta {
+    param(
+        [Parameter(Mandatory = $true)][string]$Artifact,
+        [Parameter(Mandatory = $true)][string]$Comparison,
+        [Parameter(Mandatory = $true)][string]$Before,
+        [Parameter(Mandatory = $true)][string]$After
+    )
+
+    $beforeMeasurement = $measurements | Where-Object Label -eq $Before
+    $afterMeasurement = $measurements | Where-Object Label -eq $After
+    if (-not $beforeMeasurement -or -not $afterMeasurement) {
+        throw "Missing delta measurement for $Artifact $Comparison"
+    }
+    $deltas.Add([pscustomobject]@{
+        Artifact = $Artifact
+        Comparison = $Comparison
+        ProductBytes = [int64]($afterMeasurement.ProductBytes - $beforeMeasurement.ProductBytes)
+        TreeLogicalBytes = [int64]($afterMeasurement.TreeLogicalBytes - $beforeMeasurement.TreeLogicalBytes)
+        TreeAllocatedBytes = [int64]($afterMeasurement.TreeAllocatedBytes - $beforeMeasurement.TreeAllocatedBytes)
+    })
+}
+
+foreach ($comparison in @(
+    @{ Name = 'release-to-leaf'; BeforeSuffix = 'release'; AfterSuffix = 'base' },
+    @{ Name = 'release-to-combined'; BeforeSuffix = 'release'; AfterSuffix = 'integrated' },
+    @{ Name = 'leaf-to-combined'; BeforeSuffix = 'base'; AfterSuffix = 'integrated' }
+)) {
+    Add-Delta -Artifact 'installer' -Comparison $comparison.Name `
+        -Before "installed-full-$($comparison.BeforeSuffix)" `
+        -After $(if ($comparison.AfterSuffix -eq 'integrated') {
+            'installed-full-clean-hardlinks'
+        } else {
+            "installed-full-$($comparison.AfterSuffix)"
+        })
+    Add-Delta -Artifact 'portable' -Comparison $comparison.Name `
+        -Before "extracted-portable-$($comparison.BeforeSuffix)" `
+        -After $(if ($comparison.AfterSuffix -eq 'integrated') {
+            'extracted-portable-hardlinks'
+        } else {
+            "extracted-portable-$($comparison.AfterSuffix)"
+        })
+    Add-Delta -Artifact 'mingit' -Comparison $comparison.Name `
+        -Before "standard-mingit-$($comparison.BeforeSuffix)" `
+        -After "standard-mingit-$($comparison.AfterSuffix)"
+    Add-Delta -Artifact 'busybox-mingit' -Comparison $comparison.Name `
+        -Before "busybox-mingit-$($comparison.BeforeSuffix)" `
+        -After "busybox-mingit-$($comparison.AfterSuffix)"
+}
+
 $result = [ordered]@{
-    SchemaVersion = 1
+    SchemaVersion = 2
+    Baselines = [ordered]@{
+        ReleasedPayload = 'v2.55.0.windows.4 via crutkas/build-extra#1@9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19'
+        LeafTools = 'crutkas-arm64-native-leaf-tools@39ffc22208aa99e287a9f433431fb9a56f443b62'
+    }
     Measurements = $measurements
+    Deltas = $deltas
     Lifecycle = $lifecycle
 }
-$jsonPath = Join-Path $outputPath 'arm64-busybox-distribution-impact.json'
+$jsonPath = Join-Path $outputPath 'arm64-combined-distribution-impact.json'
 $result | ConvertTo-Json -Depth 10 |
     Set-Content -LiteralPath $jsonPath -Encoding utf8
 
-$markdownPath = Join-Path $outputPath 'arm64-busybox-distribution-impact.md'
+$markdownPath = Join-Path $outputPath 'arm64-combined-distribution-impact.md'
 $lines = [Collections.Generic.List[string]]::new()
+$lines.Add('Released payload: v2.55.0.windows.4 via crutkas/build-extra#1@9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19')
+$lines.Add('Leaf-tools baseline: crutkas-arm64-native-leaf-tools@39ffc22208aa99e287a9f433431fb9a56f443b62')
+$lines.Add('')
 $lines.Add('| Payload | Download bytes | Tree logical | Tree allocated | Aliases | Alias IDs | Alias links | Alias + BusyBox logical | Alias + BusyBox allocated | Alias + BusyBox IDs |')
 $lines.Add('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
 foreach ($measurement in $measurements) {
@@ -447,6 +559,16 @@ foreach ($measurement in $measurements) {
         "$($measurement.AliasLinkCount) | $($measurement.AliasAndBusyBoxLogicalBytes) | " +
         "$($measurement.AliasAndBusyBoxAllocatedBytes) | " +
         "$($measurement.AliasAndBusyBoxUniqueFileIds) |"
+    )
+}
+$lines.Add('')
+$lines.Add('| Artifact | Comparison | Download delta | Tree logical delta | Tree allocated delta |')
+$lines.Add('| --- | --- | ---: | ---: | ---: |')
+foreach ($delta in $deltas) {
+    $lines.Add(
+        "| $($delta.Artifact) | $($delta.Comparison) | " +
+        "$($delta.ProductBytes) | $($delta.TreeLogicalBytes) | " +
+        "$($delta.TreeAllocatedBytes) |"
     )
 }
 $lines.Add('')

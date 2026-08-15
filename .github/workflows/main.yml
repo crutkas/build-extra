@@ -330,6 +330,8 @@ jobs:
           }
           if ("${{ matrix.directory }}" -eq "mingit") {
             ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
+            $parameters.RuntimeRoot = "$env:RUNNER_TEMP\mingit-busybox-root"
+            ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
           } else {
             ./t/check-arm64-openssh-package.ps1 @parameters
           }
@@ -557,16 +559,6 @@ jobs:
             --branch=${{ matrix.arch.sdk-branch || 'main' }} --filter=blob:none \
             https://github.com/git-for-windows/${{ matrix.arch.sdk-repo }} .sdk
       - name: build build-installers-${{ matrix.arch.name }} artifact
-        if: matrix.arch.name == 'aarch64'
-        shell: bash
-        run: |
-          GFW_ARM64_BUSYBOX=0 \
-          ./please.sh create-sdk-artifact \
-            --architecture=${{ matrix.arch.name }} \
-            --sdk=.sdk \
-            --out=sdk-artifact-before \
-            build-installers
-      - name: build build-installers-${{ matrix.arch.name }} artifact
         shell: bash
         run: |
           set -x &&
@@ -601,19 +593,6 @@ jobs:
           git show FETCH_HEAD:pe-imports.ps1 >pe-imports-pr1.ps1 &&
           echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *pe-imports-pr1.ps1' |
             sha256sum -c -
-      - name: compare ARM64 payload architectures
-        if: matrix.arch.name == 'aarch64'
-        shell: bash
-        run: |
-          ./t/check-arm64-busybox-architecture.sh \
-            --before=sdk-artifact-before \
-            --after=sdk-artifact \
-            --scanner=pe-imports-pr1.ps1
-      - uses: actions/upload-artifact@v7
-        if: matrix.arch.name == 'aarch64'
-        with:
-          name: arm64-busybox-architecture-report
-          path: arm64-busybox-architecture-report.txt
       - name: check ARM64 BusyBox compatibility
         if: matrix.arch.name == 'aarch64'
         shell: bash
@@ -633,7 +612,7 @@ jobs:
         if: matrix.arch.name == 'aarch64'
         shell: pwsh
         run: ./t/check-arm64-native-tools.ps1 -Root (Convert-Path sdk-artifact)
-  arm64-busybox-impact:
+  arm64-combined-impact:
     needs: determine-packages
     if: needs.determine-packages.outputs.check-for-missing-dlls == 'true'
     runs-on: windows-11-arm
@@ -641,30 +620,73 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: prepare exact base source and SDK
+      - name: prepare exact source stages and SDK
         shell: bash
         run: |
+          git fetch --no-tags origin \
+            refs/pull/1/head:refs/remotes/origin/pr-1-scanner \
+            refs/heads/crutkas-arm64-native-leaf-tools:refs/remotes/origin/crutkas-arm64-native-leaf-tools \
+            refs/heads/crutkas-arm64-busybox-packaging:refs/remotes/origin/crutkas-arm64-busybox-packaging &&
+          test 9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19 = \
+            "$(git rev-parse origin/pr-1-scanner)" &&
           test 39ffc22208aa99e287a9f433431fb9a56f443b62 = \
             "$(git rev-parse origin/crutkas-arm64-native-leaf-tools)" &&
+          test 50de8f12409d8cc8e16aef190629073db1a8606d = \
+            "$(git rev-parse origin/crutkas-arm64-busybox-packaging)" &&
+          git worktree add --detach release-source \
+            9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19 &&
           git worktree add --detach base-source \
             39ffc22208aa99e287a9f433431fb9a56f443b62 &&
+          git worktree add --detach busybox-source \
+            50de8f12409d8cc8e16aef190629073db1a8606d &&
+          echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *release-source/pe-imports.ps1' |
+            sha256sum -c - &&
+          echo 'ae1e311fd81258150c2300d02c58655f30b190a15bcbe3ea8bbaccc1ce8c1c9a *release-source/arm64-payload-architecture-v2.55.0.4.tsv' |
+            sha256sum -c - &&
           git clone --bare --depth=1 --single-branch --branch=main \
             --filter=blob:none \
             https://github.com/git-for-windows/git-sdk-arm64 .sdk
-      - name: stage base and integrated SDKs
+      - name: stage release, leaf, BusyBox, and combined SDKs
         shell: bash
         run: |
+          ./release-source/please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
+            --out=sdk-release \
+            build-installers &&
           ./base-source/please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-base \
+            build-installers &&
+          ./busybox-source/please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
+            --out=sdk-busybox \
             build-installers &&
           ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-integrated \
             build-installers
-      - name: build base and integrated distributions
+      - name: scan exact payload architecture stages
+        shell: bash
+        run: |
+          ./t/check-arm64-busybox-architecture.sh \
+            --release-manifest=release-source/arm64-payload-architecture-v2.55.0.4.tsv \
+            --leaf-root=sdk-base \
+            --leaf-source=base-source \
+            --busybox-root=sdk-busybox \
+            --busybox-source=busybox-source \
+            --combined-root=sdk-integrated \
+            --combined-source=. \
+            --scanner=release-source/pe-imports.ps1
+      - name: download the verified ARM64 OpenSSH package
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: build release, leaf, and combined distributions
         shell: bash
         run: |
           build_products () {
@@ -684,24 +706,32 @@ jobs:
           }
 
           root=$PWD &&
+          build_products "$root/sdk-release" "$root/release-source" "$root/impact/release" &&
           build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
           build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
       - name: measure distributions and lifecycle
         shell: pwsh
         run: |
           ./t/check-arm64-busybox-distributions.ps1 `
+            -ReleasedInstaller impact/release/Git-0-test-arm64.exe `
             -BaseInstaller impact/base/Git-0-test-arm64.exe `
             -IntegratedInstaller impact/integrated/Git-0-test-arm64.exe `
+            -ReleasedPortable impact/release/PortableGit-0-test-arm64.7z.exe `
             -BasePortable impact/base/PortableGit-0-test-arm64.7z.exe `
             -IntegratedPortable impact/integrated/PortableGit-0-test-arm64.7z.exe `
+            -ReleasedMinGit impact/release/MinGit-0-test-arm64.zip `
             -BaseMinGit impact/base/MinGit-0-test-arm64.zip `
             -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
+            -ReleasedBusyBoxMinGit impact/release/mingit-busybox/MinGit-0-test-arm64.zip `
             -BaseBusyBoxMinGit impact/base/mingit-busybox/MinGit-0-test-arm64.zip `
             -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
+            -OpenSshPackage "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner release-source/pe-imports.ps1 `
             -OutputDirectory impact/measurements
       - uses: actions/upload-artifact@v7
         with:
-          name: arm64-busybox-distribution-impact
+          name: arm64-combined-payload-impact
           path: |
-            impact/measurements/arm64-busybox-distribution-impact.json
-            impact/measurements/arm64-busybox-distribution-impact.md
+            arm64-combined-architecture-report.txt
+            impact/measurements/arm64-combined-distribution-impact.json
+            impact/measurements/arm64-combined-distribution-impact.md
