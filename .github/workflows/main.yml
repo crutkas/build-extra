@@ -646,14 +646,9 @@ jobs:
           git clone --bare --depth=1 --single-branch --branch=main \
             --filter=blob:none \
             https://github.com/git-for-windows/git-sdk-arm64 .sdk
-      - name: stage release, leaf, BusyBox, and combined SDKs
+      - name: stage leaf, BusyBox, and combined SDKs
         shell: bash
         run: |
-          ./release-source/please.sh create-sdk-artifact \
-            --architecture=aarch64 \
-            --sdk=.sdk \
-            --out=sdk-release \
-            build-installers &&
           ./base-source/please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
@@ -686,7 +681,38 @@ jobs:
         run: |
           $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
           curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
-      - name: build release, leaf, and combined distributions
+      - name: download exact released baseline products
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path impact/release | Out-Null
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name installer-aarch64 `
+            --dir impact/release
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name portable-artifacts-aarch64 `
+            --dir impact/release
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name mingit-artifacts-aarch64 `
+            --dir impact/release
+          $expected = @{
+            'Git-0-test-arm64.exe' = 63222622
+            'PortableGit-0-test-arm64.7z.exe' = 59212874
+            'MinGit-0-test-arm64.zip' = 37725713
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $actual = (Get-Item -LiteralPath (
+              Join-Path impact/release $entry.Key
+            )).Length
+            if ($actual -ne $entry.Value) {
+              throw "Unexpected released $($entry.Key) size: $actual"
+            }
+          }
+      - name: build leaf and combined distributions
         shell: bash
         run: |
           build_products () {
@@ -704,9 +730,7 @@ jobs:
                 --output='$output/mingit-busybox' 0-test
             "
           }
-
           root=$PWD &&
-          build_products "$root/sdk-release" "$root/release-source" "$root/impact/release" &&
           build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
           build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
       - name: measure distributions and lifecycle
@@ -722,7 +746,6 @@ jobs:
             -ReleasedMinGit impact/release/MinGit-0-test-arm64.zip `
             -BaseMinGit impact/base/MinGit-0-test-arm64.zip `
             -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
-            -ReleasedBusyBoxMinGit impact/release/mingit-busybox/MinGit-0-test-arm64.zip `
             -BaseBusyBoxMinGit impact/base/mingit-busybox/MinGit-0-test-arm64.zip `
             -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
             -OpenSshPackage "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `

@@ -245,26 +245,34 @@ sort -o "$tmp/leaf.tsv" "$tmp/leaf.tsv"
 
 cp "$tmp/leaf.tsv" "$tmp/busybox.tsv" ||
 die "Could not initialize the BusyBox manifest"
-while IFS= read -r path
+while IFS='	' read -r path architecture machine
 do
-	manifest_row "$tmp/busybox.tsv" "$path" x64 >/dev/null
 	row="$(manifest_row "$tmp/current-busybox.tsv" "$path" arm64)"
+	if awk -F '	' -v path="$path" \
+		'$1 == path { found = 1 } END { exit !found }' "$tmp/busybox.tsv"
+	then
+		manifest_row "$tmp/busybox.tsv" "$path" x64 >/dev/null
+	fi
 	remove_manifest_path "$tmp/busybox.tsv" "$path"
 	printf '%s\n' "$row" >>"$tmp/busybox.tsv" ||
 	die "Could not add $path to the BusyBox manifest"
-done <"$thisdir/../arm64-busybox/default-replacements.txt"
+done <"$tmp/busybox.changed"
 sort -o "$tmp/busybox.tsv" "$tmp/busybox.tsv"
 
 cp "$tmp/busybox.tsv" "$tmp/combined.tsv" ||
 die "Could not initialize the combined manifest"
 while IFS='	' read -r path architecture machine
 do
-	manifest_row "$tmp/combined.tsv" "$path" x64 >/dev/null
 	row="$(manifest_row "$tmp/current-combined.tsv" "$path" arm64)"
+	if awk -F '	' -v path="$path" \
+		'$1 == path { found = 1 } END { exit !found }' "$tmp/combined.tsv"
+	then
+		manifest_row "$tmp/combined.tsv" "$path" x64 >/dev/null
+	fi
 	remove_manifest_path "$tmp/combined.tsv" "$path"
 	printf '%s\n' "$row" >>"$tmp/combined.tsv" ||
 	die "Could not add $path to the combined manifest"
-done <"$tmp/openssh.replaced"
+done <"$tmp/combined.changed"
 sort -o "$tmp/combined.tsv" "$tmp/combined.tsv"
 
 added_or_replaced release leaf "$tmp/leaf.changed"
@@ -301,6 +309,14 @@ do
 	eval "${label}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
 	eval "${label}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
 done
+for label in current-leaf current-busybox current-combined
+do
+	variable=${label#current-}
+	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
+	eval "current_${variable}_arm64=\$(count \"\$tmp/$label.tsv\" arm64)"
+	eval "current_${variable}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
+	eval "current_${variable}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
+done
 test 432 = "$release_x64" ||
 die "Expected the authoritative release baseline to contain 432 x64 PEs"
 test -11 = "$((leaf_x64 - release_x64))" ||
@@ -311,10 +327,10 @@ test -11 = "$((combined_x64 - busybox_x64))" ||
 die "OpenSSH did not remove exactly 11 x64 PEs"
 test 3 = "$((leaf_arm64 - release_arm64))" ||
 die "The native leaf tools did not add exactly 3 ARM64 PEs"
-test 59 = "$((busybox_arm64 - leaf_arm64))" ||
-die "BusyBox did not add exactly 59 ARM64 PEs"
-test 11 = "$((combined_arm64 - busybox_arm64))" ||
-die "OpenSSH did not add exactly 11 ARM64 PEs"
+test 61 = "$((busybox_arm64 - leaf_arm64))" ||
+die "BusyBox did not add exactly 61 ARM64 PEs"
+test 14 = "$((combined_arm64 - busybox_arm64))" ||
+die "OpenSSH did not add exactly 14 ARM64 PEs"
 test "$release_x86" = "$leaf_x86" &&
 test "$release_x86" = "$busybox_x86" &&
 test "$release_x86" = "$combined_x86" ||
@@ -345,6 +361,18 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	combined_arm64=$combined_arm64
 	combined_x86=$combined_x86
 	combined_clr_anycpu=$combined_anycpu
+	current_file_list_leaf_x64=$current_leaf_x64
+	current_file_list_leaf_arm64=$current_leaf_arm64
+	current_file_list_leaf_x86=$current_leaf_x86
+	current_file_list_leaf_clr_anycpu=$current_leaf_anycpu
+	current_file_list_busybox_x64=$current_busybox_x64
+	current_file_list_busybox_arm64=$current_busybox_arm64
+	current_file_list_busybox_x86=$current_busybox_x86
+	current_file_list_busybox_clr_anycpu=$current_busybox_anycpu
+	current_file_list_combined_x64=$current_combined_x64
+	current_file_list_combined_arm64=$current_combined_arm64
+	current_file_list_combined_x86=$current_combined_x86
+	current_file_list_combined_clr_anycpu=$current_combined_anycpu
 	leaf_x64_delta=$((leaf_x64 - release_x64))
 	busybox_x64_delta=$((busybox_x64 - leaf_x64))
 	openssh_x64_delta=$((combined_x64 - busybox_x64))
