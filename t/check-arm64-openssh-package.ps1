@@ -483,19 +483,20 @@ try {
             throw "ssh-pageant is not present as a separate runtime component"
         }
         $runtimeConfigPath = Join-Path $RuntimeRoot "etc\ssh\ssh_config"
-        $azurePolicy = @"
-# Added by git-extra
-Host ssh.dev.azure.com
-	HostkeyAlgorithms +ssh-rsa
-	PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa
-Host *.visualstudio.com
-	HostkeyAlgorithms +ssh-rsa
-	PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa
-
-"@ -replace "`r`n", "`n"
-        $runtimeConfig = [IO.File]::ReadAllText($runtimeConfigPath)
-        $packagedConfig = [IO.File]::ReadAllText($packageConfig)
-        if ($runtimeConfig -ne "$azurePolicy$packagedConfig") {
+        $azurePolicy = @(
+            "# Added by git-extra",
+            "Host ssh.dev.azure.com",
+            "`tHostkeyAlgorithms +ssh-rsa",
+            "`tPubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa",
+            "Host *.visualstudio.com",
+            "`tHostkeyAlgorithms +ssh-rsa",
+            "`tPubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa",
+            ""
+        )
+        $runtimeConfig = @(Get-Content -LiteralPath $runtimeConfigPath)
+        $packagedConfig = @(Get-Content -LiteralPath $packageConfig)
+        $expectedRuntimeConfig = @($azurePolicy) + @($packagedConfig)
+        if (Compare-Object $expectedRuntimeConfig $runtimeConfig -SyncWindow 0) {
             throw "Runtime ssh_config differs from the package plus Azure policy"
         }
         $runtimePackageVersions = Join-Path $RuntimeRoot "etc\package-versions.txt"
