@@ -2897,6 +2897,30 @@ begin
        not DeleteFile(AppDir+'\usr\share\licenses\openssh\LICENCE') then
         LogError('Failed to remove the bundled OpenSSH license');
 end;
+
+procedure SecureARM64OpenSSHConfig;
+var
+    ConfigPath,IcaclsPath:String;
+    ResultCode:Integer;
+begin
+    ConfigPath:=ExpandConstant('{app}\etc\ssh\ssh_config');
+    if not FileExists(ConfigPath) then
+        Exit;
+    IcaclsPath:=ExpandConstant('{sys}\icacls.exe');
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /inheritance:r','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then begin
+        LogError('Failed to remove inherited ARM64 OpenSSH config permissions');
+        Exit;
+    end;
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /remove:g "*S-1-5-11" "*S-1-5-32-545" "*S-1-1-0"','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then begin
+        LogError('Failed to remove writable ARM64 OpenSSH config permissions');
+        Exit;
+    end;
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /grant:r "*S-1-5-11:R" "*S-1-5-18:F" "*S-1-5-32-544:F"','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then
+        LogError('Failed to grant ARM64 OpenSSH config permissions');
+end;
 #endif
 
 procedure HardlinkOrCopy(Target,Source:String);
@@ -3668,6 +3692,10 @@ begin
         else
             LogError('Line {#__LINE__}: Unable to run post-install scripts; no error, no output?');
     end;
+
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+    SecureARM64OpenSSHConfig();
+#endif
 
     {
         Restart any processes that were shut down via the Restart Manager
