@@ -355,18 +355,7 @@ jobs:
             test build-installers = "${{ matrix.artifact }}"
           then
             fixture_server="$(cygpath -au "$RUNNER_TEMP/azure-ssh-server")" &&
-            git --git-dir=.sdk worktree add --detach --no-checkout \
-              "$fixture_server" HEAD &&
-            git -C "$fixture_server" sparse-checkout init --no-cone &&
-            git -C "$fixture_server" sparse-checkout set --no-cone \
-              '/usr/bin/*.dll' \
-              /usr/bin/bash.exe \
-              /usr/bin/cygpath.exe \
-              /usr/bin/sh.exe \
-              /usr/bin/sshd.exe \
-              '/usr/lib/ssh/sshd-*.exe' \
-              /etc/nsswitch.conf &&
-            git -C "$fixture_server" checkout -- &&
+            git --git-dir=.sdk worktree add --detach "$fixture_server" HEAD &&
             echo "AZURE_SSH_SERVER_ROOT=$(cygpath -aw "$fixture_server")" \
               >>$GITHUB_ENV
           fi &&
