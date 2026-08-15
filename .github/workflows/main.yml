@@ -218,6 +218,8 @@ jobs:
       - name: validate
         if: matrix.directory == 'installer'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -231,7 +233,7 @@ jobs:
             # Keep the existing read-only fallback outside ARM64.
             sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
           else
-            export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
           fi &&
           sh -x $checklist
       - name: extract Portable Git
@@ -349,6 +351,24 @@ jobs:
         shell: bash
         run: |
           set -x &&
+          if test aarch64 = "${{ matrix.arch.name }}" &&
+            test build-installers = "${{ matrix.artifact }}"
+          then
+            fixture_server="$(cygpath -au "$RUNNER_TEMP/azure-ssh-server")" &&
+            git --git-dir=.sdk worktree add --detach --no-checkout \
+              "$fixture_server" HEAD &&
+            git -C "$fixture_server" sparse-checkout init --no-cone &&
+            git -C "$fixture_server" sparse-checkout set --no-cone \
+              '/usr/bin/*.dll' \
+              /usr/bin/bash.exe \
+              /usr/bin/cygpath.exe \
+              /usr/bin/sh.exe \
+              /usr/bin/sshd.exe \
+              '/usr/lib/ssh/sshd-*.exe' \
+              /etc/nsswitch.conf &&
+            echo "AZURE_SSH_SERVER_ROOT=$(cygpath -aw "$fixture_server")" \
+              >>$GITHUB_ENV
+          fi &&
           case "${{ matrix.artifact }}" in
           full)
             git --git-dir=.sdk worktree add --detach sdk-artifact
@@ -429,6 +449,8 @@ jobs:
       - name: validate
         if: matrix.artifact == 'build-installers'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -443,10 +465,17 @@ jobs:
             # Keep the existing read-only fallback outside ARM64.
             sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
           else
-            export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
           fi &&
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
+      - name: validate local Azure-like Git over SSH
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-azure-ssh-fixture.ps1 `
+            -ClientRoot "$env:ProgramFiles\Git" `
+            -ServerRoot "$env:AZURE_SSH_SERVER_ROOT"
       - name: validate ARM64 installer lifecycle and external SSH
         if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
         shell: pwsh

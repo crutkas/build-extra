@@ -27,6 +27,13 @@ die "The default package, provenance, cleanup, or Azure gate is not wired"
 grep -Fq 'test aarch64 != "${{ matrix.architecture.name }}"' \
 	"$root/.github/workflows/main.yml" ||
 die "CI does not keep Azure SSH mandatory for ARM64"
+test -f "$root/t/check-arm64-azure-ssh.ps1" &&
+test -f "$root/t/check-arm64-azure-ssh-fixture.ps1" &&
+grep -Fq 'GIT_FOR_WINDOWS_AZURE_SSH_CHECK' \
+	"$root/installer/run-checklist.sh" &&
+grep -Fq 'ARM64_AZURE_SSH_PRIVATE_KEY' \
+	"$root/.github/workflows/main.yml" ||
+die "The Azure transport, local fixture, or optional credential gate is not wired"
 
 sh -n "$root/make-file-list.sh" &&
 sh -n "$root/please.sh" &&
