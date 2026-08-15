@@ -503,14 +503,15 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	test -f "$ssh_config" ||
 	die "Could not find the native OpenSSH system configuration\n"
 	{
-		printf '%s\n%s\n\t%s\n\t%s\n%s\n\t%s\n\t%s\n\n' \
+		printf '%s\n%s\n\t%s\n\t%s\n%s\n\t%s\n\t%s\n%s\n\n' \
 			'# Added by git-extra' \
 			'Host ssh.dev.azure.com' \
 			'HostkeyAlgorithms +ssh-rsa' \
 			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
 			'Host *.visualstudio.com' \
 			'HostkeyAlgorithms +ssh-rsa' \
-			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa'
+			'PubkeyAcceptedAlgorithms +rsa-sha2-512,rsa-sha2-256,ssh-rsa' \
+			'Host *'
 		cat "$ssh_config"
 	} >"$ssh_config.new" &&
 	mv "$ssh_config.new" "$ssh_config" ||
