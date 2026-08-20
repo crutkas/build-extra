@@ -576,15 +576,38 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	test "$sha256" = "$actual" ||
 	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
 
+	run_arm64_gawk_pacman () {
+		if test / = "$root"
+		then
+			pacman "$@"
+		else
+			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+		fi
+	}
+
+	package_cache_win="$(cygpath -am "$package_cache")" || exit
 	root_unix="$(cygpath -au "$root")" || exit
-	package_cache_unix="$(cygpath -au "$package_cache")" || exit
-	tar -xf "$package_cache_unix" -C "$root_unix" ||
-	die "Could not extract %s\n" "$package"
-	rm -f "$root_unix/clangarm64/lib/gawk/fork.dll" ||
-	die "Could not remove unsupported fork.dll from %s\n" "$root"
-	test -f "$root_unix/clangarm64/bin/gawk.exe" &&
-	test -f "$root_unix/clangarm64/bin/awk.exe" ||
-	die "Could not install and verify %s\n" "$package"
+	mpfr_desc="$root_unix/var/lib/pacman/local/mingw-w64-clang-aarch64-mpfr-3.1.4-1/desc"
+	if test ! -f "$mpfr_desc"
+	then
+		mkdir -p "${mpfr_desc%/desc}" &&
+		{
+			cat >"$mpfr_desc" <<-EOF
+			%NAME%
+			mingw-w64-clang-aarch64-mpfr
+
+			%VERSION%
+			3.1.4-1
+			EOF
+		} ||
+		die "Could not stage a local %s pacman record\n" "$package"
+	fi
+	run_arm64_gawk_pacman -U --noconfirm \
+		--overwrite=\\\* "$package_cache_win" &&
+	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
+	{
+		die "Could not install and verify %s\n" "$package"
+	}
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
