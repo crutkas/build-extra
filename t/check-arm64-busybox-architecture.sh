@@ -231,6 +231,60 @@ done <"$tmp/legacy-openssh.paths"
 test 11 = "$legacy_openssh" ||
 die "Expected 11 legacy OpenSSH PEs, checked $legacy_openssh"
 
+cat >"$tmp/legacy-gawk.paths" <<-\EOF
+usr/bin/awk.exe
+usr/bin/gawk.exe
+usr/bin/gawk-5.4.0.exe
+usr/lib/gawk/filefuncs.dll
+usr/lib/gawk/fnmatch.dll
+usr/lib/gawk/fork.dll
+usr/lib/gawk/inplace.dll
+usr/lib/gawk/intdiv.dll
+usr/lib/gawk/ordchr.dll
+usr/lib/gawk/readdir.dll
+usr/lib/gawk/readfile.dll
+usr/lib/gawk/revoutput.dll
+usr/lib/gawk/revtwoway.dll
+usr/lib/gawk/rwarray.dll
+usr/lib/gawk/time.dll
+EOF
+cat >"$tmp/native-gawk.paths" <<-\EOF
+clangarm64/bin/awk.exe
+clangarm64/bin/gawk.exe
+clangarm64/bin/gawk-5.4.1.exe
+clangarm64/lib/gawk/filefuncs.dll
+clangarm64/lib/gawk/fnmatch.dll
+clangarm64/lib/gawk/inplace.dll
+clangarm64/lib/gawk/intdiv.dll
+clangarm64/lib/gawk/ordchr.dll
+clangarm64/lib/gawk/readdir.dll
+clangarm64/lib/gawk/readfile.dll
+clangarm64/lib/gawk/revoutput.dll
+clangarm64/lib/gawk/revtwoway.dll
+clangarm64/lib/gawk/rwarray.dll
+clangarm64/lib/gawk/time.dll
+EOF
+legacy_gawk=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/release.tsv" "$path" x64 >/dev/null
+	! awk -F '	' -v path="$path" \
+		'$1 == path { found = 1 } END { exit !found }' \
+		"$tmp/current-combined.tsv" ||
+	die "$path remains in the combined payload"
+	legacy_gawk=$((legacy_gawk + 1))
+done <"$tmp/legacy-gawk.paths"
+test 15 = "$legacy_gawk" ||
+die "Expected 15 legacy Gawk PEs, checked $legacy_gawk"
+native_gawk=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/current-combined.tsv" "$path" arm64 >/dev/null
+	native_gawk=$((native_gawk + 1))
+done <"$tmp/native-gawk.paths"
+test 14 = "$native_gawk" ||
+die "Expected 14 native ARM64 Gawk PEs, checked $native_gawk"
+
 remove_manifest_path () {
 	manifest=$1
 	path=$2

@@ -335,6 +335,28 @@ jobs:
           } else {
             ./t/check-arm64-openssh-package.ps1 @parameters
           }
+      - name: validate ARM64 native tools
+        if: matrix.architecture.name == 'aarch64'
+        shell: bash
+        run: |
+          root=$(case "${{ matrix.directory }}" in
+            installer) cygpath -au "$ProgramFiles/Git" ;;
+            portable) cygpath -au "$RUNNER_TEMP/portable-git" ;;
+            mingit) cygpath -au "$RUNNER_TEMP/mingit-root" ;;
+            *) echo "Unexpected artifact: ${{ matrix.directory }}" >&2; exit 1 ;;
+          esac) &&
+          ./t/check-arm64-native-tools.sh --root="$root"
+      - name: validate ARM64 native tools (PowerShell)
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $root = switch ("${{ matrix.directory }}") {
+            "installer" { "$env:ProgramFiles\Git" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
+            default { throw "Unexpected artifact: ${{ matrix.directory }}" }
+          }
+          ./t/check-arm64-native-tools.ps1 -Root $root
       - name: validate ARM64 installer lifecycle and external SSH
         if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
         shell: pwsh

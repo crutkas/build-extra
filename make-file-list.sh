@@ -44,13 +44,16 @@ OPENSSH_PACKAGE=openssh
 
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
+AWK_PACKAGE=awk
+UTIL_PACKAGES="sed grep findutils coreutils"
 if test aarch64 = "$ARCH"
 then
 	OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
+	AWK_PACKAGE=mingw-w64-$PACMAN_ARCH-gawk
+	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES awk"
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
 fi
 EXTRA_FILE_EXCLUDES=
-UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX"
 then
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES bash sh coreutils mingw-w64-busybox
@@ -193,7 +196,7 @@ LIBCURL_EXTRA=
 
 # Packages that have been added after Git SDK 1.0.0 was released...
 required=
-for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $OPENSSH_PACKAGE $LIBCURL_EXTRA \
+for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $AWK_PACKAGE $OPENSSH_PACKAGE $LIBCURL_EXTRA \
 	$(test -n "$MINIMAL_GIT" || echo \
 		mingw-w64-$PACMAN_ARCH-connect unzip docx2txt \
 		mingw-w64-$PACMAN_ARCH-antiword mingw-w64-$PACMAN_ARCH-odt2txt \
@@ -216,7 +219,7 @@ has_pacman_package mingw-w64-$PACMAN_ARCH-git-for-windows-addons &&
 G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git-for-windows-addons ||
 G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git
 
-packages="$G4W_PACKAGE mingw-w64-$PACMAN_ARCH-git-credential-manager
+packages="$G4W_PACKAGE $AWK_PACKAGE mingw-w64-$PACMAN_ARCH-git-credential-manager
 mingw-w64-$PACMAN_ARCH-git-extra $OPENSSH_PACKAGE
 msys2-runtime $UTIL_PACKAGES $LIBCURL_EXTRA"
 if test -z "$MINIMAL_GIT"

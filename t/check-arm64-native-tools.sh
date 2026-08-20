@@ -8,13 +8,23 @@ die () {
 thisdir="$(cd "$(dirname "$0")" && pwd)" ||
 die "Could not determine the test directory"
 selection_only=
+root_dir=
 case "$1" in
 --selection-only) selection_only=t;;
+"--root="*) root_dir=${1#*=};;
 "") ;;
 *) die "Unknown option: $1";;
 esac
+if test -n "$root_dir"
+then
+	root_dir="$(cygpath -au "$root_dir")" ||
+	die "Could not resolve the ARM64 root"
+else
+	root_dir=/
+fi
 tmp=${TMPDIR:-/tmp}/arm64-native-tools.$$
-trap 'rm -f "$tmp"' EXIT
+runtime=
+trap 'rm -f "$tmp"; test -n "$runtime" && rm -rf "$runtime"' EXIT
 
 ARCH=aarch64 INCLUDE_GIT_UPDATE=1 \
 	"$thisdir/../make-file-list.sh" >"$tmp" ||
@@ -44,10 +54,29 @@ do
 	die "The ARM64 file list no longer contains required x64 payload matching $pattern"
 done
 
+test -x "$root_dir/clangarm64/bin/gawk-5.4.1.exe" ||
+die "The ARM64 file list does not contain $root_dir/clangarm64/bin/gawk-5.4.1.exe"
+test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
+die "fork.dll should not be packaged for native ARM64 gawk"
+
 test -z "$selection_only" || exit 0
 
-PATH=/clangarm64/bin:/usr/bin
+PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin"
 export PATH
+awk_path=$(command -v awk) ||
+die "Could not resolve awk from Git Bash"
+gawk_path=$(command -v gawk) ||
+die "Could not resolve gawk from Git Bash"
+expected_awk_path="$root_dir/clangarm64/bin/awk.exe"
+expected_gawk_path="$root_dir/clangarm64/bin/gawk.exe"
+case "$awk_path" in
+"$expected_awk_path") ;;
+*) die "awk resolves to $awk_path instead of $expected_awk_path";;
+esac
+case "$gawk_path" in
+"$expected_gawk_path") ;;
+*) die "gawk resolves to $gawk_path instead of $expected_gawk_path";;
+esac
 check_tool () {
 	tool=$1
 	expected=$2
@@ -55,8 +84,9 @@ check_tool () {
 
 	path=$(command -v "$tool") ||
 	die "Could not resolve $tool from Git Bash"
-	test "/clangarm64/bin/$tool" = "$path" ||
-	die "$tool resolves to $path instead of /clangarm64/bin/$tool"
+	expected_path="$root_dir/clangarm64/bin/$tool"
+	test "$expected_path" = "$path" ||
+	die "$tool resolves to $path instead of $expected_path"
 
 	"$tool" "$@" >"$tmp" 2>&1
 	actual=$?
@@ -75,3 +105,63 @@ check_tool pkcs1-conv 0 --help
 check_tool sexp-conv 0 --help
 check_tool p11-kit 0 --help
 check_tool trust 0 --help
+
+runtime=${TMPDIR:-/tmp}/arm64-gawk.$$
+trap 'rm -f "$tmp"; rm -rf "$runtime"' EXIT
+mkdir -p "$runtime/scripts" "$runtime/ext"
+
+printf 'alpha beta\n' >"$runtime/field-input.txt"
+field_input=$(cygpath -aw "$runtime/field-input.txt") &&
+test 'alpha beta' = "$("$gawk_path" '{ print $1 " " $2 }' "$field_input" | tr -d '\r')" ||
+die "gawk field processing failed"
+
+cat >"$runtime/scripts/from-awkpath.awk" <<'EOF'
+BEGIN { print "awkpath-ok" }
+EOF
+awkpath_dir=$(cygpath -aw "$runtime/scripts") &&
+AWKPATH="$awkpath_dir;$AWKPATH" \
+	"$gawk_path" -f from-awkpath.awk /dev/null >"$runtime/awkpath.out" &&
+printf 'awkpath-ok\n' >"$runtime/awkpath.expect" &&
+cmp "$runtime/awkpath.expect" "$runtime/awkpath.out" ||
+die "AWKPATH did not honor a native Windows path list"
+
+cp "$root_dir/clangarm64/lib/gawk"/*.dll "$runtime/ext/" &&
+printf 'in place\n' >"$runtime/inplace-input.txt" &&
+inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
+inplace_lib=$(cygpath -aw "$runtime/ext") &&
+AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
+	"$gawk_path" -i inplace '{ print toupper($0) }' "$inplace_input" &&
+printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
+cmp "$runtime/inplace.expect" "$runtime/inplace-input.txt" ||
+die "AWKLIBPATH or inplace extension loading failed"
+
+printf 'quoted\n' >"$runtime/system-input.txt" &&
+system_input=$(cygpath -aw "$runtime/system-input.txt") &&
+system_output=$(cygpath -aw "$runtime/system-output.txt") &&
+"$gawk_path" -v source="$system_input" -v target="$system_output" '
+BEGIN {
+  cmd = "cmd.exe /c type \"" source "\" > \"" target "\""
+  if (system(cmd) != 0)
+    exit 17
+}' &&
+printf 'quoted\n' >"$runtime/system.expect" &&
+cmp "$runtime/system.expect" "$runtime/system-output.txt" ||
+die "gawk system() quoting failed"
+
+printf 'caf\303\251\n' >"$runtime/utf8-input.txt" &&
+utf8_input=$(cygpath -aw "$runtime/utf8-input.txt") &&
+LC_ALL=C.UTF-8 "$gawk_path" '{ print length($0) }' "$utf8_input" >"$runtime/utf8.out" &&
+printf '4\n' >"$runtime/utf8.expect" &&
+cmp "$runtime/utf8.expect" "$runtime/utf8.out" ||
+die "gawk UTF-8 handling failed"
+
+"$gawk_path" 'BEGIN { exit 17 }'
+test 17 = "$?" ||
+die "gawk exit codes are not preserved"
+
+if "$gawk_path" -l fork 'BEGIN { print "fork" }' >/dev/null 2>"$runtime/fork.err"
+then
+	die "gawk unexpectedly loaded fork.dll"
+fi
+grep -qi 'fork' "$runtime/fork.err" ||
+die "gawk did not report the missing fork extension"
