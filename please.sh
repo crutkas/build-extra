@@ -539,7 +539,7 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	version=5.4.1-1
 	archive=$package-$version-any.pkg.tar.zst
 	# Built from crutkas/MINGW-packages#3 at 11f8c72d983178a8d8492f2c662654f167e3d3ec.
-	artifact_url=https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-gawk-5.4.1-1/mingw-w64-clang-aarch64-gawk-5.4.1-1-any.pkg.tar.zst
+	artifact_url=https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-gawk-5.4.1-1/clangarm64-gawk-package.zip
 	sha256=6bf665f60212e38a12fb412a3588c6228740c7475901ba9aea57de825878adf2
 	artifact_cache=${TMPDIR:-/tmp}/clangarm64-gawk-package.zip
 	package_cache=${TMPDIR:-/tmp}/$archive
