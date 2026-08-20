@@ -552,7 +552,10 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		die "Could not download %s\n" "$artifact_url"
 		extract_root="${artifact_cache%/*}.$$"
 		mkdir -p "$extract_root" &&
-		tar -xf "$artifact_cache.tmp.$$" -C "$extract_root" &&
+		archive_path="$(cygpath -aw "$artifact_cache.tmp.$$")" &&
+		extract_path="$(cygpath -aw "$extract_root")" &&
+		powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
+			"Expand-Archive -LiteralPath '$archive_path' -DestinationPath '$extract_path' -Force" &&
 		package_path="$(find "$extract_root" -type f -name "$archive" | sed -n '1p')" &&
 		test -f "$package_path" ||
 		die "Could not extract %s\n" "$archive"
