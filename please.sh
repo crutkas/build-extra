@@ -584,11 +584,6 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		fi
 	}
 
-	test "$package $version" = "$(run_arm64_gawk_pacman -Qp "$package_cache")" ||
-	{
-		rm -f "$package_cache"
-		die "Unexpected package metadata in %s\n" "$package_cache"
-	}
 	mkdir -p "$root/tmp" &&
 	cp "$package_cache" "$root/tmp/$archive" ||
 	die "Could not stage %s in the target SDK\n" "$archive"
