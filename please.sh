@@ -577,12 +577,13 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
 
 	package_cache_win="$(cygpath -am "$package_cache")" || exit
-	tar -xf "$package_cache_win" -C "$root" ||
+	root_unix="$(cygpath -au "$root")" || exit
+	tar -xf "$package_cache_win" -C "$root_unix" ||
 	die "Could not extract %s\n" "$package"
-	rm -f "$root/clangarm64/lib/gawk/fork.dll" ||
+	rm -f "$root_unix/clangarm64/lib/gawk/fork.dll" ||
 	die "Could not remove unsupported fork.dll from %s\n" "$root"
-	test -f "$root/clangarm64/bin/gawk.exe" &&
-	test -f "$root/clangarm64/bin/awk.exe" ||
+	test -f "$root_unix/clangarm64/bin/gawk.exe" &&
+	test -f "$root_unix/clangarm64/bin/awk.exe" ||
 	die "Could not install and verify %s\n" "$package"
 }
 
