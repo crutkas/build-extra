@@ -587,7 +587,7 @@ use_arm64_native_gawk () { # [--root=<directory>]
 
 	package_cache_win="$(cygpath -am "$package_cache")" || exit
 	run_arm64_gawk_pacman -U --noconfirm \
-		--nodeps \
+		--assume-installed mingw-w64-clang-aarch64-mpfr=3.1.4-1 \
 		--overwrite=\\\* "$package_cache_win" &&
 	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
 	{
