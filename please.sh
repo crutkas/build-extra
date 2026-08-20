@@ -587,10 +587,12 @@ use_arm64_native_gawk () { # [--root=<directory>]
 
 	package_cache_win="$(cygpath -am "$package_cache")" || exit
 	root_unix="$(cygpath -au "$root")" || exit
-	mpfr_desc="$root_unix/var/lib/pacman/local/mingw-w64-clang-aarch64-mpfr-3.1.4-1/desc"
+	mpfr_db="$root_unix/var/lib/pacman/local/mingw-w64-clang-aarch64-mpfr-3.1.4-1"
+	mpfr_desc="$mpfr_db/desc"
+	mpfr_files="$mpfr_db/files"
 	if test ! -f "$mpfr_desc"
 	then
-		mkdir -p "${mpfr_desc%/desc}" &&
+		mkdir -p "$mpfr_db" &&
 		{
 			cat >"$mpfr_desc" <<-EOF
 			%NAME%
@@ -601,6 +603,15 @@ use_arm64_native_gawk () { # [--root=<directory>]
 			EOF
 		} ||
 		die "Could not stage a local %s pacman record\n" "$package"
+	fi
+	if test ! -f "$mpfr_files"
+	then
+		{
+			cat >"$mpfr_files" <<-EOF
+			%FILES%
+			EOF
+		} ||
+		die "Could not stage the local %s file list\n" "$package"
 	fi
 	run_arm64_gawk_pacman -U --noconfirm \
 		--overwrite=\\\* "$package_cache_win" &&
