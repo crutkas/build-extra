@@ -12,7 +12,7 @@ mingw_arch=('mingw32' 'mingw64' 'clangarm64' 'ucrt64')
 url="https://github.com/git-for-windows/build-extra"
 license=('GPL')
 groups=('VCS')
-depends=('git-for-windows-keyring' 'diffutils')
+depends=('git-for-windows-keyring' 'diffutils' 'dos2unix')
 optdepends=('vim' 'filesystem')
 pkgver() {
   cd "$startdir"
