@@ -550,9 +550,10 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		curl -fL --retry 3 \
 			-o "$artifact_cache.tmp.$$" "$artifact_url" ||
 		die "Could not download %s\n" "$artifact_url"
-		mkdir -p "${artifact_cache%/*}.$$" &&
-		tar -xf "$artifact_cache.tmp.$$" -C "${artifact_cache%/*}.$$" &&
-		package_path="${artifact_cache%/*}.$$/$archive" &&
+		extract_root="${artifact_cache%/*}.$$"
+		mkdir -p "$extract_root" &&
+		tar -xf "$artifact_cache.tmp.$$" -C "$extract_root" &&
+		package_path="$(find "$extract_root" -type f -name "$archive" | sed -n '1p')" &&
 		test -f "$package_path" ||
 		die "Could not extract %s\n" "$archive"
 		actual="$(sha256sum <"$package_path" | sed 's/ .*//')" &&
@@ -562,11 +563,11 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		mv "$package_cache.tmp.$$" "$package_cache" ||
 		{
 			rm -f "$artifact_cache.tmp.$$" "$package_cache.tmp.$$"
-			rm -rf "${artifact_cache%/*}.$$"
+			rm -rf "$extract_root"
 			die "Could not stage %s\n" "$archive"
 		}
 		rm -f "$artifact_cache.tmp.$$"
-		rm -rf "${artifact_cache%/*}.$$"
+		rm -rf "$extract_root"
 	fi
 
 	actual="$(sha256sum <"$package_cache" | sed 's/ .*//')" &&
