@@ -552,10 +552,8 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		die "Could not download %s\n" "$artifact_url"
 		extract_root="${artifact_cache%/*}.$$"
 		mkdir -p "$extract_root" &&
-		archive_path="$(cygpath -w "$artifact_cache.tmp.$$")" &&
-		extract_path="$(cygpath -w "$extract_root")" &&
-		powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \
-			"Expand-Archive -LiteralPath '$archive_path' -DestinationPath '$extract_path' -Force" &&
+		python -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+			"$artifact_cache.tmp.$$" "$extract_root" &&
 		package_path="$(find "$extract_root" -type f -name "$archive" | sed -n '1p')" &&
 		test -f "$package_path" ||
 		die "Could not extract %s\n" "$archive"
