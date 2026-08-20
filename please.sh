@@ -584,20 +584,11 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		fi
 	}
 
-	mkdir -p "$root/tmp" &&
-	cp "$package_cache" "$root/tmp/$archive" ||
-	die "Could not stage %s in the target SDK\n" "$archive"
-	package_path=$root/tmp/$archive
-
-	run_arm64_gawk_pacman -U --noconfirm --overwrite '*' "$package_path" &&
+	run_arm64_gawk_pacman -U --noconfirm --overwrite '*' "$package_cache" &&
 	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
 	{
-		rm -f "$root/tmp/$archive"
 		die "Could not install and verify %s\n" "$package"
 	}
-
-	rm -f "$root/tmp/$archive" ||
-	die "Could not remove staged package %s\n" "$archive"
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
