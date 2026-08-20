@@ -584,7 +584,7 @@ use_arm64_native_gawk () { # [--root=<directory>]
 		fi
 	}
 
-	run_arm64_gawk_pacman -U --noconfirm --overwrite '*' "$package_cache" &&
+	run_arm64_gawk_pacman -U --noconfirm --overwrite=\\\* "$package_cache" &&
 	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
 	{
 		die "Could not install and verify %s\n" "$package"
