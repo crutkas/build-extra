@@ -518,6 +518,98 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	die "Could not configure Azure SSH compatibility\n"
 }
 
+use_arm64_native_gawk () { # [--root=<directory>]
+	while case "$1" in
+	--root)
+		shift
+		root="$(cygpath -am "$1")" || exit
+		;;
+	--root=*)
+		root="$(cygpath -am "${1#*=}")" || exit
+		;;
+	-*) die "Unknown option: %s\n" "$1";;
+	*) break;;
+	esac; do shift; done
+	test $# = 0 ||
+	die "Unexpected argument(s): %s\n" "$*"
+	test -n "$root" ||
+	die "Need --root=<directory>\n"
+
+	package=mingw-w64-clang-aarch64-gawk
+	version=5.4.1-1
+	archive=$package-$version-any.pkg.tar.zst
+	# Built from crutkas/MINGW-packages#3 at 11f8c72d983178a8d8492f2c662654f167e3d3ec.
+	artifact_url=https://api.github.com/repos/crutkas/MINGW-packages/actions/artifacts/9196667021/zip
+	sha256=6bf665f60212e38a12fb412a3588c6228740c7475901ba9aea57de825878adf2
+	artifact_cache=${TMPDIR:-/tmp}/clangarm64-gawk-package.zip
+	package_cache=${TMPDIR:-/tmp}/$archive
+	package_path=
+
+	if test ! -f "$package_cache"
+	then
+		if test -n "$GITHUB_TOKEN"
+		then
+			curl -fL --retry 3 -H "Authorization: Bearer $GITHUB_TOKEN" \
+				-o "$artifact_cache.tmp.$$" "$artifact_url" ||
+			die "Could not download %s\n" "$artifact_url"
+		else
+			curl -fL --retry 3 \
+				-o "$artifact_cache.tmp.$$" "$artifact_url" ||
+			die "Could not download %s\n" "$artifact_url"
+		fi
+		mkdir -p "${artifact_cache%/*}.$$" &&
+		tar -xf "$artifact_cache.tmp.$$" -C "${artifact_cache%/*}.$$" &&
+		package_path="${artifact_cache%/*}.$$/$archive" &&
+		test -f "$package_path" ||
+		die "Could not extract %s\n" "$archive"
+		actual="$(sha256sum <"$package_path" | sed 's/ .*//')" &&
+		test "$sha256" = "$actual" ||
+		die "Unexpected SHA-256 for %s: %s\n" "$package_path" "$actual"
+		mv "$package_path" "$package_cache.tmp.$$" &&
+		mv "$package_cache.tmp.$$" "$package_cache" ||
+		{
+			rm -f "$artifact_cache.tmp.$$" "$package_cache.tmp.$$"
+			rm -rf "${artifact_cache%/*}.$$"
+			die "Could not stage %s\n" "$archive"
+		}
+		rm -f "$artifact_cache.tmp.$$"
+		rm -rf "${artifact_cache%/*}.$$"
+	fi
+
+	actual="$(sha256sum <"$package_cache" | sed 's/ .*//')" &&
+	test "$sha256" = "$actual" ||
+	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
+
+	run_arm64_gawk_pacman () {
+		if test / = "$root"
+		then
+			pacman "$@"
+		else
+			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+		fi
+	}
+
+	test "$package $version" = "$(run_arm64_gawk_pacman -Qp "$package_cache")" ||
+	{
+		rm -f "$package_cache"
+		die "Unexpected package metadata in %s\n" "$package_cache"
+	}
+	mkdir -p "$root/tmp" &&
+	cp "$package_cache" "$root/tmp/$archive" ||
+	die "Could not stage %s in the target SDK\n" "$archive"
+	package_path=$root/tmp/$archive
+
+	run_arm64_gawk_pacman -U --noconfirm --overwrite '*' "$package_path" &&
+	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
+	{
+		rm -f "$root/tmp/$archive"
+		die "Could not install and verify %s\n" "$package"
+	}
+
+	rm -f "$root/tmp/$archive" ||
+	die "Could not remove staged package %s\n" "$archive"
+}
+
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
 	git_sdk_path=/
 	output_path=
@@ -815,6 +907,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
 			{ test aarch64 != "$architecture" ||
 				use_arm64_native_openssh --root="$output_path"; } &&
+			{ test aarch64 != "$architecture" ||
+				use_arm64_native_gawk --root="$output_path"; } &&
 			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
 			"$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
