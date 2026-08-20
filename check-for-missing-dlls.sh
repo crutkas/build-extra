@@ -125,6 +125,7 @@ grep '\.dll$' "$tmp_file.all" |
 		-e "$used_dlls_regex" \
 		-e '^usr/lib/perl5/' \
 		-e '^usr/lib/gawk/' \
+		-e "^$MINGW_PREFIX/lib/gawk/" \
 		-e '^usr/lib/openssl/engines' \
 		-e '^usr/lib/sasl2/' \
 		-e '^usr/lib/coreutils/libstdbuf.dll' \
