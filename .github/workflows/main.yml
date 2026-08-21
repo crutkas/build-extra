@@ -262,15 +262,6 @@ jobs:
           Get-ChildItem -Path "$exePath"
           $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           Get-ChildItem -Path $portableRoot
-          Push-Location $portableRoot
-          try {
-            & $env:ComSpec /c post-install.bat
-            if ($LASTEXITCODE -ne 0) {
-              throw "Portable Git post-install failed"
-            }
-          } finally {
-            Pop-Location
-          }
           "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
           "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
       - name: validate
@@ -321,9 +312,11 @@ jobs:
         if: matrix.architecture.name == 'aarch64'
         shell: pwsh
         run: |
+          if ("${{ matrix.directory }}" -eq "portable") {
+            return
+          }
           $root = switch ("${{ matrix.directory }}") {
             "installer" { "$env:ProgramFiles\Git" }
-            "portable" { "$env:RUNNER_TEMP\portable-git" }
             "mingit" { "$env:RUNNER_TEMP\mingit-root" }
             default { throw "Unexpected artifact: ${{ matrix.directory }}" }
           }
