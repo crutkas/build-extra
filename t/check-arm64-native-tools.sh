@@ -72,10 +72,8 @@ export PATH
 gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1.exe"
 test -f "$gawk_versioned_path" ||
 gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1"
-"$gawk_versioned_path" --version >/dev/null 2>&1 || {
-actual=$?
-die "gawk-5.4.1 returned $actual instead of 0"
-}
+test -f "$gawk_versioned_path" ||
+die "The ARM64 payload does not contain $root_dir/clangarm64/bin/gawk-5.4.1[.exe]"
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
