@@ -69,11 +69,12 @@ then
 fi
 
 export PATH
-gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1.exe"
-test -f "$gawk_versioned_path" ||
-gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1"
-test -f "$gawk_versioned_path" ||
-die "The ARM64 payload does not contain $root_dir/clangarm64/bin/gawk-5.4.1[.exe]"
+gawk_versioned_path=$(command -v gawk-5.4.1) ||
+die "Could not resolve gawk-5.4.1 from Git Bash"
+case "$gawk_versioned_path" in
+*/clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe) ;;
+*) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin/gawk-5.4.1[.exe] path";;
+esac
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
@@ -101,9 +102,7 @@ check_tool () {
 	*) die "$tool resolves to $path instead of a clangarm64/bin/$tool[.exe] path";;
 	esac
 
-	exec_path="$root_dir/clangarm64/bin/$tool.exe"
-	test -x "$exec_path" || exec_path="$root_dir/clangarm64/bin/$tool"
-	"$exec_path" "$@" >"$tmp" 2>&1
+	"$path" "$@" >"$tmp" 2>&1
 	actual=$?
 	test "$expected" = "$actual" ||
 	die "$tool returned $actual instead of $expected"
