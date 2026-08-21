@@ -97,7 +97,11 @@ do
 	die "Could not replace $dst"
 	if ! ln "$src" "$dst" 2>/dev/null
 	then
-		cp "$src" "$dst" ||
+		src_win="$(cygpath -aw "$src")" ||
+		die "Could not resolve $src"
+		dst_win="$(cygpath -aw "$dst")" ||
+		die "Could not resolve $dst"
+		"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_win' -Destination '$dst_win' -Force" ||
 		die "Could not materialize $dst from $src"
 	fi
 done
