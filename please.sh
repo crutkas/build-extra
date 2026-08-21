@@ -960,7 +960,7 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		test -x "$output_path/cmd/git.exe" ||
 		{
 			mkdir -p "$output_path/cmd" &&
-			cp "$output_path/$MSYSTEM_LOWER/bin/git.exe" "$output_path/cmd/git.exe"
+			cp "$output_path$PREFIX/bin/git.exe" "$output_path/cmd/git.exe"
 		}; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
