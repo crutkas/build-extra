@@ -18,30 +18,39 @@ package_sha256=a36a9310b4cb41df8e748744653b998dfe0b8d211ab150c3e421582441b6a6f8
 pacman_name=mingw-w64-clang-aarch64-dos2unix
 pacman_version=7.5.6-1
 
-command -v powershell.exe >/dev/null 2>&1 ||
+resolve_tool () {
+	name=$1
+	shift
+	if command -v "$name" >/dev/null 2>&1
+	then
+		command -v "$name"
+		return 0
+	fi
+	for candidate
+	do
+		test -x "$candidate" &&
+		{
+			echo "$candidate"
+			return 0
+		}
+	done
+	return 1
+}
+
+curl_exe="$(resolve_tool curl '/c/Windows/System32/curl.exe')" ||
+die "Could not find curl"
+powershell_exe="$(resolve_tool powershell.exe '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')" ||
 die "Could not find powershell.exe"
+sha256sum_exe="$(resolve_tool sha256sum '/c/Program Files/Git/usr/bin/sha256sum.exe')" ||
+die "Could not find sha256sum"
 
 download_package () {
-	if command -v curl >/dev/null 2>&1
-	then
-		curl -Lfo "$package_tmp" "$package_url"
-	else
-		root_win="$(cd "$thisdir" && pwd -W)" ||
-		return 1
-		powershell.exe -NoProfile -Command \
-			"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri '$package_url' -OutFile '$root_win\\.$package.$$'" ||
-		return 1
-	fi
+	"$curl_exe" -Lfo "$package_tmp" "$package_url"
 }
 
 hash_file () {
-	if command -v sha256sum >/dev/null 2>&1
-	then
-		actual="$(sha256sum "$1")" &&
-		echo "${actual%% *}"
-	else
-		powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()"
-	fi
+	actual="$("$sha256sum_exe" "$1")" &&
+	echo "${actual%% *}"
 }
 
 if test -f "$package_path"
@@ -64,7 +73,7 @@ then
 	die "Could not determine Windows path for ARM64 dos2unix directory"
 	package_tmp_win="$package_dir_win\\.$package.$$"
 	package_path_win="$package_dir_win\\$package"
-	powershell.exe -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
+	"$powershell_exe" -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
 	die "Could not publish ARM64 dos2unix package"
 fi
 
