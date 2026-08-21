@@ -18,17 +18,35 @@ package_sha256=a36a9310b4cb41df8e748744653b998dfe0b8d211ab150c3e421582441b6a6f8
 pacman_name=mingw-w64-clang-aarch64-dos2unix
 pacman_version=7.5.6-1
 
-command -v curl >/dev/null 2>&1 ||
-die "Could not find curl"
-command -v sha256sum >/dev/null 2>&1 ||
-die "Could not find sha256sum"
 command -v powershell.exe >/dev/null 2>&1 ||
 die "Could not find powershell.exe"
 
+download_package () {
+	if command -v curl >/dev/null 2>&1
+	then
+		curl -Lfo "$package_tmp" "$package_url"
+	else
+		root_win="$(cd "$thisdir" && pwd -W)" ||
+		return 1
+		powershell.exe -NoProfile -Command \
+			"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri '$package_url' -OutFile '$root_win\\.$package.$$'" ||
+		return 1
+	fi
+}
+
+hash_file () {
+	if command -v sha256sum >/dev/null 2>&1
+	then
+		actual="$(sha256sum "$1")" &&
+		echo "${actual%% *}"
+	else
+		powershell.exe -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()"
+	fi
+}
+
 if test -f "$package_path"
 then
-	actual="$(sha256sum "$package_path")" &&
-	actual="${actual%% *}" ||
+	actual="$(hash_file "$package_path")" ||
 	die "Could not hash $package_path"
 else
 	actual=
@@ -36,10 +54,9 @@ fi
 
 if test "$package_sha256" != "$actual"
 then
-	curl -Lfo "$package_tmp" "$package_url" ||
+	download_package ||
 	die "Could not download ARM64 dos2unix package: $package_path"
-	actual="$(sha256sum "$package_tmp")" &&
-	actual="${actual%% *}" ||
+	actual="$(hash_file "$package_tmp")" ||
 	die "Could not hash $package_tmp"
 	test "$package_sha256" = "$actual" ||
 	die "Unexpected SHA-256 for $package: $actual"
@@ -51,8 +68,7 @@ then
 	die "Could not publish ARM64 dos2unix package"
 fi
 
-actual="$(sha256sum "$package_path")" &&
-actual="${actual%% *}" ||
+actual="$(hash_file "$package_path")" ||
 die "Could not hash $package_path"
 test "$package_sha256" = "$actual" ||
 die "Unexpected SHA-256 for $package: $actual"
