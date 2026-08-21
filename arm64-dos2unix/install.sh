@@ -36,6 +36,8 @@ sha256sum_exe="$(find_file 'C:\Program Files\Git' sha256sum.exe)" ||
 die "Could not find sha256sum"
 tar_exe="$(find_file 'C:\Program Files\Git' tar.exe)" ||
 die "Could not find tar"
+zstd_exe="$(find_file 'C:\Program Files\Git' zstd.exe)" ||
+die "Could not find zstd"
 
 "$git_exe" --exec-path >/dev/null 2>&1 ||
 die "Could not find git"
@@ -43,6 +45,8 @@ die "Could not find git"
 die "Could not find curl"
 "$sha256sum_exe" --version >/dev/null 2>&1 ||
 die "Could not find sha256sum"
+"$zstd_exe" --version >/dev/null 2>&1 ||
+die "Could not find zstd"
 "$pwsh_exe" -NoLogo -NoProfile -Command '$null = $PSVersionTable.PSVersion' >/dev/null 2>&1 ||
 die "Could not find pwsh"
 
@@ -96,7 +100,8 @@ do
 	dst="/usr/bin/$tool.exe"
 	rm -f "$dst" ||
 	die "Could not replace $dst"
-	"$tar_exe" --force-local -xOf "$package_path_win" "clangarm64/bin/$src.exe" >"$dst" ||
+	"$zstd_exe" -dc "$package_path_win" |
+	"$tar_exe" --force-local -xOf - "clangarm64/bin/$src.exe" >"$dst" ||
 	die "Could not materialize $dst from $package_path"
 done
 
