@@ -37,7 +37,9 @@ resolve_tool () {
 	return 1
 }
 
-git_exec_path="$(git --exec-path)" ||
+git_exe="$(resolve_tool git '/c/Program Files/Git/bin/git.exe')" ||
+die "Could not find git"
+git_exec_path="$("$git_exe" --exec-path)" ||
 die "Could not determine git exec path"
 git_root="${git_exec_path%/libexec/git-core}"
 for git_arch in mingw64 ucrt64 clangarm64 mingw32
