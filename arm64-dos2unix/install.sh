@@ -20,26 +20,36 @@ package_dir_win="$(cd "$thisdir" && pwd -W)" ||
 die "Could not determine Windows path for ARM64 dos2unix directory"
 package_path_win="$package_dir_win\\$package"
 package_tmp_win="$package_dir_win\\.$package.$$"
-git_exe='C:\Program Files\Git\bin\git.exe'
-curl_exe='C:\Program Files\Git\mingw64\bin\curl.exe'
-sha256sum_exe='C:\Program Files\Git\usr\bin\sha256sum.exe'
 pwsh_exe='C:\Program Files\PowerShell\7\pwsh.exe'
 
+find_file () {
+	root=$1
+	name=$2
+	cmd.exe /c "\"$pwsh_exe\" -NoLogo -NoProfile -Command \"\$root = '$root'; \$name = '$name'; \$p = Get-ChildItem -LiteralPath \$root -Filter \$name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (\$p) { \$p } else { exit 1 }\""
+}
+
+git_exe="$(find_file 'C:\Program Files\Git' git.exe)" ||
+die "Could not find git"
+curl_exe="$(find_file 'C:\Program Files\Git' curl.exe)" ||
+die "Could not find curl"
+sha256sum_exe="$(find_file 'C:\Program Files\Git' sha256sum.exe)" ||
+die "Could not find sha256sum"
+
+cmd.exe /c "\"$git_exe\" --exec-path" >/dev/null 2>&1 ||
+die "Could not find git"
 cmd.exe /c "\"$curl_exe\" --version" >/dev/null 2>&1 ||
 die "Could not find curl"
 cmd.exe /c "\"$sha256sum_exe\" --version" >/dev/null 2>&1 ||
 die "Could not find sha256sum"
 "$pwsh_exe" -NoLogo -NoProfile -Command '$null = $PSVersionTable.PSVersion' >/dev/null 2>&1 ||
 die "Could not find pwsh"
-cmd.exe /c "\"$git_exe\" --exec-path" >/dev/null 2>&1 ||
-die "Could not find git"
 
 download_package () {
 	cmd.exe /c "\"$curl_exe\" -Lfo \"$package_tmp_win\" \"$package_url\""
 }
 
 hash_file () {
-	"$pwsh_exe" -NoLogo -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()"
+	cmd.exe /c "\"$pwsh_exe\" -NoLogo -NoProfile -Command \"(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()\""
 }
 
 if test -f "$package_path"
