@@ -37,9 +37,30 @@ resolve_tool () {
 	return 1
 }
 
-curl_exe="$(resolve_tool curl '/c/Program Files/Git/mingw64/bin/curl.exe' '/c/Windows/System32/curl.exe')" ||
+git_exec_path="$(git --exec-path)" ||
+die "Could not determine git exec path"
+git_root="${git_exec_path%/libexec/git-core}"
+for git_arch in mingw64 ucrt64 clangarm64 mingw32
+do
+	candidate="${git_root%/$git_arch}"
+	test "$candidate" = "$git_root" ||
+	{
+		git_root="$candidate"
+		break
+	}
+done
+curl_exe=
+for git_arch in mingw64 ucrt64 clangarm64 mingw32
+do
+	candidate="$git_root/$git_arch/bin/curl.exe"
+	test -x "$candidate" ||
+	continue
+	curl_exe="$candidate"
+	break
+done
+test -n "$curl_exe" ||
 die "Could not find curl"
-sha256sum_exe="$(resolve_tool sha256sum '/c/Program Files/Git/usr/bin/sha256sum.exe')" ||
+sha256sum_exe="$(resolve_tool sha256sum "$git_root/usr/bin/sha256sum.exe")" ||
 die "Could not find sha256sum"
 pwsh_exe="$(resolve_tool pwsh '/c/Program Files/PowerShell/7/pwsh.exe' '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')" ||
 die "Could not find pwsh"
