@@ -925,13 +925,11 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	{ test build-installers != "$mode" ||
 		test aarch64 != "$architecture" ||
 		use_arm64_native_openssh --root="$output_path"; } &&
-	{ test build-installers != "$mode" ||
-		test aarch64 != "$architecture" ||
-		use_arm64_native_gawk --root="$output_path"; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
-			"${this_script_path%/*}/arm64-busybox/install.sh"
+			"${this_script_path%/*}/arm64-busybox/install.sh" &&
+		use_arm64_native_gawk --root="$output_path"
 	fi &&
 	if test ! -f "$output_path/etc/profile"
 	then
