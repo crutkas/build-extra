@@ -20,13 +20,12 @@ package_dir_win="$(cd "$thisdir" && pwd -W)" ||
 die "Could not determine Windows path for ARM64 dos2unix directory"
 package_path_win="$package_dir_win\\$package"
 package_tmp_win="$package_dir_win\\.$package.$$"
-cmd_exe='C:\Windows\System32\cmd.exe'
 pwsh_exe='C:\Program Files\PowerShell\7\pwsh.exe'
 
 find_file () {
 	root=$1
 	name=$2
-	"$cmd_exe" /c "\"$pwsh_exe\" -NoLogo -NoProfile -Command \"\$root = '$root'; \$name = '$name'; \$p = Get-ChildItem -LiteralPath \$root -Filter \$name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (\$p) { \$p } else { exit 1 }\""
+	"$pwsh_exe" -NoLogo -NoProfile -Command "\$root = '$root'; \$name = '$name'; \$p = Get-ChildItem -LiteralPath \$root -Filter \$name -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (\$p) { \$p } else { exit 1 }"
 }
 
 git_exe="$(find_file 'C:\Program Files\Git' git.exe)" ||
@@ -36,21 +35,21 @@ die "Could not find curl"
 sha256sum_exe="$(find_file 'C:\Program Files\Git' sha256sum.exe)" ||
 die "Could not find sha256sum"
 
-"$cmd_exe" /c "\"$git_exe\" --exec-path" >/dev/null 2>&1 ||
+"$git_exe" --exec-path >/dev/null 2>&1 ||
 die "Could not find git"
-"$cmd_exe" /c "\"$curl_exe\" --version" >/dev/null 2>&1 ||
+"$curl_exe" --version >/dev/null 2>&1 ||
 die "Could not find curl"
-"$cmd_exe" /c "\"$sha256sum_exe\" --version" >/dev/null 2>&1 ||
+"$sha256sum_exe" --version >/dev/null 2>&1 ||
 die "Could not find sha256sum"
 "$pwsh_exe" -NoLogo -NoProfile -Command '$null = $PSVersionTable.PSVersion' >/dev/null 2>&1 ||
 die "Could not find pwsh"
 
 download_package () {
-	"$cmd_exe" /c "\"$curl_exe\" -Lfo \"$package_tmp_win\" \"$package_url\""
+	"$curl_exe" -Lfo "$package_tmp_win" "$package_url"
 }
 
 hash_file () {
-	"$cmd_exe" /c "\"$pwsh_exe\" -NoLogo -NoProfile -Command \"(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()\""
+	"$pwsh_exe" -NoLogo -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()"
 }
 
 if test -f "$package_path"
@@ -69,7 +68,7 @@ then
 	die "Could not hash $package_tmp_win"
 	test "$package_sha256" = "$actual" ||
 	die "Unexpected SHA-256 for $package: $actual"
-	"$cmd_exe" /c "\"$pwsh_exe\" -NoLogo -NoProfile -Command \"Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force\"" ||
+	"$pwsh_exe" -NoLogo -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
 	die "Could not publish ARM64 dos2unix package"
 fi
 
