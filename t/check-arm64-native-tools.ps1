@@ -66,6 +66,7 @@ try {
         $fieldError = Join-Path $runtime 'field.err'
         $fieldOutput = & $gawkPath '{ print $1 " " $2 }' $fieldInput 2> $fieldError
         if ($LASTEXITCODE -ne 0 -or $fieldOutput -ne 'alpha beta') {
+            Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
                 Get-Content -LiteralPath $fieldError
             }

@@ -126,10 +126,12 @@ mkdir -p "$runtime/scripts" "$runtime/ext"
 
 printf 'alpha beta\n' >"$runtime/field-input.txt"
 field_input="$runtime/field-input.txt" &&
-if test 'alpha beta' = "$("$gawk_path" '{ print $1 " " $2 }' "$field_input" 2>"$runtime/field.err" | tr -d '\r')"
+field_output=$("$gawk_path" '{ print $1 " " $2 }' "$field_input" 2>"$runtime/field.err" | tr -d '\r') &&
+if test 'alpha beta' = "$field_output"
 then
 	:
 else
+	printf 'gawk field output: <%s>\n' "$field_output" >&2
 	test ! -s "$runtime/field.err" || cat "$runtime/field.err" >&2
 	die "gawk field processing failed"
 fi
