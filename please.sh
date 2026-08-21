@@ -962,6 +962,16 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			mkdir -p "$output_path/cmd" &&
 			cp "$output_path$PREFIX/bin/git.exe" "$output_path/cmd/git.exe"
 		}; } &&
+	{ test build-installers != "$mode" ||
+		{
+			mkdir -p "$output_path$PREFIX/share/git" &&
+			test -x "$output_path$PREFIX/share/git/compat-bash.exe" ||
+				cp "$output_path$PREFIX/bin/bash.exe" \
+					"$output_path$PREFIX/share/git/compat-bash.exe" &&
+			test -x "$output_path$PREFIX/share/git/git-wrapper.exe" ||
+				cp "$output_path$PREFIX/bin/git.exe" \
+					"$output_path$PREFIX/share/git/git-wrapper.exe"
+		}; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
 		PATH="$(cygpath -au "$output_path")/usr/bin:$PATH" \
