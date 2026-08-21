@@ -98,4 +98,6 @@ do
 	src=${tool_src##*:}
 	"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_dir_win\\$src.exe' -Destination '$dst_dir_win\\$tool.exe' -Force" ||
 	die "Could not materialize /usr/bin/$tool.exe from $package_path"
+	"$pwsh_exe" -NoLogo -NoProfile -Command "Remove-Item -LiteralPath '$src_dir_win\\$src.exe' -Force" ||
+	die "Could not remove /clangarm64/bin/$tool.exe"
 done
