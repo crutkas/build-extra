@@ -152,14 +152,11 @@ sort >"$SCRIPT_PATH"/exclude-list &&
 LIST="$(comm -23 "$SCRIPT_PATH"/sorted-all "$SCRIPT_PATH"/exclude-list)" ||
 die "Could not copy libexec/git-core/*.exe"
 
-wrapper_source="/$MSYSTEM_LOWER/share/git/git-wrapper.exe" &&
-test -f "$wrapper_source" || wrapper_source="/$MSYSTEM_LOWER/bin/git.exe" &&
-
 # Use git-wrapper.exe as git-remote-http.exe if supported
 if cmp "$SCRIPT_PATH/root/$BIN_DIR"/git-remote-http{,s}.exe
 then
 	# verify that the Git wrapper works
-	cp "$wrapper_source" "$SCRIPT_PATH/root/$BIN_DIR"/git-remote-http.exe
+	cp "/$MSYSTEM_LOWER/share/git/git-wrapper.exe" "$SCRIPT_PATH/root/$BIN_DIR"/git-remote-http.exe
 	usage="$($SCRIPT_PATH/root/$BIN_DIR/git-remote-http.exe 2>&1)"
 	case "$?,$usage" in
 	1,*remote-curl*) ;; # okay, let's use the Git wrapper
@@ -175,7 +172,7 @@ $BIN_DIR/busybox.exe
 	die "Could not copy busybox.exe"
 
 	# verify that the Git wrapper works
-	cp "$wrapper_source" "$SCRIPT_PATH/root/$BIN_DIR"/ash.exe
+	cp "/$MSYSTEM_LOWER/share/git/git-wrapper.exe" "$SCRIPT_PATH/root/$BIN_DIR"/ash.exe
 	uname="$($SCRIPT_PATH/root/$BIN_DIR/ash.exe -c uname 2>&1)"
 	case "$?,$uname" in
 	0,*BusyBox*) ;; # okay, let's use the Git wrapper
