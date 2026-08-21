@@ -54,6 +54,11 @@ then
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
 fi
 EXTRA_FILE_EXCLUDES=
+if test aarch64 = "$ARCH"
+then
+	EXTRA_FILE_EXCLUDES="$EXTRA_FILE_EXCLUDES
+		/$MSYSTEM_LOWER/bin/libhistory8\.dll"
+fi
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX"
 then
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES bash sh coreutils mingw-w64-busybox
@@ -63,8 +68,7 @@ then
 	EXTRA_FILE_EXCLUDES="/etc/post-install/.* /usr/bin/getfacl.exe
 		/usr/bin/msys-\(gmp\|ssl\)-.*.dll
 		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-deflatehd.exe
-		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-inflatehd.exe
-		/$MSYSTEM_LOWER/bin/libhistory8\.dll"
+		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-inflatehd.exe"
 
 	UTIL_PACKAGES=
 	SH_FOR_REBASE=mingw-w64-$PACMAN_ARCH-busybox

@@ -18,8 +18,11 @@ esac
 if test -n "$root_dir"
 then
 	root_supplied=t
-	root_dir="$(cygpath -au "$root_dir")" ||
-	die "Could not resolve the ARM64 root"
+	case "$root_dir" in
+	/*) ;;
+	*) root_dir="$(cygpath -au "$root_dir")" ||
+		die "Could not resolve the ARM64 root";;
+	esac
 	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
 fi
 if test -z "$root_supplied"
