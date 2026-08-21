@@ -965,6 +965,14 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	{ test build-installers != "$mode" ||
 		{
 			mkdir -p "$output_path$PREFIX/share/git" &&
+			blocked_file_util_source="$output_path$PREFIX/bin/blocked-file-util.exe" &&
+			test -x "$blocked_file_util_source" ||
+				blocked_file_util_source="/$MSYSTEM_LOWER/bin/blocked-file-util.exe" &&
+			test -x "$blocked_file_util_source" ||
+				blocked_file_util_source=/usr/bin/blocked-file-util.exe &&
+			test -x "$output_path$PREFIX/bin/blocked-file-util.exe" ||
+				cp "$blocked_file_util_source" \
+					"$output_path$PREFIX/bin/blocked-file-util.exe" &&
 			bash_source="$output_path$PREFIX/bin/bash.exe" &&
 			test -x "$bash_source" || bash_source="$output_path/usr/bin/bash.exe" &&
 			test -x "$bash_source" || bash_source=/usr/bin/bash.exe &&
