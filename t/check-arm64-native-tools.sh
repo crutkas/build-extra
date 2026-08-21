@@ -98,7 +98,7 @@ check_tool () {
 	*) die "$tool resolves to $path instead of a clangarm64/bin/$tool[.exe] path";;
 	esac
 
-	"$tool" "$@" >"$tmp" 2>&1
+	"$path" "$@" >"$tmp" 2>&1
 	actual=$?
 	test "$expected" = "$actual" ||
 	die "$tool returned $actual instead of $expected"
