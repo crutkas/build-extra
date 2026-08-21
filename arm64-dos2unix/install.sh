@@ -34,6 +34,8 @@ curl_exe="$(find_file 'C:\Program Files\Git' curl.exe)" ||
 die "Could not find curl"
 sha256sum_exe="$(find_file 'C:\Program Files\Git' sha256sum.exe)" ||
 die "Could not find sha256sum"
+tar_exe="$(find_file 'C:\Program Files\Git' tar.exe)" ||
+die "Could not find tar"
 
 "$git_exe" --exec-path >/dev/null 2>&1 ||
 die "Could not find git"
@@ -94,7 +96,7 @@ do
 	dst="/usr/bin/$tool.exe"
 	rm -f "$dst" ||
 	die "Could not replace $dst"
-	tar -xOf "$package_path" "clangarm64/bin/$src.exe" >"$dst" ||
+	"$tar_exe" -xOf "$package_path" "clangarm64/bin/$src.exe" >"$dst" ||
 	die "Could not materialize $dst from $package_path"
 done
 
