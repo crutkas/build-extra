@@ -853,6 +853,7 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 
 		# markdown, to render the release notes
 		/usr/bin/markdown
+		/usr/bin/msys-mpfr-6.dll
 
 		# gettext (for makepkg)
 		/usr/bin/gettext.exe
