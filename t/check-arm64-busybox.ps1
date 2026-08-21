@@ -15,7 +15,7 @@ $expectedBusyBoxHash = 'afe7768285d5bd415fc2440a74bdf6e3c828cd1aca8dd2b36fcdf9b4
 $expectedShimHash = '49ee6f040be4cb42cb5c7ef3dd5e25c8f431bcfbe1d2587d75c55967bbfe8959'
 $expectedPackageVersion = 'mingw-w64-clang-aarch64-busybox 1.38.0.git.e7299058-1'
 $expectedReplacementCount = if ($Experimental) { 84 } else { 59 }
-$expectedRetainedCount = if ($Experimental) { 53 } else { 63 }
+$expectedRetainedCount = if ($Experimental) { 53 } else { 78 }
 
 function Get-PeMachine {
     param([Parameter(Mandatory = $true)][string]$Path)

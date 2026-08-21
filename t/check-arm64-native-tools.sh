@@ -7,62 +7,70 @@ die () {
 
 thisdir="$(cd "$(dirname "$0")" && pwd)" ||
 die "Could not determine the test directory"
-selection_only=
 root_dir=
+root_supplied=
 case "$1" in
---selection-only) selection_only=t;;
+--selection-only) ;;
 "--root="*) root_dir=${1#*=};;
 "") ;;
 *) die "Unknown option: $1";;
 esac
 if test -n "$root_dir"
 then
+	root_supplied=t
 	root_dir="$(cygpath -au "$root_dir")" ||
 	die "Could not resolve the ARM64 root"
-else
-	root_dir=/
+	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
 fi
-tmp=${TMPDIR:-/tmp}/arm64-native-tools.$$
-runtime=
-trap 'rm -f "$tmp"; test -n "$runtime" && rm -rf "$runtime"' EXIT
+if test -z "$root_supplied"
+then
+	tmp=${TMPDIR:-/tmp}/arm64-native-tools.$$
+	trap 'rm -f "$tmp"; test -n "$runtime" && rm -rf "$runtime"' EXIT
 
-ARCH=aarch64 INCLUDE_GIT_UPDATE=1 \
-	"$thisdir/../make-file-list.sh" >"$tmp" ||
-die "Could not generate the ARM64 file list"
+	ARCH=aarch64 INCLUDE_GIT_UPDATE=1 \
+		"$thisdir/../make-file-list.sh" >"$tmp" ||
+	die "Could not generate the ARM64 file list"
 
-for tool in bunzip2 bzcat bzip2 bzip2recover \
-	nettle-hash nettle-lfib-stream nettle-pbkdf2 pkcs1-conv sexp-conv \
-	p11-kit trust
-do
-	grep -qx "usr/bin/$tool.exe" "$tmp" &&
-	die "The ARM64 file list still contains usr/bin/$tool.exe"
-	grep -qx "clangarm64/bin/$tool.exe" "$tmp" ||
-	die "The ARM64 file list does not contain clangarm64/bin/$tool.exe"
-done
+	for tool in bunzip2 bzcat bzip2 bzip2recover \
+		nettle-hash nettle-lfib-stream nettle-pbkdf2 pkcs1-conv sexp-conv \
+		p11-kit trust
+	do
+		grep -qx "usr/bin/$tool.exe" "$tmp" &&
+		die "The ARM64 file list still contains usr/bin/$tool.exe"
+		grep -qx "clangarm64/bin/$tool.exe" "$tmp" ||
+		die "The ARM64 file list does not contain clangarm64/bin/$tool.exe"
+	done
 
-for pattern in \
-	'^usr/bin/msys-bz2-[0-9].*\.dll$' \
-	'^usr/lib/perl5/.*/auto/Compress/Raw/Bzip2/Bzip2\.dll$' \
-	'^usr/bin/msys-hogweed-[0-9].*\.dll$' \
-	'^usr/bin/msys-nettle-[0-9].*\.dll$' \
-	'^usr/bin/msys-p11-kit-[0-9].*\.dll$' \
-	'^usr/lib/pkcs11/p11-kit-trust\.dll$' \
-	'^usr/libexec/p11-kit/p11-kit-remote\.exe$' \
-	'^usr/libexec/p11-kit/p11-kit-server\.exe$'
-do
-	grep -Eq "$pattern" "$tmp" ||
-	die "The ARM64 file list no longer contains required x64 payload matching $pattern"
-done
+	for pattern in \
+		'^usr/bin/msys-bz2-[0-9].*\.dll$' \
+		'^usr/lib/perl5/.*/auto/Compress/Raw/Bzip2/Bzip2\.dll$' \
+		'^usr/bin/msys-hogweed-[0-9].*\.dll$' \
+		'^usr/bin/msys-nettle-[0-9].*\.dll$' \
+		'^usr/bin/msys-p11-kit-[0-9].*\.dll$' \
+		'^usr/lib/pkcs11/p11-kit-trust\.dll$' \
+		'^usr/libexec/p11-kit/p11-kit-remote\.exe$' \
+		'^usr/libexec/p11-kit/p11-kit-server\.exe$'
+	do
+		grep -Eq "$pattern" "$tmp" ||
+		die "The ARM64 file list no longer contains required x64 payload matching $pattern"
+	done
 
+	grep -qx "clangarm64/bin/gawk.exe" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/gawk.exe"
+	grep -qx "clangarm64/bin/gawk-5.4.1.exe" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/gawk-5.4.1.exe"
+	grep -qx "clangarm64/lib/gawk/fork.dll" "$tmp" &&
+	die "fork.dll should not be packaged for native ARM64 gawk"
+
+	exit 0
+fi
+
+export PATH
 test -x "$root_dir/clangarm64/bin/gawk-5.4.1.exe" ||
 die "The ARM64 file list does not contain $root_dir/clangarm64/bin/gawk-5.4.1.exe"
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
-test -z "$selection_only" || exit 0
-
-PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin"
-export PATH
 awk_path=$(command -v awk) ||
 die "Could not resolve awk from Git Bash"
 gawk_path=$(command -v gawk) ||
