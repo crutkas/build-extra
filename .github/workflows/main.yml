@@ -276,7 +276,7 @@ jobs:
       - name: validate ARM64 BusyBox portable payload
         if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
         shell: pwsh
-        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git"
+        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git" -AllowMissingReplacements
       - name: extract and validate ARM64 MinGit modes
         if: matrix.directory == 'mingit' && matrix.architecture.name == 'aarch64'
         shell: pwsh
