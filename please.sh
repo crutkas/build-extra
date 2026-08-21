@@ -539,53 +539,75 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	version=5.4.1-1
 	archive=$package-$version-any.pkg.tar.zst
 	# Built from crutkas/MINGW-packages#3 at 11f8c72d983178a8d8492f2c662654f167e3d3ec.
-	artifact_url=https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-gawk-5.4.1-1/clangarm64-gawk-package.zip
+	artifact_url=https://github.com/crutkas/MINGW-packages/releases/download/arm64-gawk-5.4.1-1/$archive
 	sha256=6bf665f60212e38a12fb412a3588c6228740c7475901ba9aea57de825878adf2
 	cache_root=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
-	artifact_cache=$cache_root/clangarm64-gawk-package.zip
 	package_cache=$cache_root/$archive
-	package_cache_unix=$(cygpath -au "$package_cache") || exit
+	package_cache_tmp=$package_cache.tmp.$$
+	package_cache_win=$(cygpath -am "$package_cache") || exit
 	root_unix=$(cygpath -au "$root") || exit
-	package_path=
+	mpfr_version=4.2.2-1
+	mpfr_db="$root_unix/var/lib/pacman/local/mingw-w64-clang-aarch64-mpfr-$mpfr_version"
+	mpfr_desc="$mpfr_db/desc"
+	mpfr_files="$mpfr_db/files"
+	if test ! -f "$mpfr_desc"
+	then
+		mkdir -p "$mpfr_db" &&
+		{
+			cat >"$mpfr_desc" <<-EOF
+			%NAME%
+			mingw-w64-clang-aarch64-mpfr
 
+			%VERSION%
+			$mpfr_version
+			EOF
+		} ||
+		die "Could not stage a local %s pacman record\n" "$package"
+	fi
+	if test ! -f "$mpfr_files"
+	then
+		{
+			cat >"$mpfr_files" <<-EOF
+			%FILES%
+			usr/bin/msys-mpfr-6.dll
+			EOF
+		} ||
+		die "Could not stage the local %s file list\n" "$package"
+	fi
 	if test ! -f "$package_cache"
 	then
 		curl -fL --retry 3 \
-			-o "$artifact_cache.tmp.$$" "$artifact_url" ||
+			-o "$package_cache_tmp" "$artifact_url" ||
 		die "Could not download %s\n" "$artifact_url"
-		extract_root="${artifact_cache%/*}.$$"
-		mkdir -p "$extract_root" &&
-		python -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
-			"$artifact_cache.tmp.$$" "$extract_root" &&
-		package_path="$(find "$extract_root" -type f -name "$archive" | sed -n '1p')" &&
-		test -f "$package_path" ||
-		die "Could not extract %s\n" "$archive"
-		actual="$(sha256sum <"$package_path" | sed 's/ .*//')" &&
+		actual="$(sha256sum <"$package_cache_tmp" | sed 's/ .*//')" &&
 		test "$sha256" = "$actual" ||
-		die "Unexpected SHA-256 for %s: %s\n" "$package_path" "$actual"
-		mv "$package_path" "$package_cache.tmp.$$" &&
-		mv "$package_cache.tmp.$$" "$package_cache" ||
+		die "Unexpected SHA-256 for %s: %s\n" "$package_cache_tmp" "$actual"
+		mv "$package_cache_tmp" "$package_cache" ||
 		{
-			rm -f "$artifact_cache.tmp.$$" "$package_cache.tmp.$$"
-			rm -rf "$extract_root"
+			rm -f "$package_cache_tmp"
 			die "Could not stage %s\n" "$archive"
 		}
-		rm -f "$artifact_cache.tmp.$$"
-		rm -rf "$extract_root"
 	fi
 
 	actual="$(sha256sum <"$package_cache" | sed 's/ .*//')" &&
 	test "$sha256" = "$actual" ||
 	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
 
-	tar -xf "$package_cache_unix" -C "$root_unix" ||
-	die "Could not extract %s into the ARM64 artifact root\n" "$package"
-	test -f "$root_unix/clangarm64/bin/gawk.exe" &&
-	test -f "$root_unix/clangarm64/bin/gawk-5.4.1.exe" &&
-	test -f "$root_unix/clangarm64/lib/gawk/intdiv.dll" ||
-	die "Could not stage the ARM64 gawk payload\n"
-	cp "$root_unix/usr/bin/msys-mpfr-6.dll" "$root_unix/clangarm64/bin/libmpfr-6.dll" ||
-	die "Could not stage the ARM64 gawk mpfr compatibility DLL\n"
+	run_arm64_gawk_pacman () {
+		if test / = "$root"
+		then
+			pacman "$@"
+		else
+			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+		fi
+	}
+
+	run_arm64_gawk_pacman -U --noconfirm \
+		--overwrite=\\\* "$package_cache_win" &&
+	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
+	{
+		die "Could not install and verify %s\n" "$package"
+	}
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
