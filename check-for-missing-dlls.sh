@@ -63,7 +63,7 @@ fi
 UCRT64_UNUSED_DLL_EXCLUDE=
 if test ucrt64 = "$MINGW_PREFIX"
 then
-	UCRT64_UNUSED_DLL_EXCLUDE='-e "^ucrt64/bin/libstdc++-6.dll"'
+	UCRT64_UNUSED_DLL_EXCLUDE='-e ^ucrt64/bin/libstdc++-6.dll'
 fi
 
 used_dlls_file=/tmp/used-dlls.$$.txt
