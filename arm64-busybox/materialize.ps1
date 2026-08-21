@@ -30,9 +30,15 @@ $busyboxPath = (Resolve-Path -LiteralPath $BusyBox).Path
 $shimPath = (Resolve-Path -LiteralPath $Shim).Path
 $installedShimPath = Join-Path $rootPath 'clangarm64\bin\busybox-shim.exe'
 $installedShimDirectory = Split-Path -Parent $installedShimPath
+$shimHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $shimPath).Hash.ToLowerInvariant()
 New-Item -ItemType Directory -Force -Path $installedShimDirectory | Out-Null
 if ($shimPath -ne $installedShimPath) {
-    Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    if ((Test-Path -LiteralPath $installedShimPath) -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath $installedShimPath).Hash.ToLowerInvariant() -eq $shimHash)) {
+        # The installed shim already matches; avoid overwriting a live file.
+    } else {
+        Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    }
 }
 $defaultPaths = @(Get-Content -LiteralPath $DefaultList)
 $experimentalPaths = @(Get-Content -LiteralPath $ExperimentalList)
