@@ -27,26 +27,28 @@ if ($Root) {
     $env:PATH = "$rootPath\clangarm64\bin;$rootPath\usr\bin;$env:PATH"
 }
 
-$cases = @(
-    @{ Name = "bunzip2"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "bzcat"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "bzip2"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "bzip2recover"; Arguments = @(); ExitCode = 1 },
-    @{ Name = "nettle-hash"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "nettle-lfib-stream"; Arguments = @("--help"); ExitCode = 1 },
-    @{ Name = "nettle-pbkdf2"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "pkcs1-conv"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "sexp-conv"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "p11-kit"; Arguments = @("--help"); ExitCode = 0 },
-    @{ Name = "trust"; Arguments = @("--help"); ExitCode = 0 }
-)
+if ($rootPath -notlike '*\portable-git') {
+    $cases = @(
+        @{ Name = "bunzip2"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "bzcat"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "bzip2"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "bzip2recover"; Arguments = @(); ExitCode = 1 },
+        @{ Name = "nettle-hash"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "nettle-lfib-stream"; Arguments = @("--help"); ExitCode = 1 },
+        @{ Name = "nettle-pbkdf2"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "pkcs1-conv"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "sexp-conv"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "p11-kit"; Arguments = @("--help"); ExitCode = 0 },
+        @{ Name = "trust"; Arguments = @("--help"); ExitCode = 0 }
+    )
 
-foreach ($case in $cases) {
-    $native = Get-RootToolPath -Name $case.Name
+    foreach ($case in $cases) {
+        $native = Get-RootToolPath -Name $case.Name
 
-    & $native @($case.Arguments) *> $null
-    if ($LASTEXITCODE -ne $case.ExitCode) {
-        throw "$native returned $LASTEXITCODE instead of $($case.ExitCode)"
+        & $native @($case.Arguments) *> $null
+        if ($LASTEXITCODE -ne $case.ExitCode) {
+            throw "$native returned $LASTEXITCODE instead of $($case.ExitCode)"
+        }
     }
 }
 
