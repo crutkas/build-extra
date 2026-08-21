@@ -5,6 +5,23 @@ param(
 $rootPath = $null
 $oldPath = $env:PATH
 $ErrorActionPreference = 'Stop'
+function Get-RootToolPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    foreach ($dir in @('clangarm64\bin', 'usr\bin')) {
+        foreach ($ext in @('.exe', '')) {
+            $candidate = Join-Path $rootPath "$dir\$Name$ext"
+            if (Test-Path -LiteralPath $candidate) {
+                return $candidate
+            }
+        }
+    }
+
+    throw "The ARM64 payload does not contain $Name"
+}
 if ($Root) {
     $rootPath = (Resolve-Path -LiteralPath $Root).Path
     $env:PATH = "$rootPath\clangarm64\bin;$rootPath\usr\bin;$env:PATH"
@@ -25,10 +42,7 @@ $cases = @(
 )
 
 foreach ($case in $cases) {
-    $native = Join-Path $Root "clangarm64\bin\$($case.Name).exe"
-    if (-not (Test-Path -LiteralPath $native)) {
-        throw "The ARM64 payload does not contain $native"
-    }
+    $native = Get-RootToolPath -Name $case.Name
 
     & $native @($case.Arguments) *> $null
     if ($LASTEXITCODE -ne $case.ExitCode) {
@@ -44,12 +58,12 @@ if ($rootPath -like '*\mingit-root') {
     }
 }
 else {
-    if ($awkPath -notlike '*\clangarm64\bin\awk.exe') {
-        throw "awk resolves to $awkPath instead of clangarm64\bin\awk.exe"
+    if ($awkPath -notlike '*\clangarm64\bin\awk.exe' -and $awkPath -notlike '*\usr\bin\awk.exe') {
+        throw "awk resolves to $awkPath instead of a clangarm64\bin or usr\bin awk.exe"
     }
 }
-if ($gawkPath -notlike '*\clangarm64\bin\gawk.exe') {
-    throw "gawk resolves to $gawkPath instead of clangarm64\bin\gawk.exe"
+if ($gawkPath -notlike '*\clangarm64\bin\gawk.exe' -and $gawkPath -notlike '*\usr\bin\gawk.exe') {
+    throw "gawk resolves to $gawkPath instead of a clangarm64\bin or usr\bin gawk.exe"
 }
 $gawkBin = Split-Path -LiteralPath $gawkPath
 $gawkVersioned = Join-Path $gawkBin 'gawk-5.4.1.exe'

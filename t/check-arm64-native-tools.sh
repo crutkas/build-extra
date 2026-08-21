@@ -28,8 +28,25 @@ then
 		die "Could not resolve the ARM64 root";;
 	esac
 	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
-	awk_path="$root_dir/clangarm64/bin/awk.exe"
-	gawk_path="$root_dir/clangarm64/bin/gawk.exe"
+	resolve_root_tool_path () {
+		tool=$1
+		for dir in "$root_dir/clangarm64/bin" "$root_dir/usr/bin"
+		do
+			for ext in .exe ""
+			do
+				path="$dir/$tool$ext"
+				test -f "$path" && {
+					printf '%s\n' "$path"
+					return 0
+				}
+			done
+		done
+		return 1
+	}
+	awk_path=$(resolve_root_tool_path awk) ||
+	die "Could not resolve awk from the ARM64 root"
+	gawk_path=$(resolve_root_tool_path gawk) ||
+	die "Could not resolve gawk from the ARM64 root"
 fi
 if test -z "$root_supplied"
 then
@@ -80,8 +97,8 @@ export PATH
 gawk_versioned_path=$(command -v gawk-5.4.1) ||
 die "Could not resolve gawk-5.4.1 from Git Bash"
 case "$gawk_versioned_path" in
-*/clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe) ;;
-*) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin/gawk-5.4.1[.exe] path";;
+*/clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe|*/usr/bin/gawk-5.4.1|*/usr/bin/gawk-5.4.1.exe) ;;
+*) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin or usr/bin gawk-5.4.1[.exe] path";;
 esac
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
@@ -102,14 +119,14 @@ case "$root_dir" in
 	;;
 *)
 	case "$awk_path" in
-	*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe) ;;
-	*) die "awk resolves to $awk_path instead of a clangarm64/bin/awk[.exe] path";;
+	*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe|*/usr/bin/awk|*/usr/bin/awk.exe) ;;
+	*) die "awk resolves to $awk_path instead of a clangarm64/bin or usr/bin awk[.exe] path";;
 	esac
 	;;
 esac
 case "$gawk_path" in
-*/clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe) ;;
-*) die "gawk resolves to $gawk_path instead of a clangarm64/bin/gawk[.exe] path";;
+*/clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe|*/usr/bin/gawk|*/usr/bin/gawk.exe) ;;
+*) die "gawk resolves to $gawk_path instead of a clangarm64/bin or usr/bin gawk[.exe] path";;
 esac
 test -f "$root_dir/clangarm64/bin/libmpfr-6.dll" ||
 die "The ARM64 payload does not contain clangarm64/bin/libmpfr-6.dll"
@@ -118,11 +135,19 @@ check_tool () {
 	expected=$2
 	shift 2
 
-	path="$root_dir/clangarm64/bin/$tool.exe"
-	test -f "$path" || path="$root_dir/clangarm64/bin/$tool"
-	test -f "$path" ||
-	die "$tool does not exist in the ARM64 payload"
-	"$path" "$@" >"$tmp" 2>&1
+path=
+for dir in "$root_dir/clangarm64/bin" "$root_dir/usr/bin"
+do
+	for ext in .exe ""
+	do
+		test -f "$dir/$tool$ext" || continue
+		path="$dir/$tool$ext"
+		break 2
+	done
+done
+test -f "$path" ||
+die "$tool does not exist in the ARM64 payload"
+"$path" "$@" >"$tmp" 2>&1
 	actual=$?
 	test "$expected" = "$actual" ||
 	die "$tool returned $actual instead of $expected"
