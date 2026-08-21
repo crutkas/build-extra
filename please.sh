@@ -968,9 +968,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			test -x "$output_path$PREFIX/bin/blocked-file-util.exe" ||
 				{
 					mkdir -p "$output_path$PREFIX/bin" &&
-					make -C "$SCRIPT_PATH/git-extra" \
+					make -C "${this_script_path%/*}/git-extra" \
 						BUILDDIR="$output_path$PREFIX/bin" \
-						SRCDIR="$SCRIPT_PATH/git-extra" \
+						SRCDIR="${this_script_path%/*}/git-extra" \
 						blocked-file-util.exe ||
 					die "Could not build blocked-file-util.exe"
 				} &&
