@@ -264,7 +264,7 @@ jobs:
           Get-ChildItem -Path $portableRoot
           Push-Location $portableRoot
           try {
-            & .\bin\git-bash.exe --needs-console --hide --no-cd --command=post-install.bat
+            & $env:ComSpec /c post-install.bat
             if ($LASTEXITCODE -ne 0) {
               throw "Portable Git post-install failed"
             }
