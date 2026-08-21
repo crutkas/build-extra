@@ -965,8 +965,11 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	{ test build-installers != "$mode" ||
 		{
 			mkdir -p "$output_path$PREFIX/share/git" &&
+			bash_source="$output_path$PREFIX/bin/bash.exe" &&
+			test -x "$bash_source" || bash_source="$output_path/usr/bin/bash.exe" &&
+			test -x "$bash_source" || bash_source=/usr/bin/bash.exe &&
 			test -x "$output_path$PREFIX/share/git/compat-bash.exe" ||
-				cp "$output_path$PREFIX/bin/bash.exe" \
+				cp "$bash_source" \
 					"$output_path$PREFIX/share/git/compat-bash.exe" &&
 			test -x "$output_path$PREFIX/share/git/git-wrapper.exe" ||
 				cp "$output_path$PREFIX/bin/git.exe" \
