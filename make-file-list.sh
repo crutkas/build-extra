@@ -338,6 +338,7 @@ else
 		-e '^/etc/\(DIR_COLORS\|inputrc\|vimrc\)$' \
 		-e '^/etc/profile\.d/\(aliases\|env\|git-prompt\)\.sh$' \
 		-e '^/git-\(bash\|cmd\)\.exe$' \
+		-e '^/clangarm64/bin/libhistory8\.dll$' \
 		-e "^/$MSYSTEM_LOWER/bin/\\(certtool\\.exe\\|create-shortcut\\.exe\\)$" \
 		-e "^/$MSYSTEM_LOWER/bin/\\(curl\\.exe\\|envsubst\\.exe\\|gettext\\.exe\\)$" \
 		-e "^/$MSYSTEM_LOWER/bin/.*-\\(inflate\\|deflate\\)hd\\.exe$" \

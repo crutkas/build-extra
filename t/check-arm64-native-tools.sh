@@ -69,8 +69,16 @@ then
 fi
 
 export PATH
-test -x "$root_dir/clangarm64/bin/gawk-5.4.1.exe" ||
-die "The ARM64 file list does not contain $root_dir/clangarm64/bin/gawk-5.4.1.exe"
+gawk_versioned_path=$(command -v gawk-5.4.1) ||
+die "Could not resolve gawk-5.4.1 from Git Bash"
+case "$gawk_versioned_path" in
+*/clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe) ;;
+*) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin/gawk-5.4.1[.exe] path";;
+esac
+"$gawk_versioned_path" --version >/dev/null 2>&1 || {
+actual=$?
+die "gawk-5.4.1 returned $actual instead of 0"
+}
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
