@@ -1,4 +1,5 @@
 path	reason
+usr/bin/awk.exe	BusyBox awk does not provide GNU awk extensions
 usr/bin/chmod.exe	Native Windows ACL and MSYS executable-bit semantics are not proven
 usr/bin/date.exe	GNU date parsing and timezone semantics are not proven
 usr/bin/dd.exe	Device, signal, and GNU operand semantics are not proven
@@ -53,8 +54,22 @@ usr/bin/users.exe	No exact ARM64 BusyBox applet
 usr/bin/vdir.exe	No exact ARM64 BusyBox applet
 usr/bin/who.exe	No exact ARM64 BusyBox applet
 usr/lib/coreutils/libstdbuf.dll	BusyBox does not replace support libraries or extensions
+usr/bin/gawk-5.4.0.exe	No exact ARM64 BusyBox applet
+usr/bin/gawk.exe	No exact ARM64 BusyBox applet
 usr/lib/awk/grcat.exe	No exact ARM64 BusyBox applet
 usr/lib/awk/pwcat.exe	No exact ARM64 BusyBox applet
+usr/lib/gawk/filefuncs.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/fnmatch.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/fork.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/inplace.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/intdiv.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/ordchr.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/readdir.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/readfile.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/revoutput.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/revtwoway.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/rwarray.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/time.dll	BusyBox does not replace support libraries or extensions
 usr/bin/diff3.exe	No exact ARM64 BusyBox applet
 usr/bin/sdiff.exe	No exact ARM64 BusyBox applet
 usr/bin/locate.exe	No exact ARM64 BusyBox applet
