@@ -28,6 +28,8 @@ then
 		die "Could not resolve the ARM64 root";;
 	esac
 	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
+	awk_path="$root_dir/clangarm64/bin/awk.exe"
+	gawk_path="$root_dir/clangarm64/bin/gawk.exe"
 fi
 if test -z "$root_supplied"
 then
@@ -84,10 +86,13 @@ esac
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
-awk_path=$(command -v awk) ||
-die "Could not resolve awk from Git Bash"
-gawk_path=$(command -v gawk) ||
-die "Could not resolve gawk from Git Bash"
+if test -z "$root_supplied"
+then
+	awk_path=$(command -v awk) ||
+	die "Could not resolve awk from Git Bash"
+	gawk_path=$(command -v gawk) ||
+	die "Could not resolve gawk from Git Bash"
+fi
 case "$root_dir" in
 */mingit-root)
 	case "$awk_path" in
