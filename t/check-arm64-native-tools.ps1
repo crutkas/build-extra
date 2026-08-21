@@ -93,9 +93,11 @@ try {
         Set-Content -Encoding ascii -LiteralPath $fieldScript -Value '{ print $1 " " $2 }'
         $fieldInput = Join-Path $runtime 'field-input.txt'
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
+        $fieldOutputFile = Join-Path $runtime 'field.out'
         $fieldError = Join-Path $runtime 'field.err'
-        $fieldOutput = & $runtimeGawkPath -f $fieldScript $fieldInput 2> $fieldError
-        if ($LASTEXITCODE -ne 0 -or $fieldOutput -ne 'alpha beta') {
+        & $runtimeGawkPath -f $fieldScript $fieldInput 1> $fieldOutputFile 2> $fieldError
+        $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
+        if ($LASTEXITCODE -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
                 Get-Content -LiteralPath $fieldError
