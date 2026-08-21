@@ -70,7 +70,7 @@ fi
 
 export PATH
 gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1.exe"
-test -x "$gawk_versioned_path" ||
+test -f "$gawk_versioned_path" ||
 gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1"
 "$gawk_versioned_path" --version >/dev/null 2>&1 || {
 actual=$?
