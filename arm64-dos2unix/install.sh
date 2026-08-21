@@ -97,10 +97,12 @@ do
 	die "Could not replace $dst"
 	if ! ln "$src" "$dst" 2>/dev/null
 	then
-		src_win="$(cygpath -aw "$src")" ||
-		die "Could not resolve $src"
-		dst_win="$(cygpath -aw "$dst")" ||
-		die "Could not resolve $dst"
+		src_win="$(cd /clangarm64/bin && pwd -W)" ||
+		die "Could not resolve /clangarm64/bin"
+		dst_win="$(cd /usr/bin && pwd -W)" ||
+		die "Could not resolve /usr/bin"
+		src_win="$src_win\\$tool.exe"
+		dst_win="$dst_win\\$tool.exe"
 		"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_win' -Destination '$dst_win' -Force" ||
 		die "Could not materialize $dst from $src"
 	fi
