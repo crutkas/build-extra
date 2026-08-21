@@ -108,7 +108,7 @@ die "Could not make bin/ directory"
 git_source=/cmd/git.exe &&
 test -f "$git_source" || git_source="/$MSYSTEM_LOWER/bin/git.exe" &&
 bash_source="/$MSYSTEM_LOWER/share/git/compat-bash.exe" &&
-test -f "$bash_source" || bash_source="/$MSYSTEM_LOWER/usr/bin/bash.exe" &&
+test -f "$bash_source" || bash_source=/usr/bin/bash.exe &&
 cp "$git_source" "$SCRIPT_PATH/root/bin/git.exe" &&
 cp "$bash_source" "$SCRIPT_PATH/root/bin/bash.exe" &&
 cp "$bash_source" "$SCRIPT_PATH/root/bin/sh.exe" ||
