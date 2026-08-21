@@ -44,13 +44,10 @@ OPENSSH_PACKAGE=openssh
 
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
-AWK_PACKAGE=
 UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test aarch64 = "$ARCH"
 then
 	OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
-	AWK_PACKAGE=mingw-w64-$PACMAN_ARCH-gawk
-	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES awk"
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
 fi
 EXTRA_FILE_EXCLUDES=
@@ -224,7 +221,7 @@ has_pacman_package mingw-w64-$PACMAN_ARCH-git-for-windows-addons &&
 G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git-for-windows-addons ||
 G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git
 
-packages="$G4W_PACKAGE $AWK_PACKAGE mingw-w64-$PACMAN_ARCH-git-credential-manager
+packages="$G4W_PACKAGE mingw-w64-$PACMAN_ARCH-git-credential-manager
 mingw-w64-$PACMAN_ARCH-git-extra $OPENSSH_PACKAGE
 msys2-runtime $UTIL_PACKAGES $LIBCURL_EXTRA"
 if test -z "$MINIMAL_GIT"
