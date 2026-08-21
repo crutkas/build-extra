@@ -928,7 +928,14 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	{ test build-installers != "$mode" ||
 		test aarch64 != "$architecture" ||
 		test -x "$output_path/git-cmd.exe" ||
-		cp "$(command -v git-cmd.exe)" "$output_path/git-cmd.exe"; } &&
+		{
+			git_cmd_source=$(command -v git-cmd.exe 2>/dev/null || true)
+			test -n "$git_cmd_source" ||
+			git_cmd_source="$(dirname "$(command -v git.exe)")/git-cmd.exe"
+			test -f "$git_cmd_source" ||
+			die "Could not locate git-cmd.exe on the runner\n"
+			cp "$git_cmd_source" "$output_path/git-cmd.exe"
+		}; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
