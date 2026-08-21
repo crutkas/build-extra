@@ -63,7 +63,8 @@ then
 	EXTRA_FILE_EXCLUDES="/etc/post-install/.* /usr/bin/getfacl.exe
 		/usr/bin/msys-\(gmp\|ssl\)-.*.dll
 		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-deflatehd.exe
-		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-inflatehd.exe"
+		/$MSYSTEM_LOWER/bin/$ARCH-w64-mingw32-inflatehd.exe
+		/$MSYSTEM_LOWER/bin/libhistory8\.dll"
 
 	UTIL_PACKAGES=
 	SH_FOR_REBASE=mingw-w64-$PACMAN_ARCH-busybox
