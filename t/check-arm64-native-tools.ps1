@@ -72,10 +72,12 @@ try {
     $oldAwkLibPath = $env:AWKLIBPATH
     $oldLcAll = $env:LC_ALL
     try {
+        $fieldScript = Join-Path $runtime 'field.awk'
+        Set-Content -Encoding ascii -LiteralPath $fieldScript -Value '{ print $1 " " $2 }'
         $fieldInput = Join-Path $runtime 'field-input.txt'
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
         $fieldError = Join-Path $runtime 'field.err'
-        $fieldOutput = & $gawkPath '{ print $1 " " $2 }' $fieldInput 2> $fieldError
+        $fieldOutput = & $gawkPath -f $fieldScript $fieldInput 2> $fieldError
         if ($LASTEXITCODE -ne 0 -or $fieldOutput -ne 'alpha beta') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {

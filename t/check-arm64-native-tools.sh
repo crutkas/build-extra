@@ -147,9 +147,12 @@ runtime=${TMPDIR:-/tmp}/arm64-gawk.$$
 trap 'rm -f "$tmp"; rm -rf "$runtime"' EXIT
 mkdir -p "$runtime/scripts" "$runtime/ext"
 
+cat >"$runtime/scripts/field.awk" <<'EOF'
+{ print $1 " " $2 }
+EOF
 printf 'alpha beta\n' >"$runtime/field-input.txt" &&
 field_input=$(cygpath -aw "$runtime/field-input.txt") &&
-field_output=$("$gawk_path" '{ print $1 " " $2 }' "$field_input" 2>"$runtime/field.err" | tr -d '\r') &&
+field_output=$("$gawk_path" -f "$runtime/scripts/field.awk" "$field_input" 2>"$runtime/field.err" | tr -d '\r') &&
 if test 'alpha beta' = "$field_output"
 then
 	:
