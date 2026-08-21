@@ -92,22 +92,10 @@ die "Could not determine Windows path for ARM64 dos2unix source directory"
 dst_dir_win="$(cd "/usr/bin" && pwd -W)" ||
 die "Could not determine Windows path for ARM64 dos2unix destination directory"
 
-for tool in d2u dos2unix unix2dos unix2mac
-do
-	"$pwsh_exe" -NoLogo -NoProfile -Command "if (-not (Test-Path -LiteralPath '$src_dir_win\\$tool.exe') -and (Test-Path -LiteralPath '$dst_dir_win\\$tool.exe')) { Copy-Item -LiteralPath '$dst_dir_win\\$tool.exe' -Destination '$src_dir_win\\$tool.exe' -Force }" ||
-	die "Could not restore /clangarm64/bin/$tool.exe"
-done
-
 for tool_src in d2u:d2u dos2unix:dos2unix mac2unix:unix2mac u2d:unix2dos unix2dos:unix2dos unix2mac:unix2mac
 do
 	tool=${tool_src%%:*}
 	src=${tool_src##*:}
 	"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_dir_win\\$src.exe' -Destination '$dst_dir_win\\$tool.exe' -Force" ||
 	die "Could not materialize /usr/bin/$tool.exe from $package_path"
-done
-
-for tool in d2u dos2unix unix2dos unix2mac
-do
-	"$pwsh_exe" -NoLogo -NoProfile -Command "Remove-Item -LiteralPath '$src_dir_win\\$tool.exe' -Force" ||
-	die "Could not remove /clangarm64/bin/$tool.exe"
 done

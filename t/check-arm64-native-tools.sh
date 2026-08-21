@@ -88,6 +88,8 @@ do
 	check_tool /clangarm64/bin "$tool" "$expected" $args
 done
 
+PATH=/usr/bin:/clangarm64/bin
+export PATH
 for tool in d2u dos2unix mac2unix u2d unix2dos unix2mac
 do
 	check_tool /usr/bin "$tool" 0 --help
