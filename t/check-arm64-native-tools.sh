@@ -62,6 +62,8 @@ then
 	die "The ARM64 file list does not contain clangarm64/bin/gawk.exe"
 	grep -qx "clangarm64/bin/gawk-5.4.1.exe" "$tmp" ||
 	die "The ARM64 file list does not contain clangarm64/bin/gawk-5.4.1.exe"
+	grep -qx "clangarm64/bin/libmpfr-6.dll" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/libmpfr-6.dll"
 	grep -qx "clangarm64/lib/gawk/fork.dll" "$tmp" &&
 	die "fork.dll should not be packaged for native ARM64 gawk"
 
@@ -90,6 +92,8 @@ case "$gawk_path" in
 */clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe) ;;
 *) die "gawk resolves to $gawk_path instead of a clangarm64/bin/gawk[.exe] path";;
 esac
+test -f "$root_dir/clangarm64/bin/libmpfr-6.dll" ||
+die "The ARM64 payload does not contain clangarm64/bin/libmpfr-6.dll"
 check_tool () {
 	tool=$1
 	expected=$2

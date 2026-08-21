@@ -49,6 +49,10 @@ $gawkVersioned = Join-Path $gawkBin 'gawk-5.4.1.exe'
 if (-not (Test-Path -LiteralPath $gawkVersioned)) {
     throw "The ARM64 file list does not contain $gawkVersioned"
 }
+$gawkMpfr = Join-Path $gawkBin 'libmpfr-6.dll'
+if (-not (Test-Path -LiteralPath $gawkMpfr)) {
+    throw "The ARM64 payload does not contain clangarm64\bin\libmpfr-6.dll"
+}
 $gawkLib = Join-Path (Split-Path -LiteralPath $gawkBin) 'lib\gawk'
 if (Test-Path -LiteralPath (Join-Path $gawkLib 'fork.dll')) {
     throw 'fork.dll should not be packaged for native ARM64 gawk'

@@ -851,6 +851,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		# markdown, to render the release notes
 		/usr/bin/markdown
 
+		# ARM64 gawk runtime dependency
+		/clangarm64/bin/libmpfr-6.dll
+
 		# gettext (for makepkg)
 		/usr/bin/gettext.exe
 		/usr/bin/xgettext.exe
