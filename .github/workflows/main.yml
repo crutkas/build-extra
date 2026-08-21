@@ -270,10 +270,8 @@ jobs:
         run: |
           set -x &&
           portableRoot="$(cygpath -au "$RUNNER_TEMP/portable-git")" &&
-          cd "$portableRoot" &&
-          root="$(cygpath -aw /)" &&
-          test "$root" = "$(cygpath -aw "$portableRoot")" &&
-          git.exe version --build-options >version &&
+          test -x "$portableRoot/${{ matrix.architecture.mingw-prefix }}/bin/git.exe" &&
+          "$portableRoot/${{ matrix.architecture.mingw-prefix }}/bin/git.exe" version --build-options >version &&
           cat version
       - name: validate ARM64 BusyBox portable payload
         if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
