@@ -37,12 +37,12 @@ resolve_tool () {
 	return 1
 }
 
-curl_exe="$(resolve_tool curl '/c/Windows/System32/curl.exe')" ||
+curl_exe="$(resolve_tool curl '/c/Program Files/Git/mingw64/bin/curl.exe' '/c/Windows/System32/curl.exe')" ||
 die "Could not find curl"
-powershell_exe="$(resolve_tool powershell.exe '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')" ||
-die "Could not find powershell.exe"
 sha256sum_exe="$(resolve_tool sha256sum '/c/Program Files/Git/usr/bin/sha256sum.exe')" ||
 die "Could not find sha256sum"
+pwsh_exe="$(resolve_tool pwsh '/c/Program Files/PowerShell/7/pwsh.exe' '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')" ||
+die "Could not find pwsh"
 
 download_package () {
 	"$curl_exe" -Lfo "$package_tmp" "$package_url"
@@ -73,7 +73,7 @@ then
 	die "Could not determine Windows path for ARM64 dos2unix directory"
 	package_tmp_win="$package_dir_win\\.$package.$$"
 	package_path_win="$package_dir_win\\$package"
-	"$powershell_exe" -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
+	"$pwsh_exe" -NoLogo -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
 	die "Could not publish ARM64 dos2unix package"
 fi
 
