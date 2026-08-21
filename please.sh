@@ -608,6 +608,9 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	{
 		die "Could not install and verify %s\n" "$package"
 	}
+	test -f "$root/clangarm64/bin/libmpfr-6.dll" ||
+	cp "$root/usr/bin/msys-mpfr-6.dll" "$root/clangarm64/bin/libmpfr-6.dll" ||
+	die "Could not stage clangarm64/bin/libmpfr-6.dll for native gawk\n"
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
