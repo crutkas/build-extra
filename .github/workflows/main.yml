@@ -260,7 +260,7 @@ jobs:
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
           $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          & "$exePath" "-o$portableRoot" "-y"
+          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           Get-ChildItem -Path $portableRoot
           "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
           "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
