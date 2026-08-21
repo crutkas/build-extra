@@ -10,36 +10,52 @@ test aarch64 = "$ARCH" || exit 0
 thisdir="$(cd "$(dirname "$0")" && pwd)" ||
 die "Could not determine the ARM64 dos2unix directory"
 
-cache_dir="$thisdir/cached-files"
 package=mingw-w64-clang-aarch64-dos2unix-7.5.6-1-any.pkg.tar.zst
 package_url=https://github.com/crutkas/MINGW-packages/releases/download/arm64-dos2unix-7.5.6-1/$package
-package_path="$cache_dir/$package"
+package_path="$thisdir/$package"
+package_tmp="$thisdir/.$package.$$"
 package_sha256=a36a9310b4cb41df8e748744653b998dfe0b8d211ab150c3e421582441b6a6f8
 pacman_name=mingw-w64-clang-aarch64-dos2unix
 pacman_version=7.5.6-1
 
-download_package () {
-	mkdir -p "$cache_dir" &&
-	curl -Lfo "$package_path" "$package_url"
-}
+command -v curl >/dev/null 2>&1 ||
+die "Could not find curl"
+command -v sha256sum >/dev/null 2>&1 ||
+die "Could not find sha256sum"
+command -v powershell.exe >/dev/null 2>&1 ||
+die "Could not find powershell.exe"
 
-test -f "$package_path" ||
-download_package ||
-die "Could not download ARM64 dos2unix package: $package_path"
-actual="$(sha256sum "$package_path")" &&
-actual="${actual%% *}" ||
-die "Could not hash $package_path"
-if test "$package_sha256" != "$actual"
+if test -f "$package_path"
 then
-	rm -f "$package_path" &&
-	download_package ||
-	die "Could not download ARM64 dos2unix package: $package_path"
 	actual="$(sha256sum "$package_path")" &&
 	actual="${actual%% *}" ||
 	die "Could not hash $package_path"
+else
+	actual=
+fi
+
+if test "$package_sha256" != "$actual"
+then
+	curl -Lfo "$package_tmp" "$package_url" ||
+	die "Could not download ARM64 dos2unix package: $package_path"
+	actual="$(sha256sum "$package_tmp")" &&
+	actual="${actual%% *}" ||
+	die "Could not hash $package_tmp"
 	test "$package_sha256" = "$actual" ||
 	die "Unexpected SHA-256 for $package: $actual"
+	package_dir_win="$(cd "$thisdir" && pwd -W)" ||
+	die "Could not determine Windows path for ARM64 dos2unix directory"
+	package_tmp_win="$package_dir_win\\.$package.$$"
+	package_path_win="$package_dir_win\\$package"
+	powershell.exe -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
+	die "Could not publish ARM64 dos2unix package"
 fi
+
+actual="$(sha256sum "$package_path")" &&
+actual="${actual%% *}" ||
+die "Could not hash $package_path"
+test "$package_sha256" = "$actual" ||
+die "Unexpected SHA-256 for $package: $actual"
 
 installed="$(pacman -Q "$pacman_name" 2>/dev/null)" || installed=
 if test "$installed" != "$pacman_name $pacman_version"
