@@ -87,25 +87,15 @@ fi
 test "$installed" = "$pacman_name $pacman_version" ||
 die "Unexpected native ARM64 dos2unix package version: $installed"
 
-for tool in d2u dos2unix mac2unix u2d unix2dos unix2mac
+for tool_src in d2u:d2u dos2unix:dos2unix mac2unix:unix2mac u2d:unix2dos unix2dos:unix2dos unix2mac:unix2mac
 do
-	src="/clangarm64/bin/$tool.exe"
+	tool=${tool_src%%:*}
+	src=${tool_src##*:}
 	dst="/usr/bin/$tool.exe"
-	test -f "$src" ||
-	die "Missing native ARM64 dos2unix binary: $src"
 	rm -f "$dst" ||
 	die "Could not replace $dst"
-	if ! ln "$src" "$dst" 2>/dev/null
-	then
-		src_win="$(cd /clangarm64/bin && pwd -W)" ||
-		die "Could not resolve /clangarm64/bin"
-		dst_win="$(cd /usr/bin && pwd -W)" ||
-		die "Could not resolve /usr/bin"
-		src_win="$src_win\\$tool.exe"
-		dst_win="$dst_win\\$tool.exe"
-		"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_win' -Destination '$dst_win' -Force" ||
-		die "Could not materialize $dst from $src"
-	fi
+	tar -xOf "$package_path" "clangarm64/bin/$src.exe" >"$dst" ||
+	die "Could not materialize $dst from $package_path"
 done
 
 for tool in d2u dos2unix mac2unix u2d unix2dos unix2mac
