@@ -88,9 +88,19 @@ awk_path=$(command -v awk) ||
 die "Could not resolve awk from Git Bash"
 gawk_path=$(command -v gawk) ||
 die "Could not resolve gawk from Git Bash"
-case "$awk_path" in
-*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe) ;;
-*) die "awk resolves to $awk_path instead of a clangarm64/bin/awk[.exe] path";;
+case "$root_dir" in
+*/mingit-root)
+	case "$awk_path" in
+	*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe|*/usr/bin/awk|*/usr/bin/awk.exe) ;;
+	*) die "awk resolves to $awk_path instead of an accepted MinGit path";;
+	esac
+	;;
+*)
+	case "$awk_path" in
+	*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe) ;;
+	*) die "awk resolves to $awk_path instead of a clangarm64/bin/awk[.exe] path";;
+	esac
+	;;
 esac
 case "$gawk_path" in
 */clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe) ;;

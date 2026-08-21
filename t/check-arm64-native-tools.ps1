@@ -38,8 +38,15 @@ foreach ($case in $cases) {
 
 $awkPath = (Get-Command awk.exe).Source
 $gawkPath = (Get-Command gawk.exe).Source
-if ($awkPath -notlike '*\clangarm64\bin\awk.exe') {
-    throw "awk resolves to $awkPath instead of clangarm64\bin\awk.exe"
+if ($rootPath -like '*\mingit-root') {
+    if ($awkPath -notlike '*\clangarm64\bin\awk.exe' -and $awkPath -notlike '*\usr\bin\awk.exe') {
+        throw "awk resolves to $awkPath instead of an accepted MinGit path"
+    }
+}
+else {
+    if ($awkPath -notlike '*\clangarm64\bin\awk.exe') {
+        throw "awk resolves to $awkPath instead of clangarm64\bin\awk.exe"
+    }
 }
 if ($gawkPath -notlike '*\clangarm64\bin\gawk.exe') {
     throw "gawk resolves to $gawkPath instead of clangarm64\bin\gawk.exe"
