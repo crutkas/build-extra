@@ -69,16 +69,9 @@ then
 fi
 
 export PATH
-gawk_versioned_path=$(command -v gawk-5.4.1) ||
-die "Could not resolve gawk-5.4.1 from Git Bash"
-case "$gawk_versioned_path" in
-*/clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe) ;;
-*) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin/gawk-5.4.1[.exe] path";;
-esac
-case "$gawk_versioned_path" in
-*.exe) ;;
-*) gawk_versioned_path="$gawk_versioned_path.exe" ;;
-esac
+gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1.exe"
+test -x "$gawk_versioned_path" ||
+gawk_versioned_path="$root_dir/clangarm64/bin/gawk-5.4.1"
 "$gawk_versioned_path" --version >/dev/null 2>&1 || {
 actual=$?
 die "gawk-5.4.1 returned $actual instead of 0"
