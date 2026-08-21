@@ -2954,9 +2954,14 @@ begin
     try
         repeat
             if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) = 0) then begin
-                if FileExists(LibExec+FindRec.Name) then
-                    DeleteFile(LibExec+FindRec.Name);
-                HardlinkOrCopy(LibExec+FindRec.Name,Bin+FindRec.Name);
+                // libstdc++-6.dll stays in bin where the installer already
+                // loads it from; copying it here can race with the running
+                // installer process itself.
+                if FindRec.Name <> 'libstdc++-6.dll' then begin
+                    if FileExists(LibExec+FindRec.Name) then
+                        DeleteFile(LibExec+FindRec.Name);
+                    HardlinkOrCopy(LibExec+FindRec.Name,Bin+FindRec.Name);
+                end;
             end;
         until
             not FindNext(FindRec);

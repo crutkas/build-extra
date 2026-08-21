@@ -60,6 +60,12 @@ else
 	print_dir=
 fi
 
+UCRT64_UNUSED_DLL_EXCLUDE=
+if test ucrt64 = "$MINGW_PREFIX"
+then
+	UCRT64_UNUSED_DLL_EXCLUDE='-e "^ucrt64/bin/libstdc++-6.dll"'
+fi
+
 used_dlls_file=/tmp/used-dlls.$$.txt
 >"$used_dlls_file"
 missing_dlls_file=/tmp/missing-dlls.$$.txt
@@ -130,6 +136,7 @@ grep '\.dll$' "$tmp_file.all" |
 		-e '^usr/lib/sasl2/' \
 		-e '^usr/lib/coreutils/libstdbuf.dll' \
 		-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
+		$UCRT64_UNUSED_DLL_EXCLUDE \
 		-e "^$MINGW_PREFIX/bin/\(atlassian\|azuredevops\|bitbucket\|gcmcore.*\|github\|gitlab\|microsoft\|newtonsoft\|system\..*\|webview2loader\|avalonia\|.*harfbuzzsharp\|microcom\|.*skiasharp\|av_libglesv2\|msalruntime\(\|_x86\|_arm64\)\)\." \
 		-e "^$MINGW_PREFIX/lib/ossl-modules/" \
 		-e "^$MINGW_PREFIX/lib/\(engines\|reg\|thread\)" |

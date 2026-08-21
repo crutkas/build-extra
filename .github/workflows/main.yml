@@ -260,8 +260,8 @@ jobs:
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
           $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
-          $exitCode = $installer.ExitCode
+          & "$exePath" "-o$portableRoot" "-y"
+          $exitCode = $LASTEXITCODE
           if ($exitCode -ne 0) {
             Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
             exit 1

@@ -84,10 +84,15 @@ x86_64)
 	;;
 esac
 
-# Generate release notes for NuGet
-"$BUILDEXTRA"/render-release-notes.sh --output "$BUILDEXTRA"/nuget/ \
-	--css content ||
-die "Could not generate ReleaseNotes.html."
+if test 0-test = "$VERSION"
+then
+	echo "Space intentionally left empty" >"$BUILDEXTRA"/nuget/ReleaseNotes.html
+else
+	# Generate release notes for NuGet
+	"$BUILDEXTRA"/render-release-notes.sh --output "$BUILDEXTRA"/nuget/ \
+		--css content ||
+	die "Could not generate ReleaseNotes.html."
+fi
 
 VERSIONTAG="$(echo "$VERSION" | sed -e 's/^[1-9]/v&/' \
 	-e 's/^\(v[0-9]*\.[0-9]*\.[0-9]*\)\(\.[0-9]*\)$/\1.windows\2/' \
