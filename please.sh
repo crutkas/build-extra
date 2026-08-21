@@ -958,6 +958,7 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		}; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
+		PATH="$(cygpath -au "$output_path")/usr/bin:$PATH" \
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/arm64-busybox/install.sh" &&
 		use_arm64_native_gawk --root="$output_path"
