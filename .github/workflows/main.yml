@@ -66,6 +66,7 @@ jobs:
 
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
             arm64-busybox/ \
+            arm64-dos2unix/ \
             check-for-missing-dlls.sh \
             post-install.bat \
             t/check-arm64-busybox.sh \

@@ -37,6 +37,9 @@ test 1 = "$GFW_ARM64_BUSYBOX_DEFER" ||
 ARCH=$ARCH "$thisdir/arm64-busybox/install.sh" ||
 die "Could not install native ARM64 BusyBox"
 
+ARCH=$ARCH "$thisdir/arm64-dos2unix/install.sh" ||
+die "Could not install native ARM64 dos2unix"
+
 this_script_dir="$(cd "$(dirname "$0")" && pwd -W)" ||
 die "Could not determine this script's dir"
 
@@ -253,6 +256,7 @@ grep -v -e '\.[acho]$' -e '\.l[ao]$' -e '/aclocal/' \
 	-e '^/usr/bin/xslt.*$' \
 	-e '^/usr/bin/b*zmore$' \
 	-e "^/$MSYSTEM_LOWER/bin/.*zstd\\.exe$" \
+	-e "^/$MSYSTEM_LOWER/bin/\(d2u\|dos2unix\|mac2unix\|u2d\|unix2dos\|unix2mac\)\\.exe$" \
 	-e "^/$MSYSTEM_LOWER/share/doc/openssl/" \
 	-e "^/$MSYSTEM_LOWER/share/doc/gettext/" \
 	-e "^/$MSYSTEM_LOWER/share/doc/lib" \
@@ -431,8 +435,11 @@ sed 's/^\///' | sort | uniq
 test -z "$PACKAGE_VERSIONS_FILE" || {
 	test aarch64 != "$ARCH" || test 0 = "${GFW_ARM64_BUSYBOX:-1}" ||
 	ARM64_BUSYBOX_PACKAGE=mingw-w64-clang-aarch64-busybox
+	test aarch64 != "$ARCH" ||
+	ARM64_DOS2UNIX_PACKAGE=mingw-w64-clang-aarch64-dos2unix
 	pacman -Q filesystem $SH_FOR_REBASE rebase \
 		$ARM64_BUSYBOX_PACKAGE \
+		$ARM64_DOS2UNIX_PACKAGE \
 		$(test -n "$MINIMAL_GIT" || echo util-linux unzip \
 			mingw-w64-$PACMAN_ARCH-xpdf-tools) \
 		>>"$PACKAGE_VERSIONS_FILE" 2>"$pacman_stderr" || {
@@ -477,6 +484,18 @@ then
 	etc/arm64-busybox-aliases.txt
 	etc/arm64-busybox-replacements.tsv
 	etc/arm64-busybox-retained-paths.tsv
+	EOF
+fi
+
+if test aarch64 = "$ARCH"
+then
+	cat <<-EOF
+	usr/bin/d2u.exe
+	usr/bin/dos2unix.exe
+	usr/bin/mac2unix.exe
+	usr/bin/u2d.exe
+	usr/bin/unix2dos.exe
+	usr/bin/unix2mac.exe
 	EOF
 fi
 

@@ -12,7 +12,7 @@ mingw_arch=('mingw32' 'mingw64' 'clangarm64' 'ucrt64')
 url="https://github.com/git-for-windows/build-extra"
 license=('GPL')
 groups=('VCS')
-depends=('git-for-windows-keyring' 'diffutils' 'dos2unix')
+depends=('git-for-windows-keyring' 'diffutils')
 optdepends=('vim' 'filesystem')
 pkgver() {
   cd "$startdir"
@@ -197,12 +197,14 @@ package() {
 package_mingw-w64-x86_64-git-extra() {
   conflicts=('git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-i686-git-extra' 'mingw-w64-ucrt-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   package
 }
 
 package_mingw-w64-ucrt-x86_64-git-extra() {
   conflicts=('git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-i686-git-extra' 'mingw-w64-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   depends+=("${MINGW_PACKAGE_PREFIX}-docx2txt-rs")
   package
 }
@@ -210,12 +212,14 @@ package_mingw-w64-ucrt-x86_64-git-extra() {
 package_mingw-w64-i686-git-extra() {
   conflicts=('git-extra' 'mingw-w64-x86_64-git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-ucrt-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   package
 }
 
 package_mingw-w64-clang-aarch64-git-extra() {
   conflicts=('git-extra' 'mingw-w64-x86_64-git-extra' 'mingw-w64-i686-git-extra' 'mingw-w64-ucrt-x86_64-git-extra')
   provides=('git-extra')
+  depends+=("${MINGW_PACKAGE_PREFIX}-dos2unix")
   depends+=("${MINGW_PACKAGE_PREFIX}-docx2txt-rs")
   package
 }
