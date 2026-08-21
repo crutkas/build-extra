@@ -919,7 +919,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
 			{ test aarch64 != "$architecture" ||
 				use_arm64_native_openssh --root="$output_path"; } &&
-			{ test aarch64 != "$architecture" ||
+			{ test build-installers != "$mode" ||
+				test aarch64 != "$architecture" ||
 				use_arm64_native_gawk --root="$output_path"; } &&
 			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
 			"$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
