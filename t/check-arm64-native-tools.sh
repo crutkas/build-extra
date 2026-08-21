@@ -104,7 +104,7 @@ check_tool () {
 	die "$tool returned $actual instead of $expected"
 }
 
-check_tool bunzip2 0 --help
+check_tool bunzip2 1 --help
 check_tool bzcat 0 --help
 check_tool bzip2 0 --help
 check_tool bzip2recover 1
