@@ -180,12 +180,12 @@ busybox_replaced=$(wc -l <"$tmp/busybox.replaced")
 openssh_replaced=$(wc -l <"$tmp/openssh.replaced")
 test 59 = "$busybox_replaced" ||
 die "Expected 59 BusyBox x64-to-ARM64 paths, found $busybox_replaced"
-test 10 = "$openssh_replaced" ||
-die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
+test 16 = "$openssh_replaced" ||
+die "Expected 16 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
-test 14 = "$(wc -l <"$tmp/combined.changed")" ||
-die "Expected 14 added or replaced OpenSSH ARM64 PEs"
+test 20 = "$(wc -l <"$tmp/combined.changed")" ||
+die "Expected 20 added or replaced OpenSSH ARM64 PEs"
 
 manifest_row () {
 	manifest=$1
