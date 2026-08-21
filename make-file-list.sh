@@ -96,7 +96,8 @@ fi
 # It is totally okay to exclude built-in commands, e.g. via
 # `make -C /usr/src/git SKIP_DASHED_BUILT_INS=YesPlease install`
 EXCLUDE_MISSING_BUILTINS=
-if test -f "/$MSYSTEM_LOWER/share/git/builtins.txt"
+if test -r "/$MSYSTEM_LOWER/share/git/builtins.txt" &&
+	test -d "/$MSYSTEM_LOWER/libexec/git-core"
 then
 	BUILTINS_ON_RECORD="$(sed "s|^|/$MSYSTEM_LOWER/libexec/git-core/|" <"/$MSYSTEM_LOWER/share/git/builtins.txt" | sort)" &&
 	BUILTINS_ON_DISK="$(find "/$MSYSTEM_LOWER/libexec/git-core" -name git-\*.exe | sort)" &&
