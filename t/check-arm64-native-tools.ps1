@@ -5,6 +5,24 @@ param(
 $rootPath = $null
 $oldPath = $env:PATH
 $ErrorActionPreference = 'Stop'
+function Get-PeMachine {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    if ($bytes.Length -lt 64 -or $bytes[0] -ne 0x4d -or $bytes[1] -ne 0x5a) {
+        throw "$Path is not a PE file"
+    }
+
+    $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+    if ($peOffset -lt 0 -or $peOffset + 6 -gt $bytes.Length -or
+        $bytes[$peOffset] -ne 0x50 -or $bytes[$peOffset + 1] -ne 0x45 -or
+        $bytes[$peOffset + 2] -ne 0 -or $bytes[$peOffset + 3] -ne 0) {
+        throw "$Path has an invalid PE header"
+    }
+
+    [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+}
+
 function Get-RootToolPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -76,6 +94,12 @@ $runtimeGawkPath = $gawkVersioned
 $gawkMpfr = Join-Path $gawkBin 'libmpfr-6.dll'
 if (-not (Test-Path -LiteralPath $gawkMpfr)) {
     throw "The ARM64 payload does not contain clangarm64\bin\libmpfr-6.dll"
+}
+$gawkAwk = Join-Path $gawkBin 'awk.exe'
+foreach ($path in @($gawkAwk, $gawkPath, $gawkVersioned, $gawkMpfr)) {
+    if ((Get-PeMachine -Path $path) -ne 0xAA64) {
+        throw "$path is not ARM64"
+    }
 }
 $gawkLib = Join-Path (Split-Path -LiteralPath $gawkBin) 'lib\gawk'
 if (Test-Path -LiteralPath (Join-Path $gawkLib 'fork.dll')) {
