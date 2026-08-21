@@ -34,10 +34,6 @@ curl_exe="$(find_file 'C:\Program Files\Git' curl.exe)" ||
 die "Could not find curl"
 sha256sum_exe="$(find_file 'C:\Program Files\Git' sha256sum.exe)" ||
 die "Could not find sha256sum"
-tar_exe="$(find_file 'C:\Program Files\Git' tar.exe)" ||
-die "Could not find tar"
-zstd_exe="$(find_file 'C:\Program Files\Git' zstd.exe)" ||
-die "Could not find zstd"
 
 "$git_exe" --exec-path >/dev/null 2>&1 ||
 die "Could not find git"
@@ -45,8 +41,6 @@ die "Could not find git"
 die "Could not find curl"
 "$sha256sum_exe" --version >/dev/null 2>&1 ||
 die "Could not find sha256sum"
-"$zstd_exe" --version >/dev/null 2>&1 ||
-die "Could not find zstd"
 "$pwsh_exe" -NoLogo -NoProfile -Command '$null = $PSVersionTable.PSVersion' >/dev/null 2>&1 ||
 die "Could not find pwsh"
 
@@ -93,20 +87,15 @@ fi
 test "$installed" = "$pacman_name $pacman_version" ||
 die "Unexpected native ARM64 dos2unix package version: $installed"
 
+src_dir_win="$(cd "/clangarm64/bin" && pwd -W)" ||
+die "Could not determine Windows path for ARM64 dos2unix source directory"
+dst_dir_win="$(cd "/usr/bin" && pwd -W)" ||
+die "Could not determine Windows path for ARM64 dos2unix destination directory"
+
 for tool_src in d2u:d2u dos2unix:dos2unix mac2unix:unix2mac u2d:unix2dos unix2dos:unix2dos unix2mac:unix2mac
 do
 	tool=${tool_src%%:*}
 	src=${tool_src##*:}
-	dst="/usr/bin/$tool.exe"
-	rm -f "$dst" ||
-	die "Could not replace $dst"
-	"$zstd_exe" -dc "$package_path_win" |
-	"$tar_exe" --force-local -xOf - "clangarm64/bin/$src.exe" >"$dst" ||
-	die "Could not materialize $dst from $package_path"
-done
-
-for tool in d2u dos2unix mac2unix u2d unix2dos unix2mac
-do
-	rm -f "/clangarm64/bin/$tool.exe" ||
-	die "Could not remove /clangarm64/bin/$tool.exe"
+	"$pwsh_exe" -NoLogo -NoProfile -Command "Copy-Item -LiteralPath '$src_dir_win\\$src.exe' -Destination '$dst_dir_win\\$tool.exe' -Force" ||
+	die "Could not materialize /usr/bin/$tool.exe from $package_path"
 done
