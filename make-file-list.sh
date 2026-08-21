@@ -419,6 +419,7 @@ else
 			-e '^/usr/bin/\(bunzip2\|bzcat\|bzip2\|bzip2recover\)\.exe$' \
 			-e '^/usr/bin/\(nettle-hash\|nettle-lfib-stream\|nettle-pbkdf2\|pkcs1-conv\|sexp-conv\)\.exe$' \
 			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$' \
+			-e '^/clangarm64/bin/libhistory8\.dll$' \
 			-e '^/usr/bin/msys-edit-0\.dll$'
 		cat <<-EOF
 		/clangarm64/bin/nettle-hash.exe
