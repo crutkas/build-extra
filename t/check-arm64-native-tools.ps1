@@ -63,8 +63,12 @@ try {
     try {
         $fieldInput = Join-Path $runtime 'field-input.txt'
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
-        $fieldOutput = & $gawkPath '{ print $1 " " $2 }' $fieldInput
+        $fieldError = Join-Path $runtime 'field.err'
+        $fieldOutput = & $gawkPath '{ print $1 " " $2 }' $fieldInput 2> $fieldError
         if ($LASTEXITCODE -ne 0 -or $fieldOutput -ne 'alpha beta') {
+            if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
+                Get-Content -LiteralPath $fieldError
+            }
             throw 'gawk field processing failed'
         }
 
