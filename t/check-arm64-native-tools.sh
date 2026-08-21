@@ -125,7 +125,7 @@ trap 'rm -f "$tmp"; rm -rf "$runtime"' EXIT
 mkdir -p "$runtime/scripts" "$runtime/ext"
 
 printf 'alpha beta\n' >"$runtime/field-input.txt"
-field_input=$(cygpath -aw "$runtime/field-input.txt") &&
+field_input="$runtime/field-input.txt" &&
 test 'alpha beta' = "$("$gawk_path" '{ print $1 " " $2 }' "$field_input" | tr -d '\r')" ||
 die "gawk field processing failed"
 
