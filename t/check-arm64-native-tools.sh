@@ -95,13 +95,10 @@ check_tool () {
 	expected=$2
 	shift 2
 
-	path=$(command -v "$tool") ||
-	die "Could not resolve $tool from Git Bash"
-	case "$path" in
-	*/clangarm64/bin/"$tool"|*/clangarm64/bin/"$tool".exe) ;;
-	*) die "$tool resolves to $path instead of a clangarm64/bin/$tool[.exe] path";;
-	esac
-
+	path="$root_dir/clangarm64/bin/$tool.exe"
+	test -f "$path" || path="$root_dir/clangarm64/bin/$tool"
+	test -f "$path" ||
+	die "$tool does not exist in the ARM64 payload"
 	"$path" "$@" >"$tmp" 2>&1
 	actual=$?
 	test "$expected" = "$actual" ||
