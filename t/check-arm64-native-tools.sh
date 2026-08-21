@@ -11,6 +11,10 @@ root_dir=
 root_supplied=
 case "$1" in
 --selection-only) ;;
+--root)
+	shift
+	root_dir=$1
+	;;
 "--root="*) root_dir=${1#*=};;
 "") ;;
 *) die "Unknown option: $1";;
