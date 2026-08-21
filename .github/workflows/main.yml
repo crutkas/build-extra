@@ -262,9 +262,14 @@ jobs:
           Get-ChildItem -Path "$exePath"
           $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           Get-ChildItem -Path $portableRoot
-          & "$portableRoot\git-bash.exe" --needs-console --hide --no-cd --command=post-install.bat
-          if ($LASTEXITCODE -ne 0) {
-            throw "Portable Git post-install failed"
+          Push-Location $portableRoot
+          try {
+            & .\git-bash.exe --needs-console --hide --no-cd --command=post-install.bat
+            if ($LASTEXITCODE -ne 0) {
+              throw "Portable Git post-install failed"
+            }
+          } finally {
+            Pop-Location
           }
           "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
           "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
