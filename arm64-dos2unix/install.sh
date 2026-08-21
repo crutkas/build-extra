@@ -13,72 +13,38 @@ die "Could not determine the ARM64 dos2unix directory"
 package=mingw-w64-clang-aarch64-dos2unix-7.5.6-1-any.pkg.tar.zst
 package_url=https://github.com/crutkas/MINGW-packages/releases/download/arm64-dos2unix-7.5.6-1/$package
 package_path="$thisdir/$package"
-package_tmp="$thisdir/.$package.$$"
 package_sha256=a36a9310b4cb41df8e748744653b998dfe0b8d211ab150c3e421582441b6a6f8
 pacman_name=mingw-w64-clang-aarch64-dos2unix
 pacman_version=7.5.6-1
+package_dir_win="$(cd "$thisdir" && pwd -W)" ||
+die "Could not determine Windows path for ARM64 dos2unix directory"
+package_path_win="$package_dir_win\\$package"
+package_tmp_win="$package_dir_win\\.$package.$$"
+git_exe='C:\Program Files\Git\bin\git.exe'
+curl_exe='C:\Program Files\Git\mingw64\bin\curl.exe'
+sha256sum_exe='C:\Program Files\Git\usr\bin\sha256sum.exe'
+pwsh_exe='C:\Program Files\PowerShell\7\pwsh.exe'
 
-resolve_tool () {
-	name=$1
-	shift
-	if command -v "$name" >/dev/null 2>&1
-	then
-		command -v "$name"
-		return 0
-	fi
-	for candidate
-	do
-		test -x "$candidate" &&
-		{
-			echo "$candidate"
-			return 0
-		}
-	done
-	return 1
-}
-
-git_exe="$(resolve_tool git '/c/Program Files/Git/bin/git.exe')" ||
-die "Could not find git"
-git_exec_path="$("$git_exe" --exec-path)" ||
-die "Could not determine git exec path"
-git_root="${git_exec_path%/libexec/git-core}"
-for git_arch in mingw64 ucrt64 clangarm64 mingw32
-do
-	candidate="${git_root%/$git_arch}"
-	test "$candidate" = "$git_root" ||
-	{
-		git_root="$candidate"
-		break
-	}
-done
-curl_exe=
-for git_arch in mingw64 ucrt64 clangarm64 mingw32
-do
-	candidate="$git_root/$git_arch/bin/curl.exe"
-	test -x "$candidate" ||
-	continue
-	curl_exe="$candidate"
-	break
-done
-test -n "$curl_exe" ||
+cmd.exe /c "\"$curl_exe\" --version" >/dev/null 2>&1 ||
 die "Could not find curl"
-sha256sum_exe="$(resolve_tool sha256sum "$git_root/usr/bin/sha256sum.exe")" ||
+cmd.exe /c "\"$sha256sum_exe\" --version" >/dev/null 2>&1 ||
 die "Could not find sha256sum"
-pwsh_exe="$(resolve_tool pwsh '/c/Program Files/PowerShell/7/pwsh.exe' '/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe')" ||
+"$pwsh_exe" -NoLogo -NoProfile -Command '$null = $PSVersionTable.PSVersion' >/dev/null 2>&1 ||
 die "Could not find pwsh"
+cmd.exe /c "\"$git_exe\" --exec-path" >/dev/null 2>&1 ||
+die "Could not find git"
 
 download_package () {
-	"$curl_exe" -Lfo "$package_tmp" "$package_url"
+	cmd.exe /c "\"$curl_exe\" -Lfo \"$package_tmp_win\" \"$package_url\""
 }
 
 hash_file () {
-	actual="$("$sha256sum_exe" "$1")" &&
-	echo "${actual%% *}"
+	"$pwsh_exe" -NoLogo -NoProfile -Command "(Get-FileHash -Algorithm SHA256 -LiteralPath '$1').Hash.ToLowerInvariant()"
 }
 
 if test -f "$package_path"
 then
-	actual="$(hash_file "$package_path")" ||
+	actual="$(hash_file "$package_path_win")" ||
 	die "Could not hash $package_path"
 else
 	actual=
@@ -88,19 +54,15 @@ if test "$package_sha256" != "$actual"
 then
 	download_package ||
 	die "Could not download ARM64 dos2unix package: $package_path"
-	actual="$(hash_file "$package_tmp")" ||
-	die "Could not hash $package_tmp"
+	actual="$(hash_file "$package_tmp_win")" ||
+	die "Could not hash $package_tmp_win"
 	test "$package_sha256" = "$actual" ||
 	die "Unexpected SHA-256 for $package: $actual"
-	package_dir_win="$(cd "$thisdir" && pwd -W)" ||
-	die "Could not determine Windows path for ARM64 dos2unix directory"
-	package_tmp_win="$package_dir_win\\.$package.$$"
-	package_path_win="$package_dir_win\\$package"
 	"$pwsh_exe" -NoLogo -NoProfile -Command "Move-Item -LiteralPath '$package_tmp_win' -Destination '$package_path_win' -Force" ||
 	die "Could not publish ARM64 dos2unix package"
 fi
 
-actual="$(hash_file "$package_path")" ||
+actual="$(hash_file "$package_path_win")" ||
 die "Could not hash $package_path"
 test "$package_sha256" = "$actual" ||
 die "Unexpected SHA-256 for $package: $actual"
