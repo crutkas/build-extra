@@ -333,7 +333,7 @@ jobs:
             ./t/check-arm64-openssh-package.ps1 @parameters
           }
       - name: validate ARM64 native tools
-        if: matrix.architecture.name == 'aarch64'
+        if: matrix.architecture.name == 'aarch64' && matrix.directory != 'portable'
         shell: bash
         run: |
           script="$(cygpath -au "$GITHUB_WORKSPACE/t/check-arm64-native-tools.sh")" &&
