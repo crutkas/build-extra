@@ -336,13 +336,25 @@ jobs:
         if: matrix.architecture.name == 'aarch64'
         shell: bash
         run: |
-          root=$(case "${{ matrix.directory }}" in
-            installer) cygpath -au "$ProgramFiles/Git" ;;
-            portable) cygpath -au "$RUNNER_TEMP/portable-git" ;;
-            mingit) cygpath -au "$RUNNER_TEMP/mingit-root" ;;
-            *) echo "Unexpected artifact: ${{ matrix.directory }}" >&2; exit 1 ;;
-          esac) &&
-          ./t/check-arm64-native-tools.sh --root="$root"
+          script="$(cygpath -au "$GITHUB_WORKSPACE/t/check-arm64-native-tools.sh")" &&
+          case "${{ matrix.directory }}" in
+            installer)
+              root=$(cygpath -au "$ProgramFiles/Git") &&
+              "$script" --root="$root"
+              ;;
+            portable)
+              root="$(cygpath -au "$RUNNER_TEMP/portable-git")" &&
+              "$root/bin/bash.exe" --noprofile --norc "$script" --root="$root"
+              ;;
+            mingit)
+              root="$(cygpath -au "$RUNNER_TEMP/mingit-root")" &&
+              "$script" --root="$root"
+              ;;
+            *)
+              echo "Unexpected artifact: ${{ matrix.directory }}" >&2
+              exit 1
+              ;;
+          esac
       - name: validate ARM64 native tools (PowerShell)
         if: matrix.architecture.name == 'aarch64'
         shell: pwsh
