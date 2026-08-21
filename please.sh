@@ -576,49 +576,14 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	test "$sha256" = "$actual" ||
 	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
 
-	run_arm64_gawk_pacman () {
-		if test / = "$root"
-		then
-			pacman "$@"
-		else
-			"$root/usr/bin/pacman.exe" --root "$root" "$@"
-		fi
-	}
-
-	package_cache_win="$(cygpath -am "$package_cache")" || exit
-	root_unix="$(cygpath -au "$root")" || exit
-	mpfr_db="$root_unix/var/lib/pacman/local/mingw-w64-clang-aarch64-mpfr-3.1.4-1"
-	mpfr_desc="$mpfr_db/desc"
-	mpfr_files="$mpfr_db/files"
-	if test ! -f "$mpfr_desc"
-	then
-		mkdir -p "$mpfr_db" &&
-		{
-			cat >"$mpfr_desc" <<-EOF
-			%NAME%
-			mingw-w64-clang-aarch64-mpfr
-
-			%VERSION%
-			3.1.4-1
-			EOF
-		} ||
-		die "Could not stage a local %s pacman record\n" "$package"
-	fi
-	if test ! -f "$mpfr_files"
-	then
-		{
-			cat >"$mpfr_files" <<-EOF
-			%FILES%
-			EOF
-		} ||
-		die "Could not stage the local %s file list\n" "$package"
-	fi
-	run_arm64_gawk_pacman -U --noconfirm \
-		--overwrite=\\\* "$package_cache_win" &&
-	test "$package $version" = "$(run_arm64_gawk_pacman -Q "$package" 2>/dev/null)" ||
-	{
-		die "Could not install and verify %s\n" "$package"
-	}
+	tar -xf "$package_cache" -C "$root" ||
+	die "Could not extract %s into the ARM64 artifact root\n" "$package"
+	test -f "$root/clangarm64/bin/gawk.exe" &&
+	test -f "$root/clangarm64/bin/gawk-5.4.1.exe" &&
+	test -f "$root/clangarm64/lib/gawk/intdiv.dll" ||
+	die "Could not stage the ARM64 gawk payload\n"
+	cp "$root/usr/bin/msys-mpfr-6.dll" "$root/clangarm64/bin/libmpfr-6.dll" ||
+	die "Could not stage the ARM64 gawk mpfr compatibility DLL\n"
 }
 
 create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
