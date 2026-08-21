@@ -951,7 +951,7 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		test aarch64 != "$architecture" ||
 		test -x "$output_path/git-cmd.exe" ||
 		{
-			git_cmd_source='C:/Program Files/Git/git-cmd.exe'
+			git_cmd_source="$(cygpath -am '/c/Program Files/Git/git-cmd.exe')" || exit
 			test -f "$git_cmd_source" ||
 			die "Could not locate git-cmd.exe on the runner\n"
 			cp "$git_cmd_source" "$output_path/git-cmd.exe"
