@@ -105,9 +105,13 @@ die "Could not make tmp/ directory"
 mkdir -p "$SCRIPT_PATH/root/bin" ||
 die "Could not make bin/ directory"
 
-cp /cmd/git.exe "$SCRIPT_PATH/root/bin/git.exe" &&
-cp /$MSYSTEM_LOWER/share/git/compat-bash.exe "$SCRIPT_PATH/root/bin/bash.exe" &&
-cp /$MSYSTEM_LOWER/share/git/compat-bash.exe "$SCRIPT_PATH/root/bin/sh.exe" ||
+git_source=/cmd/git.exe &&
+test -f "$git_source" || git_source="/$MSYSTEM_LOWER/bin/git.exe" &&
+bash_source="/$MSYSTEM_LOWER/share/git/compat-bash.exe" &&
+test -f "$bash_source" || bash_source="/$MSYSTEM_LOWER/bin/bash.exe" &&
+cp "$git_source" "$SCRIPT_PATH/root/bin/git.exe" &&
+cp "$bash_source" "$SCRIPT_PATH/root/bin/bash.exe" &&
+cp "$bash_source" "$SCRIPT_PATH/root/bin/sh.exe" ||
 die "Could not install bin/ redirectors"
 
 cp "$SCRIPT_PATH/../post-install.bat" "$SCRIPT_PATH/root/" ||
