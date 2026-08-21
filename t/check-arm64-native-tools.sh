@@ -79,12 +79,12 @@ die "Could not resolve awk from Git Bash"
 gawk_path=$(command -v gawk) ||
 die "Could not resolve gawk from Git Bash"
 case "$awk_path" in
-"$root_dir/clangarm64/bin/awk"|"$root_dir/clangarm64/bin/awk.exe") ;;
-*) die "awk resolves to $awk_path instead of $root_dir/clangarm64/bin/awk[.exe]";;
+*/clangarm64/bin/awk|*/clangarm64/bin/awk.exe) ;;
+*) die "awk resolves to $awk_path instead of a clangarm64/bin/awk[.exe] path";;
 esac
 case "$gawk_path" in
-"$root_dir/clangarm64/bin/gawk"|"$root_dir/clangarm64/bin/gawk.exe") ;;
-*) die "gawk resolves to $gawk_path instead of $root_dir/clangarm64/bin/gawk[.exe]";;
+*/clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe) ;;
+*) die "gawk resolves to $gawk_path instead of a clangarm64/bin/gawk[.exe] path";;
 esac
 check_tool () {
 	tool=$1
@@ -93,9 +93,10 @@ check_tool () {
 
 	path=$(command -v "$tool") ||
 	die "Could not resolve $tool from Git Bash"
-	expected_path="$root_dir/clangarm64/bin/$tool"
-	test "$expected_path" = "$path" ||
-	die "$tool resolves to $path instead of $expected_path"
+	case "$path" in
+	*/clangarm64/bin/"$tool"|*/clangarm64/bin/"$tool".exe) ;;
+	*) die "$tool resolves to $path instead of a clangarm64/bin/$tool[.exe] path";;
+	esac
 
 	"$tool" "$@" >"$tmp" 2>&1
 	actual=$?
