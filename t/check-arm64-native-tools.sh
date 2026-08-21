@@ -107,11 +107,14 @@ printf 'line1\nline2\n' >"$tmp.expected" &&
 cmp -s "$workdir/space file.txt" "$tmp.expected" ||
 die "dos2unix.exe did not convert CRLF to LF"
 
-for option in --allow-chown --no-allow-chown --follow-symlink
+for option in --allow-chown --no-allow-chown
 do
 	dos2unix.exe "$option" >/dev/null 2>&1 &&
 	die "dos2unix.exe unexpectedly accepts $option"
 done
+
+dos2unix.exe --follow-symlink >/dev/null 2>&1 ||
+die "dos2unix.exe unexpectedly rejects --follow-symlink"
 
 unix2dos.exe "$workdir/space file.txt" >/dev/null 2>&1 ||
 die "unix2dos.exe failed to restore CRLF"

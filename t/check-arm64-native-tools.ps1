@@ -85,11 +85,16 @@ try {
         throw "dos2unix.exe did not convert CRLF to LF"
     }
 
-    foreach ($option in '--allow-chown', '--no-allow-chown', '--follow-symlink') {
+    foreach ($option in '--allow-chown', '--no-allow-chown') {
         & (Join-Path $Root 'usr\bin\dos2unix.exe') $option *> $null
         if ($LASTEXITCODE -eq 0) {
             throw "dos2unix.exe unexpectedly accepts $option"
         }
+    }
+
+    & (Join-Path $Root 'usr\bin\dos2unix.exe') '--follow-symlink' *> $null
+    if ($LASTEXITCODE -ne 0) {
+        throw "dos2unix.exe unexpectedly rejects --follow-symlink"
     }
 
     & (Join-Path $Root 'usr\bin\unix2dos.exe') $textPath *> $null
