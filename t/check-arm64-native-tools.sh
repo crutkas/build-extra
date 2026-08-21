@@ -100,6 +100,7 @@ case "$gawk_versioned_path" in
 */clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe|*/usr/bin/gawk-5.4.1|*/usr/bin/gawk-5.4.1.exe) ;;
 *) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin or usr/bin gawk-5.4.1[.exe] path";;
 esac
+runtime_gawk_path=$gawk_versioned_path
 test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 
@@ -177,7 +178,7 @@ cat >"$runtime/scripts/field.awk" <<'EOF'
 EOF
 printf 'alpha beta\n' >"$runtime/field-input.txt" &&
 field_input=$(cygpath -aw "$runtime/field-input.txt") &&
-field_output=$("$gawk_path" -f "$runtime/scripts/field.awk" "$field_input" 2>"$runtime/field.err" | tr -d '\r') &&
+field_output=$("$runtime_gawk_path" -f "$runtime/scripts/field.awk" "$field_input" 2>"$runtime/field.err" | tr -d '\r') &&
 if test 'alpha beta' = "$field_output"
 then
 	:
@@ -192,7 +193,7 @@ BEGIN { print "awkpath-ok" }
 EOF
 awkpath_dir=$(cygpath -aw "$runtime/scripts") &&
 AWKPATH="$awkpath_dir;$AWKPATH" \
-	"$gawk_path" -f from-awkpath.awk /dev/null >"$runtime/awkpath.out" &&
+	"$runtime_gawk_path" -f from-awkpath.awk /dev/null >"$runtime/awkpath.out" &&
 printf 'awkpath-ok\n' >"$runtime/awkpath.expect" &&
 cmp "$runtime/awkpath.expect" "$runtime/awkpath.out" ||
 die "AWKPATH did not honor a native Windows path list"
@@ -202,7 +203,7 @@ printf 'in place\n' >"$runtime/inplace-input.txt" &&
 inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
 inplace_lib=$(cygpath -aw "$runtime/ext") &&
 AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
-	"$gawk_path" -i inplace '{ print toupper($0) }' "$inplace_input" &&
+	"$runtime_gawk_path" -i inplace '{ print toupper($0) }' "$inplace_input" &&
 printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
 cmp "$runtime/inplace.expect" "$runtime/inplace-input.txt" ||
 die "AWKLIBPATH or inplace extension loading failed"
@@ -210,7 +211,7 @@ die "AWKLIBPATH or inplace extension loading failed"
 printf 'quoted\n' >"$runtime/system-input.txt" &&
 system_input=$(cygpath -aw "$runtime/system-input.txt") &&
 system_output=$(cygpath -aw "$runtime/system-output.txt") &&
-"$gawk_path" -v source="$system_input" -v target="$system_output" '
+"$runtime_gawk_path" -v source="$system_input" -v target="$system_output" '
 BEGIN {
   cmd = "cmd.exe /c type \"" source "\" > \"" target "\""
   if (system(cmd) != 0)
@@ -222,16 +223,16 @@ die "gawk system() quoting failed"
 
 printf 'caf\303\251\n' >"$runtime/utf8-input.txt" &&
 utf8_input=$(cygpath -aw "$runtime/utf8-input.txt") &&
-LC_ALL=C.UTF-8 "$gawk_path" '{ print length($0) }' "$utf8_input" >"$runtime/utf8.out" &&
+LC_ALL=C.UTF-8 "$runtime_gawk_path" '{ print length($0) }' "$utf8_input" >"$runtime/utf8.out" &&
 printf '4\n' >"$runtime/utf8.expect" &&
 cmp "$runtime/utf8.expect" "$runtime/utf8.out" ||
 die "gawk UTF-8 handling failed"
 
-"$gawk_path" 'BEGIN { exit 17 }'
+"$runtime_gawk_path" 'BEGIN { exit 17 }'
 test 17 = "$?" ||
 die "gawk exit codes are not preserved"
 
-if "$gawk_path" -l fork 'BEGIN { print "fork" }' >/dev/null 2>"$runtime/fork.err"
+if "$runtime_gawk_path" -l fork 'BEGIN { print "fork" }' >/dev/null 2>"$runtime/fork.err"
 then
 	die "gawk unexpectedly loaded fork.dll"
 fi

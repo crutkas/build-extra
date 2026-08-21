@@ -72,6 +72,7 @@ $gawkVersioned = Join-Path $gawkBin 'gawk-5.4.1.exe'
 if (-not (Test-Path -LiteralPath $gawkVersioned)) {
     throw "The ARM64 file list does not contain $gawkVersioned"
 }
+$runtimeGawkPath = $gawkVersioned
 $gawkMpfr = Join-Path $gawkBin 'libmpfr-6.dll'
 if (-not (Test-Path -LiteralPath $gawkMpfr)) {
     throw "The ARM64 payload does not contain clangarm64\bin\libmpfr-6.dll"
@@ -93,7 +94,7 @@ try {
         $fieldInput = Join-Path $runtime 'field-input.txt'
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
         $fieldError = Join-Path $runtime 'field.err'
-        $fieldOutput = & $gawkPath -f $fieldScript $fieldInput 2> $fieldError
+        $fieldOutput = & $runtimeGawkPath -f $fieldScript $fieldInput 2> $fieldError
         if ($LASTEXITCODE -ne 0 -or $fieldOutput -ne 'alpha beta') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
@@ -106,7 +107,7 @@ try {
         New-Item -ItemType Directory -Force -Path $scriptDir | Out-Null
         Set-Content -Encoding ascii -LiteralPath (Join-Path $scriptDir 'from-awkpath.awk') -Value 'BEGIN { print "awkpath-ok" }'
         $env:AWKPATH = "$([IO.Path]::GetFullPath($scriptDir));$oldAwkPath"
-        $awkPathOutput = & $gawkPath -f from-awkpath.awk /dev/null
+        $awkPathOutput = & $runtimeGawkPath -f from-awkpath.awk /dev/null
         if ($LASTEXITCODE -ne 0 -or $awkPathOutput -ne 'awkpath-ok') {
             throw 'AWKPATH did not honor a native Windows path list'
         }
@@ -117,7 +118,7 @@ try {
         $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($extDir));$oldAwkLibPath"
         $inplaceInput = Join-Path $runtime 'inplace-input.txt'
         Set-Content -Encoding ascii -LiteralPath $inplaceInput -Value "in place"
-        & $gawkPath -i inplace '{ print toupper($0) }' $inplaceInput
+        & $runtimeGawkPath -i inplace '{ print toupper($0) }' $inplaceInput
         if ($LASTEXITCODE -ne 0) {
             throw 'AWKLIBPATH or inplace extension loading failed'
         }
@@ -129,7 +130,7 @@ try {
         $systemInput = Join-Path $runtime 'system-input.txt'
         $systemOutput = Join-Path $runtime 'system-output.txt'
         Set-Content -Encoding ascii -LiteralPath $systemInput -Value 'quoted'
-        & $gawkPath -v "source=$([IO.Path]::GetFullPath($systemInput))" -v "target=$([IO.Path]::GetFullPath($systemOutput))" 'BEGIN { cmd = "cmd.exe /c type \"" source "\" > \"" target "\""; if (system(cmd) != 0) exit 17 }'
+        & $runtimeGawkPath -v "source=$([IO.Path]::GetFullPath($systemInput))" -v "target=$([IO.Path]::GetFullPath($systemOutput))" 'BEGIN { cmd = "cmd.exe /c type \"" source "\" > \"" target "\""; if (system(cmd) != 0) exit 17 }'
         if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $systemOutput -Raw) -notmatch '^quoted\r?\n?$') {
             throw 'gawk system() quoting failed'
         }
@@ -137,18 +138,18 @@ try {
         $utf8Input = Join-Path $runtime 'utf8-input.txt'
         [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
         $env:LC_ALL = 'C.UTF-8'
-        $utf8Output = & $gawkPath '{ print length($0) }' $utf8Input
+        $utf8Output = & $runtimeGawkPath '{ print length($0) }' $utf8Input
         if ($LASTEXITCODE -ne 0 -or $utf8Output -ne '4') {
             throw 'gawk UTF-8 handling failed'
         }
 
-        & $gawkPath 'BEGIN { exit 17 }'
+        & $runtimeGawkPath 'BEGIN { exit 17 }'
         if ($LASTEXITCODE -ne 17) {
             throw 'gawk exit codes are not preserved'
         }
 
         $forkError = Join-Path $runtime 'fork.err'
-        & $gawkPath -l fork 'BEGIN { print "fork" }' 2> $forkError
+        & $runtimeGawkPath -l fork 'BEGIN { print "fork" }' 2> $forkError
         if ($LASTEXITCODE -eq 0) {
             throw 'gawk unexpectedly loaded fork.dll'
         }
