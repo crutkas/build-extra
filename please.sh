@@ -544,6 +544,8 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	cache_root=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 	artifact_cache=$cache_root/clangarm64-gawk-package.zip
 	package_cache=$cache_root/$archive
+	package_cache_unix=$(cygpath -au "$package_cache") || exit
+	root_unix=$(cygpath -au "$root") || exit
 	package_path=
 
 	if test ! -f "$package_cache"
@@ -576,13 +578,13 @@ use_arm64_native_gawk () { # [--root=<directory>]
 	test "$sha256" = "$actual" ||
 	die "Unexpected SHA-256 for %s: %s\n" "$package_cache" "$actual"
 
-	tar -xf "$package_cache" -C "$root" ||
+	tar -xf "$package_cache_unix" -C "$root_unix" ||
 	die "Could not extract %s into the ARM64 artifact root\n" "$package"
-	test -f "$root/clangarm64/bin/gawk.exe" &&
-	test -f "$root/clangarm64/bin/gawk-5.4.1.exe" &&
-	test -f "$root/clangarm64/lib/gawk/intdiv.dll" ||
+	test -f "$root_unix/clangarm64/bin/gawk.exe" &&
+	test -f "$root_unix/clangarm64/bin/gawk-5.4.1.exe" &&
+	test -f "$root_unix/clangarm64/lib/gawk/intdiv.dll" ||
 	die "Could not stage the ARM64 gawk payload\n"
-	cp "$root/usr/bin/msys-mpfr-6.dll" "$root/clangarm64/bin/libmpfr-6.dll" ||
+	cp "$root_unix/usr/bin/msys-mpfr-6.dll" "$root_unix/clangarm64/bin/libmpfr-6.dll" ||
 	die "Could not stage the ARM64 gawk mpfr compatibility DLL\n"
 }
 
