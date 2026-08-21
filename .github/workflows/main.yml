@@ -269,8 +269,10 @@ jobs:
         shell: bash
         run: |
           set -x &&
+          portableRoot="$(cygpath -au "$RUNNER_TEMP/portable-git")" &&
+          cd "$portableRoot" &&
           root="$(cygpath -aw /)" &&
-          test "${root%portable-git}" != "$root" &&
+          test "$root" = "$(cygpath -aw "$portableRoot")" &&
           git.exe version --build-options >version &&
           cat version
       - name: validate ARM64 BusyBox portable payload
