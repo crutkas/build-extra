@@ -180,12 +180,12 @@ busybox_replaced=$(wc -l <"$tmp/busybox.replaced")
 openssh_replaced=$(wc -l <"$tmp/openssh.replaced")
 test 59 = "$busybox_replaced" ||
 die "Expected 59 BusyBox x64-to-ARM64 paths, found $busybox_replaced"
-test 10 = "$openssh_replaced" ||
-die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
+test 16 = "$openssh_replaced" ||
+die "Expected 16 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
-test 14 = "$(wc -l <"$tmp/combined.changed")" ||
-die "Expected 14 added or replaced OpenSSH ARM64 PEs"
+test 16 = "$(wc -l <"$tmp/combined.changed")" ||
+die "Expected 16 added or replaced OpenSSH ARM64 PEs"
 
 manifest_row () {
 	manifest=$1
@@ -317,9 +317,9 @@ die "The authoritative release architecture counts changed"
 test -59 = "$((current_busybox_x64 - current_leaf_x64))" &&
 test 61 = "$((current_busybox_arm64 - current_leaf_arm64))" ||
 die "The current file-list BusyBox architecture delta is not -59 x64/+61 ARM64"
-test -14 = "$((current_combined_x64 - current_busybox_x64))" &&
-test 14 = "$((current_combined_arm64 - current_busybox_arm64))" ||
-die "The current file-list OpenSSH architecture delta is not -14 x64/+14 ARM64"
+test -16 = "$((current_combined_x64 - current_busybox_x64))" &&
+test 16 = "$((current_combined_arm64 - current_busybox_arm64))" ||
+die "The current file-list OpenSSH architecture delta is not -16 x64/+16 ARM64"
 test "$current_leaf_x86" = "$current_busybox_x86" &&
 test "$current_leaf_x86" = "$current_combined_x86" &&
 test "$current_leaf_anycpu" = "$current_busybox_anycpu" &&
