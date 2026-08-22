@@ -840,7 +840,6 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 
 		# markdown, to render the release notes
 		/usr/bin/markdown
-		/usr/bin/msys-mpfr-6.dll
 
 		# gettext (for makepkg)
 		/usr/bin/gettext.exe
@@ -851,7 +850,6 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		*error_highlight*
 
 		# Files to include into the installer/Portable Git/MinGit
-		$PREFIX/share/git/builtins.txt
 		EOF
 		git -C "$output_path" checkout -- &&
 		mkdir -p "$output_path/tmp" &&
@@ -859,12 +857,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		mkdir -p "${output_path}${PREFIX}/bin" &&
 		case $architecture in
 		i686)
-				# The later checkout can drop this file again, so seed it after the
-				# artifact tree is finalized as well.
-				mkdir -p "$output_path/mingw32/bin" &&
-				# copy git.exe, for the libssp test
-				git -C "$output_path" show HEAD:mingw32/bin/git.exe \
-					>"$output_path/mingw32/bin/git.exe" &&
+			# copy git.exe, for the libssp test
+			git -C "$output_path" show HEAD:mingw32/bin/git.exe \
+				>"$output_path/mingw32/bin/git.exe" &&
 				# Work around an outdated i686 gnupg/gnutls build that depends on a hence-updated libunistring
 				if test ! -e "$output_path/usr/bin/msys-unistring-2.dll" -a \
 				-e "$output_path/usr/bin/msys-unistring-5.dll" -a \
@@ -952,52 +947,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	{ test build-installers != "$mode" ||
 		test aarch64 != "$architecture" ||
 		use_arm64_native_openssh --root="$output_path"; } &&
-	{ test build-installers != "$mode" ||
-		test i686 != "$architecture" ||
-		{
-			mkdir -p "$output_path/mingw32/bin" &&
-			git -C "$output_path" show HEAD:mingw32/bin/git.exe \
-				>"$output_path/mingw32/bin/git.exe";
-		}; } &&
-	{ test build-installers != "$mode" ||
-		test aarch64 != "$architecture" ||
-		test -x "$output_path/git-cmd.exe" ||
-		{
-			git_cmd_source="$(cygpath -am '/c/Program Files/Git/git-cmd.exe')" || exit
-			test -f "$git_cmd_source" ||
-			die "Could not locate git-cmd.exe on the runner\n"
-			cp "$git_cmd_source" "$output_path/git-cmd.exe"
-		}; } &&
-	{ test build-installers != "$mode" ||
-		test -x "$output_path/cmd/git.exe" ||
-		{
-			mkdir -p "$output_path/cmd" &&
-			cp "$output_path$PREFIX/bin/git.exe" "$output_path/cmd/git.exe"
-		}; } &&
-	{ test build-installers != "$mode" ||
-		{
-			mkdir -p "$output_path$PREFIX/share/git" &&
-			test -x "$output_path$PREFIX/bin/blocked-file-util.exe" ||
-				{
-					mkdir -p "$output_path$PREFIX/bin" &&
-					make -C "${this_script_path%/*}/git-extra" \
-						BUILDDIR="$output_path$PREFIX/bin" \
-						SRCDIR="${this_script_path%/*}/git-extra" ||
-					die "Could not build blocked-file-util.exe"
-				} &&
-			bash_source="$output_path$PREFIX/bin/bash.exe" &&
-			test -x "$bash_source" || bash_source="$output_path/usr/bin/bash.exe" &&
-			test -x "$bash_source" || bash_source=/usr/bin/bash.exe &&
-			test -x "$output_path$PREFIX/share/git/compat-bash.exe" ||
-				cp "$bash_source" \
-					"$output_path$PREFIX/share/git/compat-bash.exe" &&
-			test -x "$output_path$PREFIX/share/git/git-wrapper.exe" ||
-				cp "$output_path$PREFIX/bin/git.exe" \
-					"$output_path$PREFIX/share/git/git-wrapper.exe"
-		}; } &&
 	if test build-installers = "$mode" && test aarch64 = "$architecture"
 	then
-		PATH="$(cygpath -au "$output_path")/usr/bin:$PATH" \
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/arm64-busybox/install.sh" &&
 		use_arm64_native_gawk --root="$output_path"

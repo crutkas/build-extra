@@ -27,16 +27,15 @@ then
 	test 59 = "$count" ||
 	die "Expected 59 default replacements, found $count"
 
-	tr -d '\r' <"$thisdir/../arm64-busybox/default-replacements.txt" |
 	while IFS= read -r path
 	do
 		test -x "/$path" ||
 		die "Missing ARM64 BusyBox replacement /$path"
-		tr -d '\r' <"$replacement_file" |
 		awk -F '	' -v path="$path" \
-			'$1 == path && $3 == "default" { found = 1 } END { exit !found }' ||
+			'$1 == path && $3 == "default" { found = 1 } END { exit !found }' \
+			"$replacement_file" ||
 		die "$path is not recorded as a default replacement"
-	done
+	done <"$thisdir/../arm64-busybox/default-replacements.txt"
 fi
 
 tool () {

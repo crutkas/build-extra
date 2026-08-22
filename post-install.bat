@@ -55,11 +55,7 @@
 )
 @echo "running post-install"
 @REM Run the post-install scripts
-@IF EXIST usr\bin\bash.exe (
-	@usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
-) ELSE (
-	@bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
-)
+@usr\bin\bash.exe --norc -c "export PATH=/usr/bin:$PATH; export SYSCONFDIR=/etc; for p in $(export LC_COLLATE=C; echo /etc/post-install/*.post); do test -e \"$p\" && . \"$p\"; done"
 
 @REM Win32 OpenSSH rejects system configuration writable by other users.
 @IF NOT EXIST clangarm64\bin\git.exe @GOTO cleanup

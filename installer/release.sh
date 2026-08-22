@@ -144,7 +144,7 @@ CLANGARM64)
 esac
 MSYSTEM_LOWER=${MSYSTEM,,}
 
-if test 0-test = "$version" || test -n "$page_id"
+if test -n "$page_id"
 then
 	echo "Space intentionally left empty" >ReleaseNotes.html
 else

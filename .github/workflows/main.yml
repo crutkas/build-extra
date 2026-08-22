@@ -261,6 +261,11 @@ jobs:
           $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
           $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
+          $exitCode = $installer.ExitCode
+          if ($exitCode -ne 0) {
+            Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
+            exit 1
+          }
           Get-ChildItem -Path $portableRoot
           "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
           "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
@@ -269,14 +274,14 @@ jobs:
         shell: bash
         run: |
           set -x &&
-          portableRoot="$(cygpath -au "$RUNNER_TEMP/portable-git")" &&
-          test -x "$portableRoot/bin/git.exe" &&
-          "$portableRoot/bin/git.exe" version --build-options >version &&
+          root="$(cygpath -aw /)" &&
+          test "${root%portable-git}" != "$root" &&
+          git.exe version --build-options >version &&
           cat version
       - name: validate ARM64 BusyBox portable payload
         if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
         shell: pwsh
-        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git" -AllowMissingReplacements
+        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git"
       - name: extract and validate ARM64 MinGit modes
         if: matrix.directory == 'mingit' && matrix.architecture.name == 'aarch64'
         shell: pwsh
@@ -290,8 +295,7 @@ jobs:
            throw "Standard MinGit validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root $minGitRoot `
-           -AllowMissingReplacements
+           -Root $minGitRoot
 
           $busyboxZip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/busybox/*.zip" |
            Select-Object -First 1
@@ -302,8 +306,7 @@ jobs:
            throw "BusyBox MinGit Git validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root $busyboxMinGitRoot `
-           -AllowMissingReplacements
+           -Root $busyboxMinGitRoot
           & "$busyboxMinGitRoot/clangarm64/bin/ash.exe" -c "uname -m"
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit shell validation failed"
@@ -312,11 +315,9 @@ jobs:
         if: matrix.architecture.name == 'aarch64'
         shell: pwsh
         run: |
-          if ("${{ matrix.directory }}" -eq "portable") {
-            return
-          }
           $root = switch ("${{ matrix.directory }}") {
             "installer" { "$env:ProgramFiles\Git" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
             "mingit" { "$env:RUNNER_TEMP\mingit-root" }
             default { throw "Unexpected artifact: ${{ matrix.directory }}" }
           }

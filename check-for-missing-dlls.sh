@@ -60,13 +60,6 @@ else
 	print_dir=
 fi
 
-UNUSED_LIBSTDCXX_EXCLUDE=
-case "$MINGW_PREFIX" in
-mingw32|mingw64|ucrt64)
-	UNUSED_LIBSTDCXX_EXCLUDE="-e ^$MINGW_PREFIX/bin/libstdc++-6.dll"
-	;;
-esac
-
 used_dlls_file=/tmp/used-dlls.$$.txt
 >"$used_dlls_file"
 missing_dlls_file=/tmp/missing-dlls.$$.txt
@@ -138,7 +131,6 @@ grep '\.dll$' "$tmp_file.all" |
 		-e '^usr/lib/coreutils/libstdbuf.dll' \
 		-e "^$MINGW_PREFIX/bin/libmpfr-6.dll" \
 		-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
-		$UNUSED_LIBSTDCXX_EXCLUDE \
 		-e "^$MINGW_PREFIX/bin/\(atlassian\|azuredevops\|bitbucket\|gcmcore.*\|github\|gitlab\|microsoft\|newtonsoft\|system\..*\|webview2loader\|avalonia\|.*harfbuzzsharp\|microcom\|.*skiasharp\|av_libglesv2\|msalruntime\(\|_x86\|_arm64\)\)\." \
 		-e "^$MINGW_PREFIX/lib/ossl-modules/" \
 		-e "^$MINGW_PREFIX/lib/\(engines\|reg\|thread\)" |

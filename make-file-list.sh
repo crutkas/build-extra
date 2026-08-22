@@ -44,18 +44,13 @@ OPENSSH_PACKAGE=openssh
 
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
-UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test aarch64 = "$ARCH"
 then
 	OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
 fi
 EXTRA_FILE_EXCLUDES=
-if test aarch64 = "$ARCH"
-then
-	EXTRA_FILE_EXCLUDES="$EXTRA_FILE_EXCLUDES
-		/$MSYSTEM_LOWER/bin/libhistory8\.dll"
-fi
+UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX"
 then
 	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES bash sh coreutils mingw-w64-busybox
@@ -96,8 +91,7 @@ fi
 # It is totally okay to exclude built-in commands, e.g. via
 # `make -C /usr/src/git SKIP_DASHED_BUILT_INS=YesPlease install`
 EXCLUDE_MISSING_BUILTINS=
-if test -r "/$MSYSTEM_LOWER/share/git/builtins.txt" &&
-	test -d "/$MSYSTEM_LOWER/libexec/git-core"
+if test -f "/$MSYSTEM_LOWER/share/git/builtins.txt"
 then
 	BUILTINS_ON_RECORD="$(sed "s|^|/$MSYSTEM_LOWER/libexec/git-core/|" <"/$MSYSTEM_LOWER/share/git/builtins.txt" | sort)" &&
 	BUILTINS_ON_DISK="$(find "/$MSYSTEM_LOWER/libexec/git-core" -name git-\*.exe | sort)" &&
@@ -336,7 +330,6 @@ else
 		-e '^/etc/\(DIR_COLORS\|inputrc\|vimrc\)$' \
 		-e '^/etc/profile\.d/\(aliases\|env\|git-prompt\)\.sh$' \
 		-e '^/git-\(bash\|cmd\)\.exe$' \
-		-e '^/clangarm64/bin/libhistory8\.dll$' \
 		-e "^/$MSYSTEM_LOWER/bin/\\(certtool\\.exe\\|create-shortcut\\.exe\\)$" \
 		-e "^/$MSYSTEM_LOWER/bin/\\(curl\\.exe\\|envsubst\\.exe\\|gettext\\.exe\\)$" \
 		-e "^/$MSYSTEM_LOWER/bin/.*-\\(inflate\\|deflate\\)hd\\.exe$" \
@@ -432,7 +425,6 @@ else
 			-e '^/usr/bin/\(bunzip2\|bzcat\|bzip2\|bzip2recover\)\.exe$' \
 			-e '^/usr/bin/\(nettle-hash\|nettle-lfib-stream\|nettle-pbkdf2\|pkcs1-conv\|sexp-conv\)\.exe$' \
 			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$' \
-			-e '^/clangarm64/bin/libhistory8\.dll$' \
 			-e '^/usr/bin/msys-edit-0\.dll$'
 		cat <<-EOF
 		/clangarm64/bin/nettle-hash.exe
