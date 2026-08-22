@@ -412,6 +412,7 @@ fi |
 		/clangarm64/bin/gawk-5.4.1.exe
 		/clangarm64/bin/libmpfr-6.dll
 		/clangarm64/bin/libreadline8.dll
+		/clangarm64/bin/libtermcap-0.dll
 		EOF
 		for dll in /clangarm64/lib/gawk/*.dll
 		do

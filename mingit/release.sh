@@ -102,6 +102,22 @@ LIST="$(ARCH=$ARCH MINIMAL_GIT=1 ETC_GITCONFIG="$etc_gitconfig" \
 	PACKAGE_VERSIONS_FILE="$SCRIPT_PATH"/root/etc/package-versions.txt \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@")" ||
 die "Could not generate file list"
+if test aarch64 = "$ARCH" && test 0 != "${GFW_ARM64_BUSYBOX:-1}"
+then
+	busybox_excludes="${TMPDIR:-/tmp}/arm64-busybox-excludes.$$"
+	{
+		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/default-replacements.txt
+		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/experimental-replacements.txt
+		printf '%s\n' \
+			clangarm64/share/busybox/arm64-payload-map.json \
+			etc/arm64-busybox-aliases.txt \
+			etc/arm64-busybox-replacements.tsv \
+			etc/arm64-busybox-retained-paths.tsv
+	} | sort -u >"$busybox_excludes" &&
+	LIST="$(printf '%s\n' "$LIST" | grep -vxF -f "$busybox_excludes")" ||
+	{ rm -f "$busybox_excludes"; die "Could not filter duplicate ARM64 BusyBox metadata"; }
+	rm -f "$busybox_excludes"
+fi
 
 # For compatibility with core Git's branches
 original_etc_gitconfig="$etc_gitconfig"
