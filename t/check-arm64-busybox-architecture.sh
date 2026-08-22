@@ -144,8 +144,10 @@ added_or_replaced () {
 added_or_replaced current-leaf current-busybox "$tmp/busybox.changed"
 added_or_replaced current-busybox current-combined "$tmp/combined.changed"
 grep '^clangarm64/' "$tmp/combined.changed" >"$tmp/gawk.changed" || true
+grep '^clangarm64/bin/libmpfr-6\.dll$' "$tmp/combined.changed" >"$tmp/mpfr.changed" || true
 grep -v '^clangarm64/' "$tmp/combined.changed" >"$tmp/openssh.changed"
 current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
+current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
 
 removed () {
 	before=$1
@@ -187,7 +189,7 @@ test 10 = "$openssh_replaced" ||
 die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
-test 14 = "$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes))" ||
+test 14 = "$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes - current_mpfr_added_or_replaced_arm64_pes))" ||
 die "Expected 14 added or replaced OpenSSH ARM64 PEs"
 
 manifest_row () {
@@ -356,11 +358,14 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	current_busybox_arm64_delta=$((current_busybox_arm64 - current_leaf_arm64))
 	current_openssh_x64_delta=$((current_combined_x64 - current_busybox_x64))
 	current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
-	current_openssh_arm64_delta=$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes))
+	current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
+	current_openssh_arm64_delta=$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes - current_mpfr_added_or_replaced_arm64_pes))
 	current_gawk_arm64_delta=$current_gawk_added_or_replaced_arm64_pes
+	current_mpfr_arm64_delta=$current_mpfr_added_or_replaced_arm64_pes
 	busybox_added_or_replaced_arm64_pes=$(wc -l <"$tmp/busybox.changed")
 	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/openssh.changed")
 	gawk_added_or_replaced_arm64_pes=$current_gawk_added_or_replaced_arm64_pes
+	mpfr_added_or_replaced_arm64_pes=$current_mpfr_added_or_replaced_arm64_pes
 	busybox_x64_to_arm64_paths=$busybox_replaced
 	openssh_x64_to_arm64_paths=$openssh_replaced
 	legacy_openssh_x64_paths_checked=$legacy_openssh
