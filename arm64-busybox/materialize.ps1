@@ -32,7 +32,14 @@ $installedShimPath = Join-Path $rootPath 'clangarm64\bin\busybox-shim.exe'
 $installedShimDirectory = Split-Path -Parent $installedShimPath
 New-Item -ItemType Directory -Force -Path $installedShimDirectory | Out-Null
 if ($shimPath -ne $installedShimPath) {
-    Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    Remove-Item -LiteralPath $installedShimPath -Force -ErrorAction SilentlyContinue
+    try {
+        New-Item -ItemType HardLink -Path $installedShimPath -Target $shimPath -ErrorAction Stop |
+            Out-Null
+    }
+    catch {
+        Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    }
 }
 $defaultPaths = @(Get-Content -LiteralPath $DefaultList)
 $experimentalPaths = @(Get-Content -LiteralPath $ExperimentalList)
