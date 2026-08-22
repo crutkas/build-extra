@@ -9,8 +9,9 @@ thisdir="$(cd "$(dirname "$0")" && pwd)" ||
 die "Could not determine the test directory"
 root_dir=
 root_supplied=
+selection_only=
 case "$1" in
---selection-only) ;;
+--selection-only) selection_only=t;;
 --root)
 	shift
 	root_dir=$1
@@ -19,36 +20,7 @@ case "$1" in
 "") ;;
 *) die "Unknown option: $1";;
 esac
-if test -n "$root_dir"
-then
-	root_supplied=t
-	case "$root_dir" in
-	/*) ;;
-	*) root_dir="$(cygpath -au "$root_dir")" ||
-		die "Could not resolve the ARM64 root";;
-	esac
-	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
-	resolve_root_tool_path () {
-		tool=$1
-		for dir in "$root_dir/clangarm64/bin" "$root_dir/usr/bin"
-		do
-			for ext in .exe ""
-			do
-				path="$dir/$tool$ext"
-				test -f "$path" && {
-					printf '%s\n' "$path"
-					return 0
-				}
-			done
-		done
-		return 1
-	}
-	awk_path=$(resolve_root_tool_path awk) ||
-	die "Could not resolve awk from the ARM64 root"
-	gawk_path=$(resolve_root_tool_path gawk) ||
-	die "Could not resolve gawk from the ARM64 root"
-fi
-if test -z "$root_supplied"
+if test -n "$selection_only"
 then
 	tmp=${TMPDIR:-/tmp}/arm64-native-tools.$$
 	trap 'rm -f "$tmp"; test -n "$runtime" && rm -rf "$runtime"' EXIT
@@ -92,6 +64,35 @@ then
 
 	exit 0
 fi
+if test -n "$root_dir"
+then
+	root_supplied=t
+	case "$root_dir" in
+	/*) ;;
+	*) root_dir="$(cygpath -au "$root_dir")" ||
+		die "Could not resolve the ARM64 root";;
+	esac
+	PATH="$root_dir/clangarm64/bin:$root_dir/usr/bin:$PATH"
+	resolve_root_tool_path () {
+		tool=$1
+		for dir in "$root_dir/clangarm64/bin" "$root_dir/usr/bin"
+		do
+			for ext in .exe ""
+			do
+				path="$dir/$tool$ext"
+				test -f "$path" && {
+					printf '%s\n' "$path"
+					return 0
+				}
+			done
+		done
+		return 1
+	}
+	awk_path=$(resolve_root_tool_path awk) ||
+	die "Could not resolve awk from the ARM64 root"
+	gawk_path=$(resolve_root_tool_path gawk) ||
+	die "Could not resolve gawk from the ARM64 root"
+fi
 
 export PATH
 gawk_versioned_path=$(command -v gawk-5.4.1) ||
@@ -101,8 +102,6 @@ case "$gawk_versioned_path" in
 *) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin or usr/bin gawk-5.4.1[.exe] path";;
 esac
 runtime_gawk_path=$gawk_versioned_path
-test ! -f "$root_dir/clangarm64/lib/gawk/fork.dll" ||
-die "fork.dll should not be packaged for native ARM64 gawk"
 
 if test -z "$root_supplied"
 then
@@ -129,8 +128,15 @@ case "$gawk_path" in
 */clangarm64/bin/gawk|*/clangarm64/bin/gawk.exe|*/usr/bin/gawk|*/usr/bin/gawk.exe) ;;
 *) die "gawk resolves to $gawk_path instead of a clangarm64/bin or usr/bin gawk[.exe] path";;
 esac
-test -f "$root_dir/clangarm64/bin/libmpfr-6.dll" ||
-die "The ARM64 payload does not contain clangarm64/bin/libmpfr-6.dll"
+gawk_dir=$(dirname "$gawk_path") ||
+die "Could not determine the gawk binary directory"
+gawk_lib="$gawk_dir/../lib/gawk"
+test -d "$gawk_lib" ||
+die "Could not determine the gawk library directory"
+test -f "$gawk_dir/libmpfr-6.dll" ||
+die "The ARM64 payload does not contain libmpfr-6.dll"
+test ! -f "$gawk_lib/fork.dll" ||
+die "fork.dll should not be packaged for native ARM64 gawk"
 check_tool () {
 	tool=$1
 	expected=$2
@@ -198,7 +204,7 @@ printf 'awkpath-ok\n' >"$runtime/awkpath.expect" &&
 cmp "$runtime/awkpath.expect" "$runtime/awkpath.out" ||
 die "AWKPATH did not honor a native Windows path list"
 
-cp "$root_dir/clangarm64/lib/gawk"/*.dll "$runtime/ext/" &&
+cp "$gawk_lib"/*.dll "$runtime/ext/" &&
 printf 'in place\n' >"$runtime/inplace-input.txt" &&
 inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
 inplace_lib=$(cygpath -aw "$runtime/ext") &&

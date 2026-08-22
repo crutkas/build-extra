@@ -2957,7 +2957,7 @@ begin
                 // libstdc++-6.dll stays in bin where the installer already
                 // loads it from; copying it here can race with the running
                 // installer process itself.
-                if FindRec.Name <> 'libmpfr-6.dll' then begin
+                if (FindRec.Name <> 'libmpfr-6.dll') or ('{#MINGW_BITNESS}' <> 'clangarm64') then begin
                     if FileExists(LibExec+FindRec.Name) then
                         DeleteFile(LibExec+FindRec.Name);
                     HardlinkOrCopy(LibExec+FindRec.Name,Bin+FindRec.Name);

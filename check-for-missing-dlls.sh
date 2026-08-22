@@ -120,20 +120,25 @@ used_dlls_regex="/\\($(test -n "$MINIMAL_GIT" || printf 'p11-kit-trust\\|';
 	uniq |
 	sed -e 's/+x/\\+/g' -e 's/\.dll$/\\|/' -e '$s/\\|//' |
 	tr -d '\n')\\)\\.dll\$"
+set -- \
+	-e "$used_dlls_regex" \
+	-e '^usr/lib/perl5/' \
+	-e '^usr/lib/gawk/' \
+	-e "^$MINGW_PREFIX/lib/gawk/" \
+	-e '^usr/lib/openssl/engines' \
+	-e '^usr/lib/sasl2/' \
+	-e '^usr/lib/coreutils/libstdbuf.dll'
+if test clangarm64 = "$MINGW_PREFIX"
+then
+	set -- "$@" -e "^$MINGW_PREFIX/bin/libmpfr-6.dll"
+fi
+set -- "$@" \
+	-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
+	-e "^$MINGW_PREFIX/bin/\(atlassian\|azuredevops\|bitbucket\|gcmcore.*\|github\|gitlab\|microsoft\|newtonsoft\|system\..*\|webview2loader\|avalonia\|.*harfbuzzsharp\|microcom\|.*skiasharp\|av_libglesv2\|msalruntime\(\|_x86\|_arm64\)\)\." \
+	-e "^$MINGW_PREFIX/lib/ossl-modules/" \
+	-e "^$MINGW_PREFIX/lib/\(engines\|reg\|thread\)"
 grep '\.dll$' "$tmp_file.all" |
-	grep -v \
-		-e "$used_dlls_regex" \
-		-e '^usr/lib/perl5/' \
-		-e '^usr/lib/gawk/' \
-		-e "^$MINGW_PREFIX/lib/gawk/" \
-		-e '^usr/lib/openssl/engines' \
-		-e '^usr/lib/sasl2/' \
-		-e '^usr/lib/coreutils/libstdbuf.dll' \
-		-e "^$MINGW_PREFIX/bin/libmpfr-6.dll" \
-		-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
-		-e "^$MINGW_PREFIX/bin/\(atlassian\|azuredevops\|bitbucket\|gcmcore.*\|github\|gitlab\|microsoft\|newtonsoft\|system\..*\|webview2loader\|avalonia\|.*harfbuzzsharp\|microcom\|.*skiasharp\|av_libglesv2\|msalruntime\(\|_x86\|_arm64\)\)\." \
-		-e "^$MINGW_PREFIX/lib/ossl-modules/" \
-		-e "^$MINGW_PREFIX/lib/\(engines\|reg\|thread\)" |
+	grep -v "$@" |
 	sed 's/^/unused dll: /' |
 	tee "$unused_dlls_file" >&2
 
