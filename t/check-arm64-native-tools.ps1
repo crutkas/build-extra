@@ -117,13 +117,13 @@ try {
         Set-Content -Encoding ascii -LiteralPath $fieldScript -Value '{ print $1 " " $2 }'
         $fieldInput = Join-Path $runtime 'field-input.txt'
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
-        $fieldOutputFile = Join-Path $runtime 'field.out'
         $fieldError = Join-Path $runtime 'field.err'
-        Remove-Item -LiteralPath $fieldOutputFile, $fieldError -ErrorAction SilentlyContinue
-        $fieldCommand = '""' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '""'
-        $fieldProcess = Start-Process -FilePath cmd.exe -ArgumentList @('/d', '/s', '/c', $fieldCommand) -NoNewWindow -PassThru -Wait -RedirectStandardOutput $fieldOutputFile -RedirectStandardError $fieldError
-        $fieldExitCode = $fieldProcess.ExitCode
-        $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
+        Remove-Item -LiteralPath $fieldError -ErrorAction SilentlyContinue
+        $fieldOutput = & $runtimeGawkPath -f $fieldScript $fieldInput 2> $fieldError
+        $fieldExitCode = $LASTEXITCODE
+        if ($fieldOutput -is [array]) {
+            $fieldOutput = $fieldOutput -join [Environment]::NewLine
+        }
         if ($fieldExitCode -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
