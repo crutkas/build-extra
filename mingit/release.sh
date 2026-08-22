@@ -182,6 +182,15 @@ $BIN_DIR/busybox.exe
 	rm "$SCRIPT_PATH/root/$BIN_DIR"/busybox.exe
 esac
 
+if test aarch64 = "$ARCH"
+then
+	# MinGit does not run the post-install hook, so materialize the ARM64
+	# BusyBox aliases directly in the checkout root.
+	ARCH=aarch64 "$SCRIPT_PATH"/root/git-cmd.exe --command=usr\\bin\\sh.exe -l \
+		"${SCRIPT_PATH%/*}/arm64-busybox/install.sh" ||
+	die "Could not materialize ARM64 BusyBox aliases"
+fi
+
 test ! -f "$TARGET" || rm "$TARGET" || die "Could not remove $TARGET"
 
 echo "Creating .zip archive" &&
