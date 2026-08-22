@@ -120,7 +120,7 @@ try {
         $fieldOutputFile = Join-Path $runtime 'field.out'
         $fieldError = Join-Path $runtime 'field.err'
         Remove-Item -LiteralPath $fieldOutputFile, $fieldError -ErrorAction SilentlyContinue
-        $fieldCommand = '""' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '""'
+        $fieldCommand = '""' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '"'
         $fieldProcess = Start-Process -FilePath cmd.exe -ArgumentList @('/d', '/s', '/c', $fieldCommand) -NoNewWindow -PassThru -Wait -RedirectStandardOutput $fieldOutputFile -RedirectStandardError $fieldError
         $fieldExitCode = $fieldProcess.ExitCode
         $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
