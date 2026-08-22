@@ -195,6 +195,7 @@ then
 		-ExperimentalList "$SCRIPT_PATH"/../arm64-busybox/experimental-replacements.txt \
 		-RetainedList "$SCRIPT_PATH"/../arm64-busybox/retained-paths.tsv ||
 	die "Could not materialize ARM64 BusyBox aliases"
+	rm "$SCRIPT_PATH/root/$BIN_DIR"/busybox-shim.exe
 fi
 
 test ! -f "$TARGET" || rm "$TARGET" || die "Could not remove $TARGET"
