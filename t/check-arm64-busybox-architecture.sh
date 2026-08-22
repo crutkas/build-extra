@@ -148,6 +148,12 @@ grep '^clangarm64/bin/libmpfr-6\.dll$' "$tmp/combined.changed" >"$tmp/mpfr.chang
 grep -v '^clangarm64/' "$tmp/combined.changed" >"$tmp/openssh.changed"
 current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
 current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
+
+count () {
+	awk -F '	' -v architecture="$2" \
+		'$2 == architecture { count++ } END { print count + 0 }' "$1"
+}
+
 for label in current-leaf current-busybox current-combined
 do
 	variable=${label#current-}
@@ -300,11 +306,6 @@ do
 done <"$tmp/leaf-arm64.paths"
 test 3 = "$leaf_added" ||
 die "Expected 3 leaf-tool ARM64 additions, found $leaf_added"
-
-count () {
-	awk -F '	' -v architecture="$2" \
-		'$2 == architecture { count++ } END { print count + 0 }' "$1"
-}
 
 release_x64=$(count "$tmp/release.tsv" x64)
 release_arm64=$(count "$tmp/release.tsv" arm64)
