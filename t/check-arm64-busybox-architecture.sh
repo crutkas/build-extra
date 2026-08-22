@@ -189,6 +189,11 @@ test 10 = "$openssh_replaced" ||
 die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
+printf 'combined-impact counts: busybox_arm64=%s combined_arm64=%s gawk=%s mpfr=%s openssh_changed=%s\n' \
+	"$current_busybox_arm64" "$current_combined_arm64" \
+	"$current_gawk_added_or_replaced_arm64_pes" \
+	"$current_mpfr_added_or_replaced_arm64_pes" \
+	"$(wc -l <"$tmp/openssh.changed")" >&2
 test 14 = "$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes - current_mpfr_added_or_replaced_arm64_pes))" ||
 die "Expected 14 added or replaced OpenSSH ARM64 PEs"
 
