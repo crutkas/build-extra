@@ -31,9 +31,9 @@ then
 	do
 		test -x "/$path" ||
 		die "Missing ARM64 BusyBox replacement /$path"
+		tr -d '\r' <"$replacement_file" |
 		awk -F '	' -v path="$path" \
-			'$1 == path && $3 == "default" { found = 1 } END { exit !found }' \
-			"$replacement_file" ||
+			'$1 == path && $3 == "default" { found = 1 } END { exit !found }' ||
 		die "$path is not recorded as a default replacement"
 	done <"$thisdir/../arm64-busybox/default-replacements.txt"
 fi
