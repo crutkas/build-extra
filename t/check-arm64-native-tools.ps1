@@ -95,8 +95,12 @@ $gawkMpfr = Join-Path $gawkBin 'libmpfr-6.dll'
 if (-not (Test-Path -LiteralPath $gawkMpfr)) {
     throw "The ARM64 payload does not contain clangarm64\bin\libmpfr-6.dll"
 }
+$gawkReadline = Join-Path $gawkBin 'libreadline8.dll'
+if (-not (Test-Path -LiteralPath $gawkReadline)) {
+    throw "The ARM64 payload does not contain clangarm64\bin\libreadline8.dll"
+}
 $gawkAwk = Join-Path $gawkBin 'awk.exe'
-foreach ($path in @($gawkAwk, $gawkPath, $gawkVersioned, $gawkMpfr)) {
+foreach ($path in @($gawkAwk, $gawkPath, $gawkVersioned, $gawkMpfr, $gawkReadline)) {
     if ((Get-PeMachine -Path $path) -ne 0xAA64) {
         throw "$path is not ARM64"
     }

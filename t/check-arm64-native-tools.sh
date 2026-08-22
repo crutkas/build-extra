@@ -135,6 +135,8 @@ test -d "$gawk_lib" ||
 die "Could not determine the gawk library directory"
 test -f "$gawk_dir/libmpfr-6.dll" ||
 die "The ARM64 payload does not contain libmpfr-6.dll"
+test -f "$gawk_dir/libreadline8.dll" ||
+die "The ARM64 payload does not contain libreadline8.dll"
 test ! -f "$gawk_lib/fork.dll" ||
 die "fork.dll should not be packaged for native ARM64 gawk"
 check_tool () {
