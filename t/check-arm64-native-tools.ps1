@@ -121,7 +121,7 @@ try {
         $fieldError = Join-Path $runtime 'field.err'
         Remove-Item -LiteralPath $fieldOutputFile, $fieldError -ErrorAction SilentlyContinue
         $fieldCommand = '""' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '""'
-        & cmd.exe /d /c $fieldCommand 1> $fieldOutputFile 2> $fieldError
+        & cmd.exe /d /s /c $fieldCommand 1> $fieldOutputFile 2> $fieldError
         $fieldExitCode = $LASTEXITCODE
         $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
         if ($fieldExitCode -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
