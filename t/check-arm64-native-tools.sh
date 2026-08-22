@@ -139,7 +139,6 @@ die "Could not determine the gawk binary directory"
 gawk_lib="$gawk_dir/../lib/gawk"
 test -d "$gawk_lib" ||
 die "Could not determine the gawk library directory"
-die "The ARM64 payload does not contain libgmp-10.dll"
 test -f "$gawk_dir/libgmp-10.dll" ||
 die "The ARM64 payload does not contain libgmp-10.dll"
 test -f "$gawk_dir/libmpfr-6.dll" ||
