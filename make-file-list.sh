@@ -410,6 +410,7 @@ fi |
 		/clangarm64/bin/awk.exe
 		/clangarm64/bin/gawk.exe
 		/clangarm64/bin/gawk-5.4.1.exe
+		/clangarm64/bin/libgmp-10.dll
 		/clangarm64/bin/libmpfr-6.dll
 		/clangarm64/bin/libreadline8.dll
 		/clangarm64/bin/libtermcap-0.dll

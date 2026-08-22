@@ -109,7 +109,6 @@ then
 		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/default-replacements.txt
 		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/experimental-replacements.txt
 		printf '%s\n' \
-			clangarm64/share/busybox/arm64-payload-map.json \
 			etc/arm64-busybox-aliases.txt \
 			etc/arm64-busybox-replacements.tsv \
 			etc/arm64-busybox-retained-paths.tsv

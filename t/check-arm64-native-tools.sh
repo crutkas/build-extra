@@ -57,8 +57,14 @@ then
 	die "The ARM64 file list does not contain clangarm64/bin/gawk.exe"
 	grep -qx "clangarm64/bin/gawk-5.4.1.exe" "$tmp" ||
 	die "The ARM64 file list does not contain clangarm64/bin/gawk-5.4.1.exe"
+	grep -qx "clangarm64/bin/libgmp-10.dll" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/libgmp-10.dll"
 	grep -qx "clangarm64/bin/libmpfr-6.dll" "$tmp" ||
 	die "The ARM64 file list does not contain clangarm64/bin/libmpfr-6.dll"
+	grep -qx "clangarm64/bin/libreadline8.dll" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/libreadline8.dll"
+	grep -qx "clangarm64/bin/libtermcap-0.dll" "$tmp" ||
+	die "The ARM64 file list does not contain clangarm64/bin/libtermcap-0.dll"
 	grep -qx "clangarm64/lib/gawk/fork.dll" "$tmp" &&
 	die "fork.dll should not be packaged for native ARM64 gawk"
 
@@ -133,6 +139,9 @@ die "Could not determine the gawk binary directory"
 gawk_lib="$gawk_dir/../lib/gawk"
 test -d "$gawk_lib" ||
 die "Could not determine the gawk library directory"
+die "The ARM64 payload does not contain libgmp-10.dll"
+test -f "$gawk_dir/libgmp-10.dll" ||
+die "The ARM64 payload does not contain libgmp-10.dll"
 test -f "$gawk_dir/libmpfr-6.dll" ||
 die "The ARM64 payload does not contain libmpfr-6.dll"
 test -f "$gawk_dir/libreadline8.dll" ||
