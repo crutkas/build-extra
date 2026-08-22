@@ -56,7 +56,7 @@ foreach ($replacement in $selected) {
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
     if (-not $ForceCopy) {
         try {
-            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath |
+            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath -ErrorAction Stop |
                 Out-Null
         }
         catch {

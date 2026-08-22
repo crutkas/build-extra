@@ -315,7 +315,7 @@ test -59 = "$((current_busybox_x64 - current_leaf_x64))" &&
 test 61 = "$((current_busybox_arm64 - current_leaf_arm64))" ||
 die "The current file-list BusyBox architecture delta is not -59 x64/+61 ARM64"
 test -14 = "$((current_combined_x64 - current_busybox_x64))" &&
-test 14 = "$((current_combined_arm64 - current_busybox_arm64 - $(wc -l <"$tmp/gawk.changed")))" ||
+test 14 = "$((current_combined_arm64 - current_busybox_arm64 - $(wc -l <"$tmp/gawk.changed") - $(wc -l <"$tmp/mpfr.changed")))" ||
 die "The current file-list OpenSSH architecture delta is not -14 x64/+14 ARM64"
 test "$current_leaf_x86" = "$current_busybox_x86" &&
 test "$current_leaf_x86" = "$current_combined_x86" &&
