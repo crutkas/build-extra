@@ -231,6 +231,58 @@ done <"$tmp/legacy-openssh.paths"
 test 11 = "$legacy_openssh" ||
 die "Expected 11 legacy OpenSSH PEs, checked $legacy_openssh"
 
+cat >"$tmp/leaf-x64.paths" <<-\EOF
+usr/bin/bunzip2.exe
+usr/bin/bzcat.exe
+usr/bin/bzip2.exe
+usr/bin/bzip2recover.exe
+usr/bin/nettle-hash.exe
+usr/bin/nettle-lfib-stream.exe
+usr/bin/nettle-pbkdf2.exe
+usr/bin/p11-kit.exe
+usr/bin/pkcs1-conv.exe
+usr/bin/sexp-conv.exe
+usr/bin/trust.exe
+EOF
+cat >"$tmp/leaf-arm64.paths" <<-\EOF
+clangarm64/bin/bunzip2.exe
+clangarm64/bin/bzcat.exe
+clangarm64/bin/bzip2.exe
+clangarm64/bin/bzip2recover.exe
+clangarm64/bin/nettle-hash.exe
+clangarm64/bin/nettle-lfib-stream.exe
+clangarm64/bin/nettle-pbkdf2.exe
+clangarm64/bin/p11-kit.exe
+clangarm64/bin/pkcs1-conv.exe
+clangarm64/bin/sexp-conv.exe
+clangarm64/bin/trust.exe
+EOF
+leaf_removed=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/release.tsv" "$path" x64 >/dev/null
+	test ! -s "$tmp/current-leaf.tsv" ||
+	! awk -F '	' -v path="$path" \
+		'$1 == path && $2 == "x64" { found = 1 } END { exit !found }' \
+		"$tmp/current-leaf.tsv" ||
+	die "$path remains x64 in the current leaf-tools payload"
+	leaf_removed=$((leaf_removed + 1))
+done <"$tmp/leaf-x64.paths"
+test 11 = "$leaf_removed" ||
+die "Expected 11 leaf-tool x64 removals, found $leaf_removed"
+leaf_added=0
+while IFS= read -r path
+do
+	manifest_row "$tmp/current-leaf.tsv" "$path" arm64 >/dev/null
+	if ! awk -F '	' -v path="$path" '$1 == path { found = 1 } END { exit !found }' \
+		"$tmp/release.tsv"
+	then
+		leaf_added=$((leaf_added + 1))
+	fi
+done <"$tmp/leaf-arm64.paths"
+test 3 = "$leaf_added" ||
+die "Expected 3 leaf-tool ARM64 additions, found $leaf_added"
+
 count () {
 	awk -F '	' -v architecture="$2" \
 		'$2 == architecture { count++ } END { print count + 0 }' "$1"

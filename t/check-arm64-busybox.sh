@@ -332,10 +332,8 @@ die "rebase or cherry-pick workflow failed"
 (
 	cd clone &&
 	git checkout -q main &&
-	hooks="$(git rev-parse --git-path hooks)" &&
-	/usr/bin/mkdir -p "$hooks" &&
-	printf '#!/bin/sh\nprintf hook-ran >../hook-ran\n' >"$hooks/pre-commit" &&
-	/usr/bin/chmod +x "$hooks/pre-commit" &&
+	printf '#!/bin/sh\nprintf hook-ran >../hook-ran\n' >.git/hooks/pre-commit &&
+	/usr/bin/chmod +x .git/hooks/pre-commit &&
 	printf 'hook\n' >hooked &&
 	git add hooked &&
 	git commit -qm hook &&

@@ -172,7 +172,7 @@ $BIN_DIR/busybox.exe
 	die "Could not copy busybox.exe"
 
 	# verify that the Git wrapper works
-	cp "/$MSYSTEM_LOWER/share/git/compat-bash.exe" "$SCRIPT_PATH/root/$BIN_DIR"/ash.exe
+	cp "/$MSYSTEM_LOWER/share/git/git-wrapper.exe" "$SCRIPT_PATH/root/$BIN_DIR"/ash.exe
 	uname="$($SCRIPT_PATH/root/$BIN_DIR/ash.exe -c uname 2>&1)"
 	case "$?,$uname" in
 	0,*BusyBox*) ;; # okay, let's use the Git wrapper
