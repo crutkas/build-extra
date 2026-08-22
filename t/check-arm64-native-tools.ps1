@@ -119,11 +119,9 @@ try {
         Set-Content -Encoding ascii -LiteralPath $fieldInput -Value "alpha beta"
         $fieldError = Join-Path $runtime 'field.err'
         Remove-Item -LiteralPath $fieldError -ErrorAction SilentlyContinue
-        $fieldOutput = & $runtimeGawkPath -f $fieldScript $fieldInput 2> $fieldError
+        $fieldCommand = '"' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '"'
+        $fieldOutput = & cmd.exe /d /s /c $fieldCommand 2> $fieldError
         $fieldExitCode = $LASTEXITCODE
-        if ($fieldOutput -is [array]) {
-            $fieldOutput = $fieldOutput -join [Environment]::NewLine
-        }
         if ($fieldExitCode -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
