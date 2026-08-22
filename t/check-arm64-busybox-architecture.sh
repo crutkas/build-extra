@@ -143,7 +143,7 @@ added_or_replaced () {
 
 added_or_replaced current-leaf current-busybox "$tmp/busybox.changed"
 added_or_replaced current-busybox current-combined "$tmp/combined.changed"
-grep '^clangarm64/' "$tmp/combined.changed" >"$tmp/gawk.changed" || true
+grep '^clangarm64/' "$tmp/combined.changed" | grep -v '^clangarm64/bin/libmpfr-6\.dll$' >"$tmp/gawk.changed" || true
 grep '^clangarm64/bin/libmpfr-6\.dll$' "$tmp/combined.changed" >"$tmp/mpfr.changed" || true
 grep -v '^clangarm64/' "$tmp/combined.changed" >"$tmp/openssh.changed"
 current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
