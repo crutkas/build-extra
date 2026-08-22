@@ -56,8 +56,13 @@ foreach ($replacement in $selected) {
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
     if (-not $ForceCopy) {
         try {
-            New-Item -ItemType HardLink -LiteralPath $destination -Target $installedShimPath -ErrorAction Stop |
-                Out-Null
+            if ($replacement.Path -match '[\[\]\*\?]') {
+                New-Item -ItemType HardLink -LiteralPath $destination -Target $installedShimPath -ErrorAction Stop |
+                    Out-Null
+            } else {
+                New-Item -ItemType HardLink -Path $destination -Target $installedShimPath -ErrorAction Stop |
+                    Out-Null
+            }
         }
         catch {
             Copy-Item -LiteralPath $installedShimPath -Destination $destination
