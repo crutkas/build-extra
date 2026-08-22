@@ -136,6 +136,7 @@ grep '\.dll$' "$tmp_file.all" |
 		-e '^usr/lib/openssl/engines' \
 		-e '^usr/lib/sasl2/' \
 		-e '^usr/lib/coreutils/libstdbuf.dll' \
+		-e "^$MINGW_PREFIX/bin/libmpfr-6.dll" \
 		-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
 		$UNUSED_LIBSTDCXX_EXCLUDE \
 		-e "^$MINGW_PREFIX/bin/\(atlassian\|azuredevops\|bitbucket\|gcmcore.*\|github\|gitlab\|microsoft\|newtonsoft\|system\..*\|webview2loader\|avalonia\|.*harfbuzzsharp\|microcom\|.*skiasharp\|av_libglesv2\|msalruntime\(\|_x86\|_arm64\)\)\." \
