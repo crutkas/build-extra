@@ -120,7 +120,7 @@ try {
         $fieldOutputFile = Join-Path $runtime 'field.out'
         $fieldError = Join-Path $runtime 'field.err'
         Remove-Item -LiteralPath $fieldOutputFile, $fieldError -ErrorAction SilentlyContinue
-        $fieldCommand = '"' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '"'
+        $fieldCommand = '""' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '""'
         & cmd.exe /d /c $fieldCommand 1> $fieldOutputFile 2> $fieldError
         $fieldExitCode = $LASTEXITCODE
         $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
