@@ -29,6 +29,7 @@ then
 
 	while IFS= read -r path
 	do
+		path=${path%$'\r'}
 		test -x "/$path" ||
 		die "Missing ARM64 BusyBox replacement /$path"
 		awk -F '	' -v path="$path" \

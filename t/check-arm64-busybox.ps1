@@ -78,7 +78,8 @@ if ($aliases.Count -ne $expectedReplacementCount) {
 
 $replacementFiles = [Collections.Generic.List[string]]::new()
 foreach ($replacement in $replacements) {
-    $path = Join-Path $rootPath $replacement.path.Replace('/', '\')
+    $replacementPath = $replacement.path.TrimEnd("`r")
+    $path = Join-Path $rootPath $replacementPath.Replace('/', '\')
     if (-not [IO.File]::Exists($path)) {
         if ($AllowMissingReplacements) {
             continue
@@ -91,21 +92,22 @@ foreach ($replacement in $replacements) {
     }
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
     if ($hash -ne $expectedShimHash) {
-        throw "$($replacement.path) is not the compact ARM64 BusyBox shim"
+        throw "$replacementPath is not the compact ARM64 BusyBox shim"
     }
-    $expectedAlias = [IO.Path]::GetFileName($replacement.path)
+    $expectedAlias = [IO.Path]::GetFileName($replacementPath)
     if ($aliases -notcontains $expectedAlias) {
         throw "$expectedAlias is missing from the post-install alias list"
     }
-    $replacementFiles.Add($replacement.path)
+    $replacementFiles.Add($replacementPath)
 }
 
 $retained = @(Import-Csv -Delimiter "`t" -LiteralPath $retainedPath)
 if ($retained.Count -ne $expectedRetainedCount) {
     throw "Expected $expectedRetainedCount retained paths, found $($retained.Count)"
 }
+$retainedPaths = @($retained | ForEach-Object { $_.path.TrimEnd("`r") })
 foreach ($path in $replacementFiles) {
-    if ($retained.path -contains $path) {
+    if ($retainedPaths -contains $path) {
         throw "$path is both replaced and retained"
     }
 }
