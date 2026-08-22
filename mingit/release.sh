@@ -186,7 +186,7 @@ if test aarch64 = "$ARCH"
 then
 	# MinGit does not run the post-install hook, so materialize the ARM64
 	# BusyBox aliases directly in the checkout root.
-	ARCH=aarch64 "$SCRIPT_PATH"/root/git-cmd.exe --command=usr\\bin\\sh.exe -l \
+	ARCH=aarch64 "$SCRIPT_PATH"/root/cmd/git.exe --command=usr\\bin\\sh.exe -l \
 		"${SCRIPT_PATH%/*}/arm64-busybox/install.sh" ||
 	die "Could not materialize ARM64 BusyBox aliases"
 fi
