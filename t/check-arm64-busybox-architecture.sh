@@ -148,6 +148,14 @@ grep '^clangarm64/bin/libmpfr-6\.dll$' "$tmp/combined.changed" >"$tmp/mpfr.chang
 grep -v '^clangarm64/' "$tmp/combined.changed" >"$tmp/openssh.changed"
 current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
 current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
+for label in current-leaf current-busybox current-combined
+do
+	variable=${label#current-}
+	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
+	eval "current_${variable}_arm64=\$(count \"\$tmp/$label.tsv\" arm64)"
+	eval "current_${variable}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
+	eval "current_${variable}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
+done
 
 removed () {
 	before=$1
@@ -302,14 +310,6 @@ release_x64=$(count "$tmp/release.tsv" x64)
 release_arm64=$(count "$tmp/release.tsv" arm64)
 release_x86=$(count "$tmp/release.tsv" x86)
 release_anycpu=$(count "$tmp/release.tsv" anycpu)
-for label in current-leaf current-busybox current-combined
-do
-	variable=${label#current-}
-	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
-	eval "current_${variable}_arm64=\$(count \"\$tmp/$label.tsv\" arm64)"
-	eval "current_${variable}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
-	eval "current_${variable}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
-done
 test 432 = "$release_x64" ||
 die "Expected the authoritative release baseline to contain 432 x64 PEs"
 test 209 = "$release_arm64" &&
