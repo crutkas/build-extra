@@ -101,8 +101,14 @@ then
 fi
 
 export PATH
-gawk_versioned_path=$(command -v gawk-5.4.1) ||
-die "Could not resolve gawk-5.4.1 from Git Bash"
+if test -n "$root_supplied"
+then
+	gawk_versioned_path=$(resolve_root_tool_path gawk-5.4.1) ||
+	die "Could not resolve gawk-5.4.1 from the ARM64 root"
+else
+	gawk_versioned_path=$(command -v gawk-5.4.1) ||
+	die "Could not resolve gawk-5.4.1 from Git Bash"
+fi
 case "$gawk_versioned_path" in
 */clangarm64/bin/gawk-5.4.1|*/clangarm64/bin/gawk-5.4.1.exe|*/usr/bin/gawk-5.4.1|*/usr/bin/gawk-5.4.1.exe) ;;
 *) die "gawk-5.4.1 resolves to $gawk_versioned_path instead of a clangarm64/bin or usr/bin gawk-5.4.1[.exe] path";;

@@ -61,21 +61,16 @@ foreach ($replacement in $selected) {
     $parent = Split-Path -Parent $destination
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
-    if (-not $ForceCopy) {
+    if (-not $ForceCopy -and $replacement.Path -notmatch '[\[\]\*\?]') {
         try {
-            if ($replacement.Path -match '[\[\]\*\?]') {
-                New-Item -ItemType HardLink -LiteralPath $destination -Target $installedShimPath -ErrorAction Stop |
-                    Out-Null
-            } else {
-                New-Item -ItemType HardLink -Path $destination -Target $installedShimPath -ErrorAction Stop |
-                    Out-Null
-            }
+            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath -ErrorAction Stop |
+                Out-Null
         }
         catch {
-            Copy-Item -LiteralPath $installedShimPath -Destination $destination
+            [IO.File]::Copy($installedShimPath, $destination, $true)
         }
     } else {
-        Copy-Item -LiteralPath $installedShimPath -Destination $destination
+        [IO.File]::Copy($installedShimPath, $destination, $true)
     }
 
     $alias = [IO.Path]::GetFileName($replacement.Path)
