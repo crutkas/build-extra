@@ -120,10 +120,11 @@ try {
         $fieldOutputFile = Join-Path $runtime 'field.out'
         $fieldError = Join-Path $runtime 'field.err'
         Remove-Item -LiteralPath $fieldOutputFile, $fieldError -ErrorAction SilentlyContinue
-        $fieldCommand = "`"$runtimeGawkPath`" -f `"$fieldScript`" `"$fieldInput`""
-        $fieldProcess = Start-Process -FilePath cmd.exe -ArgumentList @('/c', $fieldCommand) -Wait -PassThru -RedirectStandardOutput $fieldOutputFile -RedirectStandardError $fieldError
+        $fieldCommand = '"' + $runtimeGawkPath + '" -f "' + $fieldScript + '" "' + $fieldInput + '"'
+        & cmd.exe /d /c $fieldCommand 1> $fieldOutputFile 2> $fieldError
+        $fieldExitCode = $LASTEXITCODE
         $fieldOutput = Get-Content -Raw -LiteralPath $fieldOutputFile
-        if ($fieldProcess.ExitCode -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
+        if ($fieldExitCode -ne 0 -or $fieldOutput -notmatch '^alpha beta\r?\n?$') {
             Write-Host "gawk field output: <$fieldOutput>"
             if ((Test-Path -LiteralPath $fieldError) -and ((Get-Item -LiteralPath $fieldError).Length -gt 0)) {
                 Get-Content -LiteralPath $fieldError
