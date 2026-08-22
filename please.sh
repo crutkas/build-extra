@@ -851,6 +851,7 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		*error_highlight*
 
 		# Files to include into the installer/Portable Git/MinGit
+		$PREFIX/share/git/builtins.txt
 		EOF
 		git -C "$output_path" checkout -- &&
 		mkdir -p "$output_path/tmp" &&
