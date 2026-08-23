@@ -185,7 +185,7 @@ die "$tool does not exist in the ARM64 payload"
 	die "$tool returned $actual instead of $expected"
 }
 
-if test -z "$root_supplied"
+if test -n "$root_supplied"
 then
 	check_tool bunzip2 1 --help
 	check_tool bzcat 1 --help
