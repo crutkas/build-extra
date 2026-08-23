@@ -254,7 +254,8 @@ EOF
 AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
 	"$runtime_gawk_path" -f "$inplace_script" "$inplace_input" &&
 printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
-cmp "$runtime/inplace.expect" "$runtime/inplace-input.txt" ||
+tr -d '\r' <"$runtime/inplace-input.txt" >"$runtime/inplace.actual" &&
+cmp "$runtime/inplace.expect" "$runtime/inplace.actual" ||
 die "AWKLIBPATH or inplace extension loading failed"
 
 printf 'quoted\n' >"$runtime/system-input.txt" &&
