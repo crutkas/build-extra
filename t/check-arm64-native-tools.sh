@@ -206,7 +206,7 @@ then
 fi
 
 runtime=${TMPDIR:-/tmp}/arm64-gawk.$$
-trap 'rm -f "$tmp"; rm -rf "$runtime"' EXIT
+trap 'rm -rf "$runtime"' EXIT
 mkdir -p "$runtime/scripts" "$runtime/ext"
 
 cat >"$runtime/scripts/field.awk" <<'EOF'
