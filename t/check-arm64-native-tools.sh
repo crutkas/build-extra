@@ -182,7 +182,7 @@ if test -z "$root_supplied"
 then
 	check_tool bunzip2 1 --help
 	check_tool bzcat 1 --help
-	check_tool bzip2 0 --help
+	check_tool bzip2 1 --help
 	check_tool bzip2recover 1
 	check_tool nettle-hash 0 --help
 	check_tool nettle-lfib-stream 1 --help
