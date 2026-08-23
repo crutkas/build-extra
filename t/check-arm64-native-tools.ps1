@@ -148,6 +148,7 @@ try {
         Set-Content -Encoding ascii -LiteralPath (Join-Path $scriptDir 'from-awkpath.awk') -Value 'BEGIN { print "awkpath-ok" }'
         $env:AWKPATH = "$([IO.Path]::GetFullPath($scriptDir));$oldAwkPath"
         $awkPathOutput = & $runtimeGawkPath -f from-awkpath.awk /dev/null
+        $awkPathOutput = (@($awkPathOutput) -join "`n").TrimEnd("`r", "`n")
         if ($LASTEXITCODE -ne 0 -or $awkPathOutput -ne 'awkpath-ok') {
             throw 'AWKPATH did not honor a native Windows path list'
         }

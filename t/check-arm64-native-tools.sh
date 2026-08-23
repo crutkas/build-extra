@@ -218,8 +218,8 @@ EOF
 awkpath_dir=$(cygpath -aw "$runtime/scripts") &&
 AWKPATH="$awkpath_dir;$AWKPATH" \
 	"$runtime_gawk_path" -f from-awkpath.awk /dev/null >"$runtime/awkpath.out" &&
-printf 'awkpath-ok\n' >"$runtime/awkpath.expect" &&
-cmp "$runtime/awkpath.expect" "$runtime/awkpath.out" ||
+awkpath_output=$(tr -d '\r' <"$runtime/awkpath.out") &&
+test "awkpath-ok" = "$awkpath_output" ||
 die "AWKPATH did not honor a native Windows path list"
 
 cp "$gawk_lib"/*.dll "$runtime/ext/" &&
