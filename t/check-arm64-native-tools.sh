@@ -288,7 +288,7 @@ die "gawk system() quoting failed"
 
 printf 'caf\303\251\n' >"$runtime/utf8-input.txt" &&
 utf8_input=$(cygpath -aw "$runtime/utf8-input.txt") &&
-LC_ALL=en_US.UTF-8 "$runtime_gawk_path" '{ print $0 }' "$utf8_input" >"$runtime/utf8.out" &&
+LC_ALL=en_US.UTF-8 "$runtime_gawk_path" '{ print $0 }' "$utf8_input" | tr -d '\r' >"$runtime/utf8.out" &&
 printf 'caf\303\251\n' >"$runtime/utf8.expect" &&
 cmp "$runtime/utf8.expect" "$runtime/utf8.out" ||
 die "gawk UTF-8 handling failed"

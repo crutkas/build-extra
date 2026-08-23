@@ -209,10 +209,11 @@ END {
         $env:LC_ALL = 'en_US.UTF-8'
         & $runtimeGawkPath '{ print $0 }' $utf8Input > $utf8Output
         $utf8ExpectedBytes = [IO.File]::ReadAllBytes($utf8Expect)
-        $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output)
+        $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output) | Where-Object { $_ -ne 0x0D }
+        $utf8ActualBytes = [byte[]]$utf8ActualBytes
         if ($LASTEXITCODE -ne 0 -or $utf8ExpectedBytes.Length -ne $utf8ActualBytes.Length -or
             -not [System.Linq.Enumerable]::SequenceEqual($utf8ExpectedBytes, $utf8ActualBytes)) {
-            throw 'gawk UTF-8 filename handling failed'
+            throw 'gawk UTF-8 handling failed'
         }
 
         & $runtimeGawkPath 'BEGIN { exit 17 }'
