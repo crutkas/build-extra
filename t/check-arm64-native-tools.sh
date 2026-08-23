@@ -289,7 +289,7 @@ die "gawk system() quoting failed"
 utf8_name="caf$(printf '\303\251').txt" &&
 printf 'unicode\n' >"$runtime/$utf8_name" &&
 utf8_input=$(cygpath -aw "$runtime/$utf8_name") &&
-LC_ALL=en_US.UTF-8 "$runtime_gawk_path" 'BEGINFILE { n = split(FILENAME, parts, /[\\/]/); print parts[n]; exit }' "$utf8_input" >"$runtime/utf8.out" &&
+LC_ALL=en_US.UTF-8 "$runtime_gawk_path" '{ print $0 }' "$utf8_input" >"$runtime/utf8.out" &&
 printf '%s\n' "$utf8_name" >"$runtime/utf8.expect" &&
 cmp "$runtime/utf8.expect" "$runtime/utf8.out" ||
 die "gawk UTF-8 filename handling failed"

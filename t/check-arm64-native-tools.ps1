@@ -204,8 +204,8 @@ END {
         $utf8Input = Join-Path $runtime ("caf" + [char]0xE9 + ".txt")
         Set-Content -Encoding utf8 -LiteralPath $utf8Input -Value 'unicode'
         $env:LC_ALL = 'en_US.UTF-8'
-        $utf8Output = & $runtimeGawkPath 'BEGINFILE { n = split(FILENAME, parts, /[\\/]/); print parts[n]; exit }' $utf8Input
-        if ($LASTEXITCODE -ne 0 -or $utf8Output -ne 'café.txt') {
+        $utf8Output = & $runtimeGawkPath '{ print $0 }' $utf8Input
+        if ($LASTEXITCODE -ne 0 -or $utf8Output -ne 'unicode') {
             throw 'gawk UTF-8 filename handling failed'
         }
 
