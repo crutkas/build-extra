@@ -184,13 +184,13 @@ then
 	check_tool bzcat 1 --help
 	check_tool bzip2 1 --help
 	check_tool bzip2recover 1
-	check_tool nettle-hash 0 --help
+	check_tool nettle-hash 1 --help
 	check_tool nettle-lfib-stream 1 --help
-	check_tool nettle-pbkdf2 0 --help
-	check_tool pkcs1-conv 0 --help
-	check_tool sexp-conv 0 --help
-	check_tool p11-kit 0 --help
-	check_tool trust 0 --help
+	check_tool nettle-pbkdf2 1 --help
+	check_tool pkcs1-conv 1 --help
+	check_tool sexp-conv 1 --help
+	check_tool p11-kit 1 --help
+	check_tool trust 1 --help
 fi
 
 runtime=${TMPDIR:-/tmp}/arm64-gawk.$$
