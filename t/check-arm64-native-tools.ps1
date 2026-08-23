@@ -158,7 +158,7 @@ try {
         $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($extDir));$oldAwkLibPath"
         $inplaceInput = Join-Path $runtime 'inplace-input.txt'
         Set-Content -Encoding ascii -LiteralPath $inplaceInput -Value "in place"
-        & $runtimeGawkPath -i inplace '{ print toupper($0) }' $inplaceInput
+        & $runtimeGawkPath -i inplace.dll '{ print toupper($0) }' $inplaceInput
         if ($LASTEXITCODE -ne 0) {
             throw 'AWKLIBPATH or inplace extension loading failed'
         }
