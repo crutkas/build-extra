@@ -181,7 +181,7 @@ die "$tool does not exist in the ARM64 payload"
 if test -z "$root_supplied"
 then
 	check_tool bunzip2 1 --help
-	check_tool bzcat 0 --help
+	check_tool bzcat 1 --help
 	check_tool bzip2 0 --help
 	check_tool bzip2recover 1
 	check_tool nettle-hash 0 --help
