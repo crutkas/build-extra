@@ -153,10 +153,7 @@ try {
             throw 'AWKPATH did not honor a native Windows path list'
         }
 
-        $extDir = Join-Path $runtime 'ext'
-        New-Item -ItemType Directory -Force -Path $extDir | Out-Null
-        Copy-Item -Path (Join-Path $gawkLib '*.dll') -Destination $extDir -Force
-        $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($extDir));$oldAwkLibPath"
+        $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($gawkLib));$oldAwkLibPath"
         $inplaceInput = Join-Path $runtime 'inplace-input.txt'
         Set-Content -Encoding ascii -LiteralPath $inplaceInput -Value "in place"
         & $runtimeGawkPath -i inplace.dll '{ print toupper($0) }' $inplaceInput

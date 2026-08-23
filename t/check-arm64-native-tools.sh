@@ -222,10 +222,9 @@ awkpath_output=$(tr -d '\r' <"$runtime/awkpath.out") &&
 test "awkpath-ok" = "$awkpath_output" ||
 die "AWKPATH did not honor a native Windows path list"
 
-cp "$gawk_lib"/*.dll "$runtime/ext/" &&
 printf 'in place\n' >"$runtime/inplace-input.txt" &&
 inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
-inplace_lib=$(cygpath -aw "$runtime/ext") &&
+inplace_lib=$(cygpath -aw "$gawk_lib") &&
 AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
 	"$runtime_gawk_path" -i inplace.dll '{ print toupper($0) }' "$inplace_input" &&
 printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
