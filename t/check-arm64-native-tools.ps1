@@ -243,6 +243,7 @@ END {
             throw 'gawk did not report the missing fork extension'
         }
         Write-Host 'native-tools: fork check ok'
+        $LASTEXITCODE = 0
     }
     finally {
         $env:AWKPATH = $oldAwkPath
