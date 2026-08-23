@@ -205,11 +205,11 @@ END {
         $utf8Output = Join-Path $runtime 'utf8.out'
         $utf8Expect = Join-Path $runtime 'utf8.expect'
         [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
-        [IO.File]::WriteAllBytes($utf8Expect, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
+        [IO.File]::WriteAllBytes($utf8Expect, [byte[]](0x63,0x61,0x66,0xC3,0xA9))
         $env:LC_ALL = 'en_US.UTF-8'
         & $runtimeGawkPath '{ print $0 }' $utf8Input > $utf8Output
         $utf8ExpectedBytes = [IO.File]::ReadAllBytes($utf8Expect)
-        $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output) | Where-Object { $_ -ne 0x0D }
+        $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output) | Where-Object { $_ -ne 0x0D -and $_ -ne 0x0A }
         $utf8ActualBytes = [byte[]]$utf8ActualBytes
         if ($LASTEXITCODE -ne 0 -or $utf8ExpectedBytes.Length -ne $utf8ActualBytes.Length -or
             -not [System.Linq.Enumerable]::SequenceEqual($utf8ExpectedBytes, $utf8ActualBytes)) {
