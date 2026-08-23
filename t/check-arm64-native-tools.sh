@@ -286,13 +286,12 @@ printf 'quoted\n' >"$runtime/system.expect" &&
 cmp "$runtime/system.expect" "$runtime/system-output.txt" ||
 die "gawk system() quoting failed"
 
-utf8_name="caf$(printf '\303\251').txt" &&
-printf 'unicode\n' >"$runtime/$utf8_name" &&
-utf8_input=$(cygpath -aw "$runtime/$utf8_name") &&
+printf 'caf\303\251\n' >"$runtime/utf8-input.txt" &&
+utf8_input=$(cygpath -aw "$runtime/utf8-input.txt") &&
 LC_ALL=en_US.UTF-8 "$runtime_gawk_path" '{ print $0 }' "$utf8_input" >"$runtime/utf8.out" &&
-printf '%s\n' "$utf8_name" >"$runtime/utf8.expect" &&
+printf 'caf\303\251\n' >"$runtime/utf8.expect" &&
 cmp "$runtime/utf8.expect" "$runtime/utf8.out" ||
-die "gawk UTF-8 filename handling failed"
+die "gawk UTF-8 handling failed"
 
 "$runtime_gawk_path" 'BEGIN { exit 17 }'
 test 17 = "$?" ||

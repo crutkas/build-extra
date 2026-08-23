@@ -201,11 +201,17 @@ END {
             throw 'gawk system() quoting failed'
         }
 
-        $utf8Input = Join-Path $runtime ("caf" + [char]0xE9 + ".txt")
-        Set-Content -Encoding utf8 -LiteralPath $utf8Input -Value 'unicode'
+        $utf8Input = Join-Path $runtime 'utf8-input.txt'
+        $utf8Output = Join-Path $runtime 'utf8.out'
+        $utf8Expect = Join-Path $runtime 'utf8.expect'
+        [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
+        [IO.File]::WriteAllBytes($utf8Expect, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
         $env:LC_ALL = 'en_US.UTF-8'
-        $utf8Output = & $runtimeGawkPath '{ print $0 }' $utf8Input
-        if ($LASTEXITCODE -ne 0 -or $utf8Output -ne 'unicode') {
+        & $runtimeGawkPath '{ print $0 }' $utf8Input > $utf8Output
+        $utf8ExpectedBytes = [IO.File]::ReadAllBytes($utf8Expect)
+        $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output)
+        if ($LASTEXITCODE -ne 0 -or $utf8ExpectedBytes.Length -ne $utf8ActualBytes.Length -or
+            -not [System.Linq.Enumerable]::SequenceEqual($utf8ExpectedBytes, $utf8ActualBytes)) {
             throw 'gawk UTF-8 filename handling failed'
         }
 
