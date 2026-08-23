@@ -203,16 +203,23 @@ END {
 
         $utf8Input = Join-Path $runtime 'utf8-input.txt'
         $utf8Output = Join-Path $runtime 'utf8.out'
+        $utf8Error = Join-Path $runtime 'utf8.err'
         $utf8Expect = Join-Path $runtime 'utf8.expect'
+        $utf8Script = Join-Path $runtime 'utf8.awk'
+        Set-Content -Encoding ascii -LiteralPath $utf8Script -Value '{ print $0 }'
         [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
         [IO.File]::WriteAllBytes($utf8Expect, [byte[]](0x63,0x61,0x66,0xC3,0xA9))
         $env:LC_ALL = 'en_US.UTF-8'
-        & $runtimeGawkPath '{ print $0 }' $utf8Input > $utf8Output
+        Remove-Item -LiteralPath $utf8Output, $utf8Error -ErrorAction SilentlyContinue
+        $utf8Process = Start-Process -FilePath $runtimeGawkPath -ArgumentList @('-f', $utf8Script, $utf8Input) -NoNewWindow -PassThru -Wait -RedirectStandardOutput $utf8Output -RedirectStandardError $utf8Error
         $utf8ExpectedBytes = [IO.File]::ReadAllBytes($utf8Expect)
         $utf8ActualBytes = [IO.File]::ReadAllBytes($utf8Output) | Where-Object { $_ -ne 0x0D -and $_ -ne 0x0A }
         $utf8ActualBytes = [byte[]]$utf8ActualBytes
-        if ($LASTEXITCODE -ne 0 -or $utf8ExpectedBytes.Length -ne $utf8ActualBytes.Length -or
+        if ($utf8Process.ExitCode -ne 0 -or $utf8ExpectedBytes.Length -ne $utf8ActualBytes.Length -or
             -not [System.Linq.Enumerable]::SequenceEqual($utf8ExpectedBytes, $utf8ActualBytes)) {
+            if ((Test-Path -LiteralPath $utf8Error) -and ((Get-Item -LiteralPath $utf8Error).Length -gt 0)) {
+                Get-Content -LiteralPath $utf8Error
+            }
             throw 'gawk UTF-8 handling failed'
         }
 
