@@ -187,17 +187,22 @@ die "$tool does not exist in the ARM64 payload"
 
 if test -n "$root_supplied"
 then
-	check_tool bunzip2 1 --help
-	check_tool bzcat 1 --help
-	check_tool bzip2 1 --help
-	check_tool bzip2recover 1
-	check_tool nettle-hash 1 --help
-	check_tool nettle-lfib-stream 1 --help
-	check_tool nettle-pbkdf2 1 --help
-	check_tool pkcs1-conv 1 --help
-	check_tool sexp-conv 1 --help
-	check_tool p11-kit 1 --help
-	check_tool trust 1 --help
+	case "$root_dir" in
+	*/mingit-root) ;;
+	*)
+		check_tool bunzip2 1 --help
+		check_tool bzcat 1 --help
+		check_tool bzip2 1 --help
+		check_tool bzip2recover 1
+		check_tool nettle-hash 1 --help
+		check_tool nettle-lfib-stream 1 --help
+		check_tool nettle-pbkdf2 1 --help
+		check_tool pkcs1-conv 1 --help
+		check_tool sexp-conv 1 --help
+		check_tool p11-kit 1 --help
+		check_tool trust 1 --help
+		;;
+	esac
 fi
 
 runtime=${TMPDIR:-/tmp}/arm64-gawk.$$

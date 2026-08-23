@@ -49,7 +49,7 @@ if ($Root) {
     $env:PATH = "$rootPath\clangarm64\bin;$rootPath\usr\bin;$env:PATH"
 }
 
-if ($rootPath -notlike '*\portable-git') {
+if ($rootPath -notlike '*\portable-git' -and $rootPath -notlike '*\mingit-root') {
     $cases = @(
         @{ Name = "bunzip2"; Arguments = @("--help"); ExitCode = 0 },
         @{ Name = "bzcat"; Arguments = @("--help"); ExitCode = 0 },
