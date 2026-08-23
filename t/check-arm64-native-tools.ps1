@@ -254,3 +254,4 @@ END {
 finally {
     Remove-Item -LiteralPath $runtime -Recurse -Force -ErrorAction SilentlyContinue
 }
+exit 0
