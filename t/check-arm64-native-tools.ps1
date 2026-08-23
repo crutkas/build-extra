@@ -201,12 +201,12 @@ END {
             throw 'gawk system() quoting failed'
         }
 
-        $utf8Input = Join-Path $runtime 'utf8-input.txt'
-        [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
+        $utf8Input = Join-Path $runtime ("caf" + [char]0xE9 + ".txt")
+        Set-Content -Encoding utf8 -LiteralPath $utf8Input -Value 'unicode'
         $env:LC_ALL = 'en_US.UTF-8'
-        $utf8Output = & $runtimeGawkPath '{ print length($0) }' $utf8Input
-        if ($LASTEXITCODE -ne 0 -or $utf8Output -ne '4') {
-            throw 'gawk UTF-8 handling failed'
+        $utf8Output = & $runtimeGawkPath 'BEGINFILE { n = split(FILENAME, parts, /[\\/]/); print parts[n]; exit }' $utf8Input
+        if ($LASTEXITCODE -ne 0 -or $utf8Output -ne 'café.txt') {
+            throw 'gawk UTF-8 filename handling failed'
         }
 
         & $runtimeGawkPath 'BEGIN { exit 17 }'
