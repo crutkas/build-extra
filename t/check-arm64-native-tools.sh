@@ -225,8 +225,34 @@ die "AWKPATH did not honor a native Windows path list"
 printf 'in place\n' >"$runtime/inplace-input.txt" &&
 inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
 inplace_lib=$(cygpath -aw "$gawk_lib") &&
+inplace_script="$runtime/inplace.awk" &&
+cat >"$inplace_script" <<'EOF'
+@load "inplace"
+@namespace "inplace"
+
+BEGIN {
+	enable = 1
+}
+
+BEGINFILE {
+	sfx = (suffix ? suffix : awk::INPLACE_SUFFIX)
+	if (filename != "")
+		end(filename, sfx)
+	if (enable)
+		begin(filename = FILENAME, sfx)
+	else
+		filename = ""
+}
+
+END {
+	if (filename != "")
+		end(filename, (suffix ? suffix : awk::INPLACE_SUFFIX))
+}
+
+{ print toupper($0) }
+EOF
 AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
-	"$runtime_gawk_path" -i inplace '{ print toupper($0) }' "$inplace_input" &&
+	"$runtime_gawk_path" -f "$inplace_script" "$inplace_input" &&
 printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
 cmp "$runtime/inplace.expect" "$runtime/inplace-input.txt" ||
 die "AWKLIBPATH or inplace extension loading failed"

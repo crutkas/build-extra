@@ -156,7 +156,29 @@ try {
         $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($gawkLib));$oldAwkLibPath"
         $inplaceInput = Join-Path $runtime 'inplace-input.txt'
         Set-Content -Encoding ascii -LiteralPath $inplaceInput -Value "in place"
-        & $runtimeGawkPath -i inplace '{ print toupper($0) }' $inplaceInput
+        $inplaceScript = Join-Path $runtime 'inplace.awk'
+        @'
+@load "inplace"
+@namespace "inplace"
+
+BEGIN {
+    enable = 1
+}
+
+BEGINFILE {
+    sfx = (suffix ? suffix : awk::INPLACE_SUFFIX)
+    if (filename != "") end(filename, sfx)
+    if (enable) begin(filename = FILENAME, sfx)
+    else filename = ""
+}
+
+END {
+    if (filename != "") end(filename, (suffix ? suffix : awk::INPLACE_SUFFIX))
+}
+
+{ print toupper($0) }
+'@ | Set-Content -Encoding ascii -LiteralPath $inplaceScript
+        & $runtimeGawkPath -f $inplaceScript $inplaceInput
         if ($LASTEXITCODE -ne 0) {
             throw 'AWKLIBPATH or inplace extension loading failed'
         }
