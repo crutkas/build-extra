@@ -226,7 +226,7 @@ printf 'in place\n' >"$runtime/inplace-input.txt" &&
 inplace_input=$(cygpath -aw "$runtime/inplace-input.txt") &&
 inplace_lib=$(cygpath -aw "$gawk_lib") &&
 AWKLIBPATH="$inplace_lib;$AWKLIBPATH" \
-	"$runtime_gawk_path" -l inplace '{ print toupper($0) }' "$inplace_input" &&
+	"$runtime_gawk_path" -i inplace '{ print toupper($0) }' "$inplace_input" &&
 printf 'IN PLACE\n' >"$runtime/inplace.expect" &&
 cmp "$runtime/inplace.expect" "$runtime/inplace-input.txt" ||
 die "AWKLIBPATH or inplace extension loading failed"
