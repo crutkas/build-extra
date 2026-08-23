@@ -131,6 +131,7 @@ set -- \
 if test clangarm64 = "$MINGW_PREFIX"
 then
 	set -- "$@" -e "^$MINGW_PREFIX/bin/libmpfr-6.dll"
+	set -- "$@" -e '^usr/bin/msys-gcc_s-seh-1.dll'
 fi
 set -- "$@" \
 	-e "^$MINGW_PREFIX/bin/libcurl\(\|-openssl\)-4.dll" \
