@@ -146,6 +146,7 @@ try {
             }
             throw 'gawk field processing failed'
         }
+        Write-Host 'native-tools: field ok'
 
         $scriptDir = Join-Path $runtime 'scripts'
         New-Item -ItemType Directory -Force -Path $scriptDir | Out-Null
@@ -156,6 +157,7 @@ try {
         if ($LASTEXITCODE -ne 0 -or $awkPathOutput -ne 'awkpath-ok') {
             throw 'AWKPATH did not honor a native Windows path list'
         }
+        Write-Host 'native-tools: awkpath ok'
 
         $env:AWKLIBPATH = "$([IO.Path]::GetFullPath($gawkLib));$oldAwkLibPath"
         $inplaceInput = Join-Path $runtime 'inplace-input.txt'
@@ -190,6 +192,7 @@ END {
             (Get-Content -LiteralPath $inplaceInput -Raw) -ne "IN PLACE`n") {
             throw 'inplace editing did not update the file contents'
         }
+        Write-Host 'native-tools: inplace ok'
 
         $systemInput = Join-Path $runtime 'system-input.txt'
         $systemOutput = Join-Path $runtime 'system-output.txt'
@@ -200,6 +203,7 @@ END {
         if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $systemOutput -Raw) -notmatch '^quoted\r?\n?$') {
             throw 'gawk system() quoting failed'
         }
+        Write-Host 'native-tools: system ok'
 
         $utf8Input = Join-Path $runtime 'utf8-input.txt'
         $utf8Output = Join-Path $runtime 'utf8.out'
@@ -222,11 +226,13 @@ END {
             }
             throw 'gawk UTF-8 handling failed'
         }
+        Write-Host 'native-tools: utf8 ok'
 
         & $runtimeGawkPath 'BEGIN { exit 17 }'
         if ($LASTEXITCODE -ne 17) {
             throw 'gawk exit codes are not preserved'
         }
+        Write-Host 'native-tools: exit codes ok'
 
         $forkError = Join-Path $runtime 'fork.err'
         & $runtimeGawkPath -l fork 'BEGIN { print "fork" }' 2> $forkError
@@ -236,6 +242,7 @@ END {
         if (-not (Select-String -Quiet -LiteralPath $forkError -Pattern 'fork')) {
             throw 'gawk did not report the missing fork extension'
         }
+        Write-Host 'native-tools: fork check ok'
     }
     finally {
         $env:AWKPATH = $oldAwkPath
