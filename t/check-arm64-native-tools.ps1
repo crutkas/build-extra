@@ -203,7 +203,7 @@ END {
 
         $utf8Input = Join-Path $runtime 'utf8-input.txt'
         [IO.File]::WriteAllBytes($utf8Input, [byte[]](0x63,0x61,0x66,0xC3,0xA9,0x0A))
-        $env:LC_ALL = 'C.UTF-8'
+        $env:LC_ALL = 'en_US.UTF-8'
         $utf8Output = & $runtimeGawkPath '{ print length($0) }' $utf8Input
         if ($LASTEXITCODE -ne 0 -or $utf8Output -ne '4') {
             throw 'gawk UTF-8 handling failed'
