@@ -5,6 +5,10 @@ param(
 $rootPath = $null
 $oldPath = $env:PATH
 $ErrorActionPreference = 'Stop'
+$hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+if ($hostArch -ne [System.Runtime.InteropServices.Architecture]::Arm64) {
+    throw 'Native ARM64 runtime checks require windows-11-arm'
+}
 function Get-PeMachine {
     param([Parameter(Mandatory = $true)][string]$Path)
 

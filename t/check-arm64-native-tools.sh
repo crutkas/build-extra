@@ -20,6 +20,13 @@ case "$1" in
 "") ;;
 *) die "Unknown option: $1";;
 esac
+if test -z "$selection_only"
+then
+case "$(uname -m)" in
+aarch64|arm64) ;;
+*) die "Native ARM64 runtime checks require windows-11-arm";;
+esac
+fi
 if test -n "$selection_only"
 then
 	tmp=${TMPDIR:-/tmp}/arm64-native-tools.$$
