@@ -266,8 +266,11 @@ cmp "$runtime/inplace.expect" "$runtime/inplace.actual" ||
 die "AWKLIBPATH or inplace extension loading failed"
 
 printf 'quoted\n' >"$runtime/system-input.txt" &&
-system_input=$(cygpath -aw "$runtime/system-input.txt") &&
-system_output=$(cygpath -aw "$runtime/system-output.txt") &&
+escape_awk_path () {
+	printf '%s' "$1" | sed 's/\\/\\\\/g'
+}
+system_input=$(escape_awk_path "$(cygpath -aw "$runtime/system-input.txt")") &&
+system_output=$(escape_awk_path "$(cygpath -aw "$runtime/system-output.txt")") &&
 "$runtime_gawk_path" -v source="$system_input" -v target="$system_output" '
 BEGIN {
   cmd = "cmd.exe /c type \"" source "\" > \"" target "\""

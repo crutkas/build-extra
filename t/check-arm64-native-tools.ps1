@@ -194,7 +194,9 @@ END {
         $systemInput = Join-Path $runtime 'system-input.txt'
         $systemOutput = Join-Path $runtime 'system-output.txt'
         Set-Content -Encoding ascii -LiteralPath $systemInput -Value 'quoted'
-        & $runtimeGawkPath -v "source=$([IO.Path]::GetFullPath($systemInput))" -v "target=$([IO.Path]::GetFullPath($systemOutput))" 'BEGIN { cmd = "cmd.exe /c type \"" source "\" > \"" target "\""; if (system(cmd) != 0) exit 17 }'
+        $systemInputArg = ([IO.Path]::GetFullPath($systemInput)).Replace('\', '\\')
+        $systemOutputArg = ([IO.Path]::GetFullPath($systemOutput)).Replace('\', '\\')
+        & $runtimeGawkPath -v "source=$systemInputArg" -v "target=$systemOutputArg" 'BEGIN { cmd = "cmd.exe /c type \"" source "\" > \"" target "\""; if (system(cmd) != 0) exit 17 }'
         if ($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $systemOutput -Raw) -notmatch '^quoted\r?\n?$') {
             throw 'gawk system() quoting failed'
         }
