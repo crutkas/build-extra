@@ -685,7 +685,7 @@ jobs:
             --out=sdk-combined \
             --arm64-vim-baseline \
             build-installers &&
-          ./please.sh create-sdk-artifact \
+          GFW_ARM64_VIM_MEASURE=1 ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-integrated \

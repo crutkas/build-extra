@@ -42,6 +42,35 @@ function Get-Sha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
+function Get-JsonSha256($Value) {
+    $json = $Value | ConvertTo-Json -Compress -Depth 20
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($json)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return -join @($algorithm.ComputeHash($bytes) |
+            ForEach-Object { $_.ToString("x2") })
+    } finally {
+        $algorithm.Dispose()
+    }
+}
+
+function Get-InputIdentity($Data) {
+    $expected = [ordered]@{}
+    foreach ($property in $Data.expected.PSObject.Properties) {
+        if ($property.Name -ne "distributionBytesDelta") {
+            $expected[$property.Name] = $property.Value
+        }
+    }
+    return [ordered]@{
+        schemaVersion = $Data.schemaVersion
+        inputId = $Data.inputId
+        source = $Data.source
+        release = $Data.release
+        packages = $Data.packages
+        expected = $expected
+    }
+}
+
 function Get-RelativePath([string]$Base, [string]$Path) {
     $baseUri = [Uri]((Resolve-Path -LiteralPath $Base).Path.TrimEnd("\") + "\")
     $pathUri = [Uri](Resolve-Path -LiteralPath $Path).Path
@@ -857,14 +886,15 @@ function Invoke-Finalize($Data) {
         }
     }
     Assert-Equal $vimTutorHash (Get-Sha256 $vimTutor) "usr/bin/vimtutor changed during integration"
+    $inputIdentity = Get-InputIdentity $Data
     $manifest = [ordered]@{
         schemaVersion = 1
         mode = "final"
         inputId = $Data.inputId
-        lockSha256 = Get-Sha256 $Lock
+        inputIdentitySha256 = Get-JsonSha256 $inputIdentity
         source = $Data.source
         release = $Data.release
-        expected = $Data.expected
+        expected = $inputIdentity.expected
         packageProvides = @($Data.packages[0].provides)
         files = @($provenance)
         dependencyClosure = @($dependencyProvenance)

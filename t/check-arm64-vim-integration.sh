@@ -13,12 +13,12 @@ grep -Fqx usr/bin/vim.exe "$root/arm64-vim/expected-replacements.txt" &&
 ! grep -Fq vimtutor "$root/arm64-vim/expected-replacements.txt" ||
 die "The exact Vim PE replacement inventory changed"
 
-grep -Fq '"status": "admitted"' "$root/arm64-vim/input-lock.json" &&
+grep -Fq '"status": "measuring"' "$root/arm64-vim/input-lock.json" &&
 grep -Fq '"releaseId": 377949409' "$root/arm64-vim/input-lock.json" &&
 grep -Fq '"assetId": 532524650' "$root/arm64-vim/input-lock.json" &&
-grep -Fq '"installer": 1681284' "$root/arm64-vim/input-lock.json" &&
-grep -Fq '"portable": 1100461' "$root/arm64-vim/input-lock.json" ||
-die "The public Vim input is not fully admitted"
+grep -Fq '"installer": null' "$root/arm64-vim/input-lock.json" &&
+grep -Fq '"portable": null' "$root/arm64-vim/input-lock.json" ||
+die "The public Vim input is not ready for measurement"
 
 test 2 = "$(grep -Fc 'arm64-vim/install.sh" \' "$root/please.sh")" &&
 grep -Fq -- '--stage --root="$output_path"' "$root/please.sh" &&

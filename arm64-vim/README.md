@@ -19,8 +19,8 @@ The `measuring` state permits asset consumption only when
 `GFW_ARM64_VIM_MEASURE=1`; normal builds skip it and
 `GFW_ARM64_VIM_REQUIRE=1` fails. After CI records exact installer and Portable
 Git byte deltas, the lock advances atomically to `admitted`.
+The shipped provenance binds the immutable source, release, package, and payload
+identity, but excludes lifecycle state and compressed-product size assertions.
+This avoids making those output measurements depend on their own lock values.
 `-TestMode` is reserved for synthetic temporary fixtures in
 `t/check-arm64-vim-integration.ps1`; it must not be used with release bytes.
-
-The admitted lock records an installer delta of 1,681,284 bytes and a Portable
-Git delta of 1,100,461 bytes. MinGit and BusyBox MinGit remain unchanged.

@@ -237,8 +237,14 @@ try {
             "-Scanner", $scanner, "-RequireAdmission"
         )
     } "public immutable release locator is unresolved"
+    $admittedData = Get-Content -Raw -LiteralPath $sourceLock | ConvertFrom-Json
+    $admittedData.status = "admitted"
+    $admittedData.expected.distributionBytesDelta.installer = 0
+    $admittedData.expected.distributionBytesDelta.portable = 0
+    $admittedLock = Join-Path $trash "admitted.json"
+    Save-Lock $admittedData $admittedLock
     $admittedProbe = Invoke-ProductionInstaller @(
-        "-Phase", "Probe", "-Root", $unresolvedRoot, "-Lock", $sourceLock,
+        "-Phase", "Probe", "-Root", $unresolvedRoot, "-Lock", $admittedLock,
         "-Scanner", $scanner, "-RequireAdmission"
     )
     if (@($admittedProbe) -notcontains "admitted") {
@@ -422,16 +428,42 @@ try {
             throw "$name.exe was not replaced by ARM64"
         }
     }
-    $provenance = Get-Content -Raw -LiteralPath (
-        Join-Path $case.Root "etc\arm64-vim-provenance.json"
-    ) | ConvertFrom-Json
+    $provenancePath = Join-Path $case.Root "etc\arm64-vim-provenance.json"
+    $provenanceJson = Get-Content -Raw -LiteralPath $provenancePath
+    $provenance = $provenanceJson | ConvertFrom-Json
     if (@($provenance.files |
             Where-Object sourcePackage -eq "mingw-w64-clang-aarch64-vim" |
             Where-Object peMachine -eq "0xAA64").Count -ne 7 -or
         @($provenance.dependencyClosure |
             Where-Object sourceInput -eq "base").Count -ne 2 -or
-        $provenance.retained[0].destinationPath -ne "usr/bin/vimtutor") {
+        $provenance.retained[0].destinationPath -ne "usr/bin/vimtutor" -or
+        $provenance.inputIdentitySha256 -notmatch "^[0-9a-f]{64}$" -or
+        $null -ne $provenance.expected.distributionBytesDelta) {
         throw "The provenance manifest does not describe the exact replacement contract"
+    }
+
+    $measurementRoot = Join-Path $case.Directory "measurement-root"
+    $measurementData = $case.Lock | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+    $measurementData.status = "measuring"
+    $measurementData.expected.distributionBytesDelta.installer = $null
+    $measurementData.expected.distributionBytesDelta.portable = $null
+    $measurementLock = Join-Path $case.Directory "measurement-lock.json"
+    Save-Lock $measurementData $measurementLock
+    Invoke-ProductionInstaller @(
+        "-Phase", "Stage", "-Root", $measurementRoot, "-Lock", $measurementLock,
+        "-Scanner", $scanner, "-TestMode", "-MeasurementMode",
+        "-PackageDirectory", $case.Packages
+    ) | Out-Null
+    New-Root $measurementRoot | Out-Null
+    Invoke-ProductionInstaller @(
+        "-Phase", "Finalize", "-Root", $measurementRoot, "-Lock", $measurementLock,
+        "-Scanner", $scanner, "-TestMode", "-MeasurementMode"
+    ) | Out-Null
+    $measurementProvenance = Get-Content -Raw -LiteralPath (
+        Join-Path $measurementRoot "etc\arm64-vim-provenance.json"
+    )
+    if ($measurementProvenance -cne $provenanceJson) {
+        throw "The payload provenance depends on lifecycle or distribution measurement state"
     }
 
     $unchanged = Join-Path $trash "unchanged-product.bin"
