@@ -148,7 +148,7 @@ if ($data.status -eq "unresolved") {
     try {
         $scanPaths | Set-Content -Encoding ascii -LiteralPath $fileList
         $rows = @(& $Scanner -ArchitectureOnly -Root $Root -FileList $fileList)
-        if ($LASTEXITCODE -ne 0) {
+        if (-not $?) {
             throw "The PE scanner failed"
         }
         Assert-Equal $scanPaths.Count $rows.Count "The scanner did not find every Vim PE"
