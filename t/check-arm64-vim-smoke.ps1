@@ -53,13 +53,15 @@ try {
     & $git -C $repo init --quiet
     & $git -C $repo config user.name "ARM64 Vim smoke"
     & $git -C $repo config user.email "arm64-vim@example.invalid"
-    & $git -C $repo config core.editor "`"$vim`" --clean --not-a-term -es -c `"normal! iNative ARM64 Vim`" -c wq"
+    & $git -C $repo config core.editor `
+        "`"$vim`" --clean --not-a-term -es -c `"call setline(1,'Native ARM64 Vim')`" -c wq"
     "content" | Set-Content -Encoding ascii -LiteralPath (Join-Path $repo "file.txt")
     & $git -C $repo add file.txt
-    & $git -C $repo commit --quiet
-    if ($LASTEXITCODE -ne 0 -or
-        (& $git -C $repo log -1 --format=%s) -ne "Native ARM64 Vim") {
-        throw "Git core.editor did not create the commit message"
+    $commitOutput = @(& $git -C $repo commit --quiet 2>&1)
+    $commitStatus = $LASTEXITCODE
+    $subject = (@(& $git -C $repo log -1 --format=%s 2>&1) -join "").Trim()
+    if ($commitStatus -ne 0 -or $subject -ne "Native ARM64 Vim") {
+        throw "Git core.editor failed: status=$commitStatus, subject='$subject', output='$($commitOutput -join " | ")'"
     }
     Write-Host "Native ARM64 Vim functional smoke passed"
 } finally {
