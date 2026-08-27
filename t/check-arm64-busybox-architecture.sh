@@ -115,7 +115,7 @@ scan () {
 		-File "$(cygpath -aw "$scanner")" \
 		-ArchitectureOnly -Root "$(cygpath -aw "$root")" \
 		-FileList "$(cygpath -aw "$tmp/$label.files")" |
-		sort >"$tmp/$label.tsv" ||
+		sort -u >"$tmp/$label.tsv" ||
 	die "Could not scan the $label payload"
 }
 
