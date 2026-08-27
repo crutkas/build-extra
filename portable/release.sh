@@ -122,7 +122,8 @@ die "Could not determine the path of the system config"
 LIST="$(ARCH=$ARCH ETC_GITCONFIG="$etc_gitconfig" \
 	PACKAGE_VERSIONS_FILE="$SCRIPT_PATH"/root/etc/package-versions.txt \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@" |
-	grep -v "^$etc_gitconfig$")" ||
+	grep -v "^$etc_gitconfig$" |
+	sort -u)" ||
 die "Could not generate file list"
 
 mkdir -p "$SCRIPT_PATH/root/${etc_gitconfig%/*}" &&
