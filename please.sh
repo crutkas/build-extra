@@ -815,9 +815,14 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
 			{ test aarch64 != "$architecture" ||
 				use_arm64_native_openssh --root="$output_path"; } &&
+			{ test aarch64 != "$architecture" ||
+				ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
+					--stage --root="$output_path"; } &&
 			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
 			"$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
-			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
+			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file" &&
+			{ test ! -f "$output_path/var/cache/arm64-vim/stage.json" ||
+				printf '/clangarm64/bin/*.dll\n' >>"$sparse_checkout_file"; }
 			;;
 		esac &&
 		rm "$output_path/etc/profile" &&
@@ -859,6 +864,10 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/arm64-busybox/install.sh"
 	fi &&
+	{ test build-installers != "$mode" ||
+		test aarch64 != "$architecture" ||
+		ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
+			--finalize --root="$output_path"; } &&
 	if test ! -f "$output_path/etc/profile"
 	then
 		if test minimal-sdk = $mode

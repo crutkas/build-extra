@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "status": "measuring",
+  "inputId": "native-arm64-vim-9.2.0858-1",
+  "source": {
+    "repository": "crutkas/MINGW-packages",
+    "pullRequest": 7,
+    "commit": "d012f9f8a8d05a3a51a40fe33668295a3e31c221",
+    "workflowRun": 33048420275,
+    "workflowConclusion": "success",
+    "runner": "windows-11-arm",
+    "sourceArchive": {
+      "name": "vim-9.2.0858.tar.gz",
+      "url": "https://github.com/vim/vim/archive/v9.2.0858/vim-9.2.0858.tar.gz",
+      "sha256": "d7878b284b5a5ae43831f0a090327472035338768a8fd86deaad57581e842ed3"
+    },
+    "layoutPatchSha256": "2a2bd8397f3d14a4caec95d76398014f883006091f2540efa54b04bfd97dc55b",
+    "vimrcSha256": "3c16fd3d7850ca365444142fc1207964b11632b762c35f2490ebbbe9fb521040",
+    "auditHarnessSha256": "e01af1240c3f54fb878f22facf2fd2eb68aa168d685236beb191c16a9b12717d",
+    "smokeHarnessSha256": "3c1f82e8d24b2998aaf537d9a32913e72e27ca83de4198360361305a012b8e48"
+  },
+  "release": {
+    "repository": "crutkas/MINGW-packages",
+    "releaseId": 377949409,
+    "tag": "clangarm64-vim-pr7-d012f9f-20260827",
+    "tagObjectSha": "6f0490722b6656c7d045806545d9daf38014fdf7",
+    "tagMessage": "Native Windows ARM64 Vim candidate from PR #7\n\nExact-head CI run: https://github.com/crutkas/MINGW-packages/actions/runs/33048420275\nDraft-only staging; publication remains coordinator-gated.\n",
+    "peeledCommit": "d012f9f8a8d05a3a51a40fe33668295a3e31c221",
+    "url": "https://github.com/crutkas/MINGW-packages/releases/tag/clangarm64-vim-pr7-d012f9f-20260827",
+    "publishedAt": "2026-08-27T16:47:57Z",
+    "body": {
+      "bytes": 2156,
+      "sha256": "3a0d87d4171670f47d2972c38e5f06767be859caa9ab58c1cf9548e9eebab932"
+    },
+    "audit": {
+      "status": "passed",
+      "evidence": "independent frozen-byte audit session a57b0eb9-45bd-4f46-b55c-a7cca791041f",
+      "reportSha256": "ea0234f900406d5718eb129c5b099188783db962b1129a62d480fb0761dffce7",
+      "manifestSha256": "9c6355745276091a8eb3a91f0980dba30c103a7f9f1b2546197fdcdefb490518"
+    },
+    "assets": [
+      {
+        "role": "package",
+        "name": "mingw-w64-clang-aarch64-vim-9.2.0858-1-any.pkg.tar.zst",
+        "assetId": 532524650,
+        "url": "https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-vim-pr7-d012f9f-20260827/mingw-w64-clang-aarch64-vim-9.2.0858-1-any.pkg.tar.zst",
+        "bytes": 11942906,
+        "sha256": "03b9a8bfb815d1973f788c5519a2879ee38219e9405226f1b2f5c009846be832"
+      },
+      {
+        "role": "package",
+        "name": "mingw-w64-clang-aarch64-vim-runtime-9.2.0858-1-any.pkg.tar.zst",
+        "assetId": 532524653,
+        "url": "https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-vim-pr7-d012f9f-20260827/mingw-w64-clang-aarch64-vim-runtime-9.2.0858-1-any.pkg.tar.zst",
+        "bytes": 9925290,
+        "sha256": "f548639937a4accdb44ae2d29665ad25d7c2183c812211a8f48e7033f170ec15"
+      },
+      {
+        "role": "evidence",
+        "name": "native-arm64-vim-evidence-run33048420275-d012f9f.zip",
+        "assetId": 532524651,
+        "url": "https://github.com/crutkas/MINGW-packages/releases/download/clangarm64-vim-pr7-d012f9f-20260827/native-arm64-vim-evidence-run33048420275-d012f9f.zip",
+        "bytes": 25400287,
+        "sha256": "a826a11469892306c1a5624dc0e07970054a9f6f694b1530c27b19cf9c13acaf"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "name": "mingw-w64-clang-aarch64-vim",
+      "version": "9.2.0858-1",
+      "asset": "mingw-w64-clang-aarch64-vim-9.2.0858-1-any.pkg.tar.zst",
+      "description": "Vi Improved native Win32 console binaries for Git for Windows (mingw-w64)",
+      "provides": [
+        "usr/bin/ex.exe",
+        "usr/bin/rview.exe",
+        "usr/bin/rvim.exe",
+        "usr/bin/view.exe",
+        "usr/bin/vim.exe",
+        "usr/bin/vimdiff.exe",
+        "usr/bin/xxd.exe"
+      ],
+      "depends": [
+        "mingw-w64-clang-aarch64-gettext-runtime",
+        "mingw-w64-clang-aarch64-libiconv",
+        "mingw-w64-clang-aarch64-vim-runtime=9.2.0858-1"
+      ],
+      "makeDepends": [
+        "mingw-w64-clang-aarch64-cc",
+        "mingw-w64-clang-aarch64-gettext-runtime",
+        "mingw-w64-clang-aarch64-libiconv",
+        "mingw-w64-clang-aarch64-make"
+      ]
+    },
+    {
+      "name": "mingw-w64-clang-aarch64-vim-runtime",
+      "version": "9.2.0858-1",
+      "asset": "mingw-w64-clang-aarch64-vim-runtime-9.2.0858-1-any.pkg.tar.zst",
+      "description": "Runtime files, syntax definitions, and help for Vim (mingw-w64)",
+      "provides": [],
+      "depends": [],
+      "makeDepends": [
+        "mingw-w64-clang-aarch64-cc",
+        "mingw-w64-clang-aarch64-gettext-runtime",
+        "mingw-w64-clang-aarch64-libiconv",
+        "mingw-w64-clang-aarch64-make"
+      ]
+    }
+  ],
+  "expected": {
+    "personality": "mingw",
+    "machine": "0xAA64",
+    "packageArchitecture": "any",
+    "replacements": [
+      "usr/bin/ex.exe",
+      "usr/bin/rview.exe",
+      "usr/bin/rvim.exe",
+      "usr/bin/view.exe",
+      "usr/bin/vim.exe",
+      "usr/bin/vimdiff.exe",
+      "usr/bin/xxd.exe"
+    ],
+    "retained": [
+      "usr/bin/vimtutor"
+    ],
+    "candidateAndDependencyPeCount": 19,
+    "importCount": 291,
+    "unresolvedImports": 0,
+    "architectureDelta": {
+      "x64": -7,
+      "arm64": 19,
+      "unexpectedX64": 0
+    },
+    "distributionBytesDelta": {
+      "installer": null,
+      "portable": null,
+      "mingit": 0,
+      "busyboxMingit": 0
+    }
+  }
+}

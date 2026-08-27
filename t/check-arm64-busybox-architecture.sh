@@ -14,6 +14,9 @@ busybox_root=
 busybox_source=
 combined_root=
 combined_source=
+vim_root=
+vim_source=
+vim_lock=
 scanner=
 for arg
 do
@@ -25,6 +28,9 @@ do
 	--busybox-source=*) busybox_source=${arg#*=};;
 	--combined-root=*) combined_root=${arg#*=};;
 	--combined-source=*) combined_source=${arg#*=};;
+	--vim-root=*) vim_root=${arg#*=};;
+	--vim-source=*) vim_source=${arg#*=};;
+	--vim-lock=*) vim_lock=${arg#*=};;
 	--scanner=*) scanner=${arg#*=};;
 	*) die "Unknown option: $arg";;
 	esac
@@ -33,8 +39,9 @@ test -n "$release_manifest" &&
 test -n "$leaf_root" && test -n "$leaf_source" &&
 test -n "$busybox_root" && test -n "$busybox_source" &&
 test -n "$combined_root" && test -n "$combined_source" &&
+test -n "$vim_root" && test -n "$vim_source" && test -n "$vim_lock" &&
 test -n "$scanner" ||
-die "Usage: $0 --release-manifest=<tsv> --leaf-root=<root> --leaf-source=<source> --busybox-root=<root> --busybox-source=<source> --combined-root=<root> --combined-source=<source> --scanner=<pe-imports.ps1>"
+die "Usage: $0 --release-manifest=<tsv> --leaf-root=<root> --leaf-source=<source> --busybox-root=<root> --busybox-source=<source> --combined-root=<root> --combined-source=<source> --vim-root=<root> --vim-source=<source> --vim-lock=<json> --scanner=<pe-imports.ps1>"
 
 resolve_file () {
 	case "$1" in
@@ -47,8 +54,10 @@ release_manifest="$(resolve_file "$release_manifest")" ||
 die "Could not resolve the release manifest"
 scanner="$(resolve_file "$scanner")" ||
 die "Could not resolve the scanner"
+vim_lock="$(resolve_file "$vim_lock")" ||
+die "Could not resolve the Vim lock"
 for variable in leaf_root leaf_source busybox_root busybox_source \
-	combined_root combined_source
+	combined_root combined_source vim_root vim_source
 do
 	eval "value=\$$variable"
 	value="$(cd "$value" && pwd)" ||
@@ -59,6 +68,17 @@ test -f "$release_manifest" ||
 die "Missing release manifest: $release_manifest"
 test -f "$scanner" ||
 die "Missing scanner: $scanner"
+test -f "$vim_lock" ||
+die "Missing Vim lock: $vim_lock"
+if grep -q '"status": "\(admitted\|measuring\)"' "$vim_lock"
+then
+	vim_admitted=t
+elif grep -q '"status": "unresolved"' "$vim_lock"
+then
+	vim_admitted=
+else
+	die "Unknown Vim lock admission status"
+fi
 
 scanner_hash=$(sha256sum "$scanner") &&
 scanner_hash=${scanner_hash%% *} ||
@@ -100,6 +120,7 @@ scan () {
 scan current-leaf "$leaf_root" "$leaf_source"
 scan current-busybox "$busybox_root" "$busybox_source"
 scan current-combined "$combined_root" "$combined_source"
+scan current-vim "$vim_root" "$vim_source"
 
 assert_machines () {
 	label=$1
@@ -118,6 +139,7 @@ assert_machines release
 assert_machines current-leaf
 assert_machines current-busybox
 assert_machines current-combined
+assert_machines current-vim
 
 added_or_replaced () {
 	before=$1
@@ -143,6 +165,7 @@ added_or_replaced () {
 
 added_or_replaced current-leaf current-busybox "$tmp/busybox.changed"
 added_or_replaced current-busybox current-combined "$tmp/combined.changed"
+added_or_replaced current-combined current-vim "$tmp/vim.changed"
 
 removed () {
 	before=$1
@@ -157,6 +180,7 @@ removed () {
 
 removed current-leaf current-busybox "$tmp/busybox.removed"
 removed current-busybox current-combined "$tmp/combined.removed"
+removed current-combined current-vim "$tmp/vim.removed"
 
 x64_to_arm64 () {
 	before=$1
@@ -172,6 +196,7 @@ x64_to_arm64 () {
 
 x64_to_arm64 current-leaf current-busybox "$tmp/busybox.replaced"
 x64_to_arm64 current-busybox current-combined "$tmp/openssh.replaced"
+x64_to_arm64 current-combined current-vim "$tmp/vim.replaced"
 cut -f1 "$tmp/busybox.replaced" | sort >"$tmp/busybox.paths"
 sort "$thisdir/../arm64-busybox/default-replacements.txt" >"$tmp/busybox.expected"
 diff -u "$tmp/busybox.expected" "$tmp/busybox.paths" ||
@@ -186,6 +211,22 @@ test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
 test 14 = "$(wc -l <"$tmp/combined.changed")" ||
 die "Expected 14 added or replaced OpenSSH ARM64 PEs"
+if test -n "$vim_admitted"
+then
+	sort "$vim_source/arm64-vim/expected-replacements.txt" >"$tmp/vim.expected"
+	cut -f1 "$tmp/vim.replaced" | sort >"$tmp/vim.paths"
+	diff -u "$tmp/vim.expected" "$tmp/vim.paths" ||
+	die "The Vim x64-to-ARM64 path set is incomplete"
+	test 7 = "$(wc -l <"$tmp/vim.replaced")" ||
+	die "Expected 7 Vim x64-to-ARM64 paths"
+	test 19 = "$(wc -l <"$tmp/vim.changed")" ||
+	die "Expected 19 added or replaced Vim ARM64 PEs"
+	test ! -s "$tmp/vim.removed" ||
+	die "The Vim layer removed an unexpected PE"
+else
+	test ! -s "$tmp/vim.changed" && test ! -s "$tmp/vim.removed" ||
+	die "Unresolved Vim changed the payload"
+fi
 
 manifest_row () {
 	manifest=$1
@@ -300,7 +341,7 @@ release_x64=$(count "$tmp/release.tsv" x64)
 release_arm64=$(count "$tmp/release.tsv" arm64)
 release_x86=$(count "$tmp/release.tsv" x86)
 release_anycpu=$(count "$tmp/release.tsv" anycpu)
-for label in current-leaf current-busybox current-combined
+for label in current-leaf current-busybox current-combined current-vim
 do
 	variable=${label#current-}
 	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
@@ -320,10 +361,22 @@ die "The current file-list BusyBox architecture delta is not -59 x64/+61 ARM64"
 test -14 = "$((current_combined_x64 - current_busybox_x64))" &&
 test 14 = "$((current_combined_arm64 - current_busybox_arm64))" ||
 die "The current file-list OpenSSH architecture delta is not -14 x64/+14 ARM64"
+if test -n "$vim_admitted"
+then
+	test -7 = "$((current_vim_x64 - current_combined_x64))" &&
+	test 19 = "$((current_vim_arm64 - current_combined_arm64))" ||
+	die "The current file-list Vim architecture delta is not -7 x64/+19 ARM64"
+else
+	test "$current_vim_x64" = "$current_combined_x64" &&
+	test "$current_vim_arm64" = "$current_combined_arm64" ||
+	die "Unresolved Vim changed the architecture counts"
+fi
 test "$current_leaf_x86" = "$current_busybox_x86" &&
 test "$current_leaf_x86" = "$current_combined_x86" &&
+test "$current_leaf_x86" = "$current_vim_x86" &&
 test "$current_leaf_anycpu" = "$current_busybox_anycpu" &&
-test "$current_leaf_anycpu" = "$current_combined_anycpu" ||
+test "$current_leaf_anycpu" = "$current_combined_anycpu" &&
+test "$current_leaf_anycpu" = "$current_vim_anycpu" ||
 die "The current file-list changed x86 or CLR AnyCPU counts"
 
 report="$thisdir/../arm64-combined-architecture-report.txt"
@@ -355,24 +408,35 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	current_file_list_combined_arm64=$current_combined_arm64
 	current_file_list_combined_x86=$current_combined_x86
 	current_file_list_combined_clr_anycpu=$current_combined_anycpu
+	current_file_list_vim_x64=$current_vim_x64
+	current_file_list_vim_arm64=$current_vim_arm64
+	current_file_list_vim_x86=$current_vim_x86
+	current_file_list_vim_clr_anycpu=$current_vim_anycpu
 	leaf_removed_x64_paths=$leaf_removed
 	leaf_new_arm64_paths=$leaf_added
 	current_busybox_x64_delta=$((current_busybox_x64 - current_leaf_x64))
 	current_busybox_arm64_delta=$((current_busybox_arm64 - current_leaf_arm64))
 	current_openssh_x64_delta=$((current_combined_x64 - current_busybox_x64))
 	current_openssh_arm64_delta=$((current_combined_arm64 - current_busybox_arm64))
+	current_vim_x64_delta=$((current_vim_x64 - current_combined_x64))
+	current_vim_arm64_delta=$((current_vim_arm64 - current_combined_arm64))
 	busybox_added_or_replaced_arm64_pes=$(wc -l <"$tmp/busybox.changed")
 	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/combined.changed")
+	vim_added_or_replaced_arm64_pes=$(wc -l <"$tmp/vim.changed")
+	vim_x64_to_arm64_paths=$(wc -l <"$tmp/vim.replaced")
 	busybox_x64_to_arm64_paths=$busybox_replaced
 	openssh_x64_to_arm64_paths=$openssh_replaced
 	legacy_openssh_x64_paths_checked=$legacy_openssh
 	legacy_openssh_removed_paths=1
 	busybox_removed_pe_paths=$(wc -l <"$tmp/busybox.removed")
 	openssh_removed_pe_paths=$(wc -l <"$tmp/combined.removed")
+	vim_removed_pe_paths=$(wc -l <"$tmp/vim.removed")
 	new_foreign_architecture_paths=0
 	openssh_x64_to_arm64_path_list:
 	EOF
 	cut -f1 "$tmp/openssh.replaced" | sed 's/^/  /'
+	echo vim_x64_to_arm64_path_list:
+	cut -f1 "$tmp/vim.replaced" | sed 's/^/  /'
 } >"$report"
 
 cat "$report"

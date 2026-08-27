@@ -480,6 +480,22 @@ then
 	EOF
 fi
 
+if test aarch64 = "$ARCH" && test -z "$MINIMAL_GIT"
+then
+	if test -f /var/cache/arm64-vim/payload-paths.txt
+	then
+		cat /var/cache/arm64-vim/payload-paths.txt
+	elif test -f /etc/arm64-vim-payload.txt
+	then
+		cat /etc/arm64-vim-payload.txt
+	fi
+	test ! -f /etc/arm64-vim-provenance.json ||
+	cat <<-EOF
+	etc/arm64-vim-payload.txt
+	etc/arm64-vim-provenance.json
+	EOF
+fi
+
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX" &&
 	{ test aarch64 != "$ARCH" || test 0 = "${GFW_ARM64_BUSYBOX:-1}"; }
 then
