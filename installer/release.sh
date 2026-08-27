@@ -1,5 +1,15 @@
 #!/bin/bash
 
+NATIVE_SHELL_STAGE=
+
+cleanup_native_shell_stage () {
+	test -z "$NATIVE_SHELL_STAGE" ||
+	rm -rf "$NATIVE_SHELL_STAGE"
+}
+
+trap cleanup_native_shell_stage 0
+trap 'exit 1' HUP INT TERM
+
 die () {
 	echo "$*" >&2
 	exit 1
@@ -185,6 +195,18 @@ else
 		sh ../make-file-list.sh)" ||
 	die "Could not generate file list"
 fi
+NATIVE_SHELL_STAGE="$PWD/native-shell-root-$$"
+LIST="$(printf '%s\n' "$LIST" |
+	ARCH=$ARCH ../arm64-native-shell/prepare-file-list.sh \
+		installer "$NATIVE_SHELL_STAGE")" ||
+die "Could not prepare the native ARM64 shell installer payload"
+source_dir="$(cygpath -aw /)" ||
+die "Could not resolve the default installer source root"
+if test -d "$NATIVE_SHELL_STAGE"
+then
+	source_dir="$(cygpath -aw "$NATIVE_SHELL_STAGE")" ||
+	die "Could not resolve the native ARM64 shell installer staging root"
+fi
 
 cmd_git="$(echo "$LIST" | grep '^cmd/git\.exe$')"
 test -z "$cmd_git" || {
@@ -363,7 +385,7 @@ printf "%s\n%s\n%s\n%s\n%s\n%s%s" \
 	"#define FILENAME_VERSION '$version'" \
 	"#define BITNESS '$BITNESS'" \
 	"#define MINGW_BITNESS '$MSYSTEM_LOWER'" \
-	"#define SOURCE_DIR '$(cygpath -aw /)'" \
+	"#define SOURCE_DIR '$source_dir'" \
 	"#define ETC_GITCONFIG_DIR '${etc_gitconfig_dir//\//\\}'" \
 	"$inno_defines" \
 	>config.iss
@@ -375,6 +397,9 @@ signtool="//Ssigntool=\"git signtool \\\$f\" //DSIGNTOOL"
 echo "Launching Inno Setup compiler ..." &&
 eval ./InnoSetup/ISCC.exe "$signtool" install.iss >install.log ||
 die "Could not make installer"
+test ! -d "$NATIVE_SHELL_STAGE" ||
+rm -rf "$NATIVE_SHELL_STAGE" ||
+die "Could not remove the native ARM64 shell installer staging root"
 
 if test -n "$test_installer"
 then

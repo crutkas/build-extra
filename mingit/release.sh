@@ -2,6 +2,16 @@
 
 # Build the "really minimal" Git for Windows.
 
+NATIVE_SHELL_STAGE=
+
+cleanup_native_shell_stage () {
+	test -z "$NATIVE_SHELL_STAGE" ||
+	rm -rf "$NATIVE_SHELL_STAGE"
+}
+
+trap cleanup_native_shell_stage 0
+trap 'exit 1' HUP INT TERM
+
 test -z "$1" && {
 	echo "Usage: $0 [--output=<directory>] <version> [optional components]"
 	exit 1
@@ -102,6 +112,14 @@ LIST="$(ARCH=$ARCH MINIMAL_GIT=1 ETC_GITCONFIG="$etc_gitconfig" \
 	PACKAGE_VERSIONS_FILE="$SCRIPT_PATH"/root/etc/package-versions.txt \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@")" ||
 die "Could not generate file list"
+NATIVE_SHELL_STAGE="$SCRIPT_PATH/native-shell-root-$$"
+LIST="$(printf '%s\n' "$LIST" |
+	ARCH=$ARCH "$SCRIPT_PATH"/../arm64-native-shell/prepare-file-list.sh \
+		mingit "$NATIVE_SHELL_STAGE")" ||
+die "Could not prepare the native ARM64 shell MinGit payload"
+NATIVE_SHELL_SOURCE_ROOT=/
+test ! -d "$NATIVE_SHELL_STAGE" ||
+NATIVE_SHELL_SOURCE_ROOT="$NATIVE_SHELL_STAGE"
 
 # For compatibility with core Git's branches
 original_etc_gitconfig="$etc_gitconfig"
@@ -185,5 +203,8 @@ esac
 test ! -f "$TARGET" || rm "$TARGET" || die "Could not remove $TARGET"
 
 echo "Creating .zip archive" &&
-(cd / && 7z a -mx9 "$TARGET" $LIST "$SCRIPT_PATH"/root/*) &&
+(cd "$NATIVE_SHELL_SOURCE_ROOT" &&
+ 7z a -mx9 "$TARGET" $LIST "$SCRIPT_PATH"/root/*) &&
+{ test ! -d "$NATIVE_SHELL_STAGE" ||
+	rm -rf "$NATIVE_SHELL_STAGE"; } &&
 echo "Success! You will find the new MinGit at \"$TARGET\"."

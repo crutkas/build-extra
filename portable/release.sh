@@ -2,6 +2,16 @@
 
 # Build the portable Git for Windows.
 
+NATIVE_SHELL_STAGE=
+
+cleanup_native_shell_stage () {
+	test -z "$NATIVE_SHELL_STAGE" ||
+	rm -rf "$NATIVE_SHELL_STAGE"
+}
+
+trap cleanup_native_shell_stage 0
+trap 'exit 1' HUP INT TERM
+
 die () {
 	echo "$*" >&1
 	exit 1
@@ -124,6 +134,14 @@ LIST="$(ARCH=$ARCH ETC_GITCONFIG="$etc_gitconfig" \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@" |
 	grep -v "^$etc_gitconfig$")" ||
 die "Could not generate file list"
+NATIVE_SHELL_STAGE="$SCRIPT_PATH/native-shell-root-$$"
+LIST="$(printf '%s\n' "$LIST" |
+	ARCH=$ARCH "$SCRIPT_PATH"/../arm64-native-shell/prepare-file-list.sh \
+		portable "$NATIVE_SHELL_STAGE")" ||
+die "Could not prepare the native ARM64 shell portable payload"
+NATIVE_SHELL_SOURCE_ROOT=/
+test ! -d "$NATIVE_SHELL_STAGE" ||
+NATIVE_SHELL_SOURCE_ROOT="$NATIVE_SHELL_STAGE"
 
 mkdir -p "$SCRIPT_PATH/root/${etc_gitconfig%/*}" &&
 cp /"$etc_gitconfig" "$SCRIPT_PATH/root/$etc_gitconfig" &&
@@ -172,10 +190,14 @@ die "Could not install 7-Zip"
 
 echo "Creating archive" &&
 echo $LIST | tr ' ' '\n' >$TMPPACK.list &&
+TMPPACK_LIST="$(cygpath -aw "$TMPPACK.list")" &&
 # 7-Zip will strip absolute paths completely... therefore, we can add another
 # root directory like this:
 echo "$(cygpath -aw "$SCRIPT_PATH/root")\\*" >>$TMPPACK.list &&
-(cd / && 7z a $OPTS7 $TMPPACK @${TMPPACK#/}.list) &&
+(cd "$NATIVE_SHELL_SOURCE_ROOT" &&
+ 7z a $OPTS7 $TMPPACK "@$TMPPACK_LIST") &&
+{ test ! -d "$NATIVE_SHELL_STAGE" ||
+	rm -rf "$NATIVE_SHELL_STAGE"; } &&
 if test -z "$(7z l $TMPPACK etc/package-versions.txt)"
 then
 	die "/etc/package-versions.txt is missing?!?"

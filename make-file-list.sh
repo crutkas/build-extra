@@ -33,6 +33,9 @@ aarch64)
 	;;
 esac
 
+ARCH=$ARCH "$thisdir/arm64-native-shell/install.sh" --validate >&2 ||
+die "Could not prepare the native ARM64 shell closure"
+
 test 1 = "$GFW_ARM64_BUSYBOX_DEFER" ||
 ARCH=$ARCH "$thisdir/arm64-busybox/install.sh" ||
 die "Could not install native ARM64 BusyBox"
