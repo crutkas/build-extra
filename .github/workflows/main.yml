@@ -659,8 +659,6 @@ jobs:
             50de8f12409d8cc8e16aef190629073db1a8606d &&
           test be0217cb572704f27ea04c9abde8bb992b8ef0c0 = \
             "$(git merge-base HEAD be0217cb572704f27ea04c9abde8bb992b8ef0c0)" &&
-          git worktree add --detach combined-source \
-            be0217cb572704f27ea04c9abde8bb992b8ef0c0 &&
           echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *release-source/pe-imports.ps1' |
             sha256sum -c - &&
           echo 'ae1e311fd81258150c2300d02c58655f30b190a15bcbe3ea8bbaccc1ce8c1c9a *release-source/arm64-payload-architecture-v2.55.0.4.tsv' |
@@ -681,7 +679,7 @@ jobs:
             --sdk=.sdk \
             --out=sdk-busybox \
             build-installers &&
-          ./combined-source/please.sh create-sdk-artifact \
+          ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-combined \
@@ -701,7 +699,7 @@ jobs:
             --busybox-root=sdk-busybox \
             --busybox-source=busybox-source \
             --combined-root=sdk-combined \
-            --combined-source=combined-source \
+            --combined-source=. \
             --vim-root=sdk-integrated \
             --vim-source=. \
             --vim-lock=arm64-vim/input-lock.json \
@@ -762,7 +760,7 @@ jobs:
           }
           root=$PWD &&
           build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
-          build_products "$root/sdk-combined" "$root/combined-source" "$root/impact/vim-base" &&
+          build_products "$root/sdk-combined" "$root" "$root/impact/vim-base" &&
           build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
       - name: measure distributions and lifecycle
         shell: pwsh
