@@ -445,19 +445,26 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	cp "$archive_cache" "$root/tmp/$archive" ||
 	die "Could not stage %s in the target SDK\n" "$archive"
 	package_path=$root/tmp/$archive
+	pacman_config=$root/tmp/arm64-openssh-pacman.conf
+	printf '%s\n' \
+		'[options]' \
+		'Architecture = auto' \
+		'SigLevel = Never' >"$pacman_config" ||
+	die "Could not create ARM64 OpenSSH pacman configuration\n"
 
 	run_arm64_openssh_pacman () {
 		if test / = "$root"
 		then
 			pacman "$@"
 		else
-			"$root/usr/bin/pacman.exe" --sysroot "$root" "$@"
+			"$root/usr/bin/pacman.exe" \
+				--config "$pacman_config" --root "$root" "$@"
 		fi
 	}
 
 	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$package_path")" ||
 	{
-		rm -f "$root/tmp/$archive"
+		rm -f "$root/tmp/$archive" "$pacman_config"
 		die "Unexpected package metadata in %s\n" "$archive_cache"
 	}
 	has_msys_openssh=
@@ -486,7 +493,7 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
 	run_arm64_openssh_pacman -Qkk "$package"
 	res=$?
-	rm -f "$root/tmp/$archive" ||
+	rm -f "$root/tmp/$archive" "$pacman_config" ||
 	die "Could not remove staged package %s\n" "$archive"
 	test $res = 0 ||
 	die "Could not install and verify %s\n" "$package"

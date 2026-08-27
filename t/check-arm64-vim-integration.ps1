@@ -8,6 +8,10 @@ $trash = Join-Path ([IO.Path]::GetTempPath()) "arm64-vim-integration-$PID"
 $binaryAsset = "mingw-w64-clang-aarch64-vim-9.2.0858-1-any.pkg.tar.zst"
 $runtimeAsset = "mingw-w64-clang-aarch64-vim-runtime-9.2.0858-1-any.pkg.tar.zst"
 $replacementNames = @("ex", "rview", "rvim", "view", "vim", "vimdiff", "xxd")
+$windowsTar = Join-Path ([Environment]::GetFolderPath("System")) "tar.exe"
+if (-not (Test-Path -LiteralPath $windowsTar -PathType Leaf)) {
+    throw "Windows tar.exe is required"
+}
 
 function Get-Sha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
@@ -83,17 +87,17 @@ function New-PackageFixtures([string]$Directory) {
     foreach ($relative in @(
         "clangarm64\share\vim\vim92\syntax\syntax.vim",
         "clangarm64\share\vim\vim92\git-for-windows.vim",
-        "clangarm64\share\man\man1\vim.1",
-        "clangarm64\share\man\man1\xxd.1",
+        "clangarm64\share\man\man1\vim.1.gz",
+        "clangarm64\share\man\man1\xxd.1.gz",
         "clangarm64\share\licenses\vim-runtime\LICENSE"
     )) {
         $path = Join-Path $runtimeRoot $relative
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
         $relative | Set-Content -Encoding ascii -LiteralPath $path
     }
-    & tar.exe -cf (Join-Path $Directory $binaryAsset) -C $binaryRoot .
+    & $windowsTar -cf (Join-Path $Directory $binaryAsset) -C $binaryRoot .
     if ($LASTEXITCODE -ne 0) { throw "Could not create binary fixture" }
-    & tar.exe -cf (Join-Path $Directory $runtimeAsset) -C $runtimeRoot .
+    & $windowsTar -cf (Join-Path $Directory $runtimeAsset) -C $runtimeRoot .
     if ($LASTEXITCODE -ne 0) { throw "Could not create runtime fixture" }
     return @{
         BinaryRoot = $binaryRoot
@@ -255,7 +259,7 @@ try {
         -replace "^arch = any$", "arch = aarch64" |
         Set-Content -Encoding ascii -LiteralPath (Join-Path $case.Trees.BinaryRoot ".PKGINFO")
     Remove-Item -LiteralPath (Join-Path $case.Packages $binaryAsset)
-    & tar.exe -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
+    & $windowsTar -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
     $case.Lock = New-AdmittedLock $case.Packages
     Save-Lock $case.Lock $case.LockPath
     Assert-Fails { Invoke-Stage $case.Root $case.LockPath $case.Packages } "Unexpected .PKGINFO field 'arch'"
@@ -263,7 +267,7 @@ try {
     $case = New-Case "wrong-machine"
     Write-Pe (Join-Path $case.Trees.BinaryRoot "clangarm64\bin\vim.exe") 0x8664
     Remove-Item -LiteralPath (Join-Path $case.Packages $binaryAsset)
-    & tar.exe -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
+    & $windowsTar -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
     $case.Lock = New-AdmittedLock $case.Packages
     Save-Lock $case.Lock $case.LockPath
     Assert-Fails { Invoke-Stage $case.Root $case.LockPath $case.Packages } "vim.exe is not an ARM64 PE"
@@ -271,7 +275,7 @@ try {
     $case = New-Case "extra-pe"
     Write-Pe (Join-Path $case.Trees.BinaryRoot "clangarm64\bin\extra.exe") 0xAA64
     Remove-Item -LiteralPath (Join-Path $case.Packages $binaryAsset)
-    & tar.exe -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
+    & $windowsTar -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
     $case.Lock = New-AdmittedLock $case.Packages
     Save-Lock $case.Lock $case.LockPath
     Assert-Fails { Invoke-Stage $case.Root $case.LockPath $case.Packages } "undeclared member"
@@ -279,7 +283,7 @@ try {
     $case = New-Case "missing-pe"
     Remove-Item -LiteralPath (Join-Path $case.Trees.BinaryRoot "clangarm64\bin\xxd.exe")
     Remove-Item -LiteralPath (Join-Path $case.Packages $binaryAsset)
-    & tar.exe -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
+    & $windowsTar -cf (Join-Path $case.Packages $binaryAsset) -C $case.Trees.BinaryRoot .
     $case.Lock = New-AdmittedLock $case.Packages
     Save-Lock $case.Lock $case.LockPath
     Assert-Fails { Invoke-Stage $case.Root $case.LockPath $case.Packages } "replacement set is incomplete"
@@ -287,7 +291,7 @@ try {
     $case = New-Case "duplicate-member"
     $archive = Join-Path $case.Packages $binaryAsset
     Remove-Item -LiteralPath $archive
-    & tar.exe -cf $archive -C $case.Trees.BinaryRoot .PKGINFO `
+    & $windowsTar -cf $archive -C $case.Trees.BinaryRoot .PKGINFO `
         clangarm64/bin/vim.exe clangarm64/bin/vim.exe
     $case.Lock = New-AdmittedLock $case.Packages
     Save-Lock $case.Lock $case.LockPath

@@ -33,6 +33,10 @@ $expectedReplacements = @(
 )
 $metadataMembers = @(".BUILDINFO", ".MTREE", ".PKGINFO")
 $cache = Join-Path $Root "var\cache\arm64-vim"
+$windowsTar = Join-Path ([Environment]::GetFolderPath("System")) "tar.exe"
+if (-not (Test-Path -LiteralPath $windowsTar -PathType Leaf)) {
+    throw "Windows tar.exe is required"
+}
 
 function Get-Sha256([string]$Path) {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
@@ -136,7 +140,7 @@ function Assert-BuildInfo($Package, [string]$Path) {
 }
 
 function Get-ArchiveMembers([string]$Archive) {
-    $output = @(& tar.exe -tf $Archive 2>&1)
+    $output = @(& $windowsTar -tf $Archive 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Could not list $Archive`: $($output -join ' | ')"
     }
@@ -170,7 +174,7 @@ function Get-ArchiveMembers([string]$Archive) {
         }
         $members.Add($trimmed)
     }
-    $verbose = @(& tar.exe -tvf $Archive 2>&1)
+    $verbose = @(& $windowsTar -tvf $Archive 2>&1)
     if ($LASTEXITCODE -ne 0) {
         throw "Could not inspect $Archive`: $($verbose -join ' | ')"
     }
@@ -202,7 +206,7 @@ function Assert-AllowedMember($Package, [string]$Member) {
     } elseif ($Package.name -eq "mingw-w64-clang-aarch64-vim-runtime") {
         if ($Member -eq "clangarm64/share/licenses/vim-runtime/LICENSE" -or
             $Member -match "^clangarm64/share/vim/vim92/.+" -or
-            $Member -match "^clangarm64/share/man/man1/(vim|xxd)\.1(\.gz)?$") {
+            $Member -match "^clangarm64/share/man/man1/(vim|xxd)\.1\.gz$") {
             return
         }
     }
@@ -581,7 +585,7 @@ function Invoke-Stage($Data) {
             }
             $packageRoot = Join-Path $cache $package.name
             New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
-            $tarOutput = @(& tar.exe -xf $archive -C $packageRoot 2>&1)
+            $tarOutput = @(& $windowsTar -xf $archive -C $packageRoot 2>&1)
             if ($LASTEXITCODE -ne 0) {
                 throw "Could not extract $($asset[0].name)`: $($tarOutput -join ' | ')"
             }
