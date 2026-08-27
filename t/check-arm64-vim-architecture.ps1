@@ -40,7 +40,7 @@ function Assert-SetEqual([string[]]$Expected, [string[]]$Actual, [string]$Messag
 }
 
 Assert-Equal -7 $data.expected.architectureDelta.x64 "Unexpected locked x64 delta"
-Assert-Equal 9 $data.expected.architectureDelta.arm64 "Unexpected locked ARM64 delta"
+Assert-Equal 17 $data.expected.architectureDelta.arm64 "Unexpected locked ARM64 delta"
 Assert-Equal 0 $data.expected.architectureDelta.unexpectedX64 "Unexpected x64 files are permitted"
 Assert-SetEqual $expected @($data.expected.replacements) "Unexpected locked replacement paths"
 
@@ -182,7 +182,7 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Encoding ascii -LiteralPath $j
 
 - Mode: $($report.mode)
 - Admission: $($report.admission)
-- Expected architecture delta: -7 x64 / +9 ARM64
+- Expected architecture delta: -7 x64 / +17 ARM64
 - Unexpected x64 delta: 0
 - Replacement PEs: 7
 - Retained MSYS script: usr/bin/vimtutor

@@ -221,8 +221,9 @@ then
 	die "The Vim x64-to-ARM64 path set is incomplete"
 	test 7 = "$(wc -l <"$tmp/vim.replaced")" ||
 	die "Expected 7 Vim x64-to-ARM64 paths"
-	test 9 = "$(wc -l <"$tmp/vim.changed")" ||
-	die "Expected 9 added or replaced Vim ARM64 PEs"
+	vim_changed=$(wc -l <"$tmp/vim.changed") &&
+	test 17 = "$vim_changed" ||
+	die "Expected 17 added or replaced Vim ARM64 PEs, found $vim_changed"
 	test ! -s "$tmp/vim.removed" ||
 	die "The Vim layer removed an unexpected PE"
 else
@@ -366,8 +367,8 @@ die "The current file-list OpenSSH architecture delta is not -14 x64/+14 ARM64"
 if test -n "$vim_admitted"
 then
 	test -7 = "$((current_vim_x64 - current_combined_x64))" &&
-	test 9 = "$((current_vim_arm64 - current_combined_arm64))" ||
-	die "The current file-list Vim architecture delta is not -7 x64/+9 ARM64"
+	test 17 = "$((current_vim_arm64 - current_combined_arm64))" ||
+	die "The current file-list Vim architecture delta is not -7 x64/+17 ARM64"
 else
 	test "$current_vim_x64" = "$current_combined_x64" &&
 	test "$current_vim_arm64" = "$current_combined_arm64" ||

@@ -219,7 +219,7 @@
     "unresolvedImports": 0,
     "architectureDelta": {
       "x64": -7,
-      "arm64": 9,
+      "arm64": 17,
       "unexpectedX64": 0
     },
     "distributionBytesDelta": {
