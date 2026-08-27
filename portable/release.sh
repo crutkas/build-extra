@@ -150,7 +150,9 @@ then
 else
 	ln_or_cp=cp
 fi &&
-$ln_or_cp $(echo "$LIST" | sed -n "s|^$MSYSTEM_LOWER/bin/[^/]*\.dll$|/&|p") "$git_core" ||
+$ln_or_cp $(echo "$LIST" |
+	sed -n "s|^$MSYSTEM_LOWER/bin/[^/]*\.dll$|/&|p" |
+	sort -u) "$git_core" ||
 die "Could not copy .dll files into libexec/git-core/"
 
 test -z "$include_pdbs" || {
