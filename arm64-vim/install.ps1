@@ -752,7 +752,11 @@ function Invoke-Stage($Data) {
         }
         $stage | ConvertTo-Json -Depth 8 |
             Set-Content -Encoding ascii -LiteralPath (Join-Path $cache "stage.json")
-        @($records | ForEach-Object { $_.destinationPath } | Sort-Object) |
+        @(
+            @($records | ForEach-Object { $_.destinationPath })
+            @($Data.expected.baseDependencyClosure.pes |
+                ForEach-Object { $_.sourceMember })
+        ) | Sort-Object -Unique |
             Set-Content -Encoding ascii -LiteralPath (Join-Path $cache "payload-paths.txt")
         if (-not $TestMode) {
             Get-PublicAssets $Data | Out-Null
