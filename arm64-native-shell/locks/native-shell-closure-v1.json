@@ -1,0 +1,911 @@
+{
+  "schemaVersion": 1,
+  "sourceDateEpoch": 1787612267,
+  "state": "blocked-on-final-shell-packages-and-validator",
+  "legacyBaseline": {
+    "repository": "git-for-windows/git-sdk-arm64",
+    "commit": "f1e6b08892fc285dcb401433db359c3c61c0defd",
+    "ownership": "legacy-package-ownership.tsv",
+    "ownershipRows": 7057,
+    "ownershipBytes": 1151138,
+    "ownershipSha256": "aca760bd4b2d395a415ba7bf2bdcdc97b6e9c9e387605db939639b5e7350422f",
+    "packages": [
+      {
+        "name": "msys2-runtime",
+        "version": "3.6.10-1"
+      },
+      {
+        "name": "ncurses",
+        "version": "6.6-2"
+      },
+      {
+        "name": "libreadline",
+        "version": "8.3.003-1"
+      },
+      {
+        "name": "bash",
+        "version": "5.3.015-2"
+      }
+    ]
+  },
+  "authoritativeGate": {
+    "status": "unresolved",
+    "contractOwnerSession": "f042b682-d7ab-4e94-8611-c4d30ad540c5",
+    "implementationSession": "7c25255e-0d0e-4c87-846c-4e82a610064e",
+    "command": "validate-arm64-bundle.ps1",
+    "identity": null,
+    "reportContract": null,
+    "runtimeEvidenceContract": null,
+    "unresolvedFields": [
+      "identity.repository",
+      "identity.commit",
+      "identity.path",
+      "identity.bytes",
+      "identity.sha256",
+      "reportContract",
+      "runtimeEvidenceContract"
+    ],
+    "arguments": [
+      "-Mode",
+      "Preview",
+      "-Root",
+      "<materialized-root>",
+      "-Lock",
+      "<lock.json>",
+      "-Provenance",
+      "<provenance.json>",
+      "-PayloadManifest",
+      "<payload.json>",
+      "-ToolRoot",
+      "<fixed-binutils-extract-root>",
+      "-Report",
+      "<report.json>"
+    ],
+    "requiredMachine": "0xAA64",
+    "requiredArchitecture": "arm64",
+    "requiredPersonalityImport": "msys-2.0.dll",
+    "forbiddenImports": [
+      "cygwin1.dll"
+    ],
+    "rejectMixedMsysCygwinPersonality": true,
+    "rejectX64ProcessOrModule": true
+  },
+  "pseudoRelocGate": {
+    "script": {
+      "repository": "crutkas/MSYS2-packages",
+      "commit": "3356eec1411983cc252b04afac32bca5f3b8d824",
+      "path": ".ci/check-aarch64-pseudo-relocs.ps1",
+      "bytes": 10569,
+      "sha256": "888939b57d1bce2e3c119e7c4824703e893bd449d49a5142f040dd935741ddb9"
+    },
+    "objdumpSourceInput": "fixed-binutils",
+    "objdumpPath": "opt/bin/aarch64-pc-cygwin-objdump.exe",
+    "nmSourceInput": "fixed-binutils",
+    "nmPath": "opt/bin/aarch64-pc-cygwin-nm.exe",
+    "allowedResult": "empty-or-scalar64-only",
+    "allowedFlags": [
+      64
+    ],
+    "forbiddenFlags": [
+      12,
+      21
+    ]
+  },
+  "nativeCompilerProof": {
+    "runId": 33083775213,
+    "result": "success",
+    "tests": [
+      "basic-c",
+      "dynamic-stdcout-14977728512-byte-module-delta",
+      "threads",
+      "process",
+      "lto"
+    ],
+    "pseudoRelocResult": "empty-or-scalar64-only"
+  },
+  "nativeShellClosure": [
+    "a527-runtime",
+    "gcc-libs",
+    "ncurses-runtime",
+    "readline",
+    "bash"
+  ],
+  "finalRequiredInputs": [
+    "a527-headers",
+    "a527-windows-default-manifest",
+    "a527-sysroot",
+    "a527-runtime",
+    "a527-runtime-devel",
+    "gcc-support-w32api",
+    "gcc-support-libstdcxx-headers",
+    "gcc-libs",
+    "gcc",
+    "fixed-binutils",
+    "native-compiler-proof",
+    "ncurses-runtime",
+    "ncurses-devel",
+    "readline",
+    "bash"
+  ],
+  "allowedPayloadDestinationPrefixes": [
+    "usr/"
+  ],
+  "forbiddenPayloadSourcePrefixes": [
+    "opt/bin/",
+    "opt/libexec/gcc/"
+  ],
+  "collisionPolicy": {
+    "duplicateOwnership": "reject",
+    "unexpectedOverwrite": "reject",
+    "caseCollision": "reject",
+    "knownDisjointOwners": [
+      "arm64-busybox",
+      "win32-openssh-client",
+      "dos2unix",
+      "gawk",
+      "vim"
+    ]
+  },
+  "inputs": [
+    {
+      "id": "a527-headers",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 376058416,
+        "tag": "msysarm64-runtime-pr10-a527-20260824",
+        "commit": "3f92608bfeea71102da9ee093c4db1d67f513a5c"
+      },
+      "asset": {
+        "id": 528366622,
+        "name": "mingw-w64-cross-msysarm64-headers-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-runtime-pr10-a527-20260824/mingw-w64-cross-msysarm64-headers-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 9319013,
+        "sha256": "263f8f7e3614ac41337ce3a223f2bb26b6459aef6f34670525cdd4c03ec3ae21",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-headers",
+        "base": "mingw-w64-cross-msysarm64-sysroot",
+        "version": "3.6.10.r0.ga527ace21-1",
+        "architecture": "x86_64",
+        "installedBytes": 84985504,
+        "payloadMembers": 1896,
+        "provides": [
+          "aarch64-pc-msys-headers=3.6.10.r0.ga527ace21",
+          "mingw-w64-cross-cygwinarm64-headers=3.6.10.r0.gee50e0223-1",
+          "mingw-w64-cross-msysarm64-headers=3.6.10.r0.gc7932d64f-1"
+        ],
+        "depends": []
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "a527-windows-default-manifest",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 376058416,
+        "tag": "msysarm64-runtime-pr10-a527-20260824",
+        "commit": "3f92608bfeea71102da9ee093c4db1d67f513a5c"
+      },
+      "asset": {
+        "id": 528366618,
+        "name": "mingw-w64-cross-msysarm64-windows-default-manifest-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-runtime-pr10-a527-20260824/mingw-w64-cross-msysarm64-windows-default-manifest-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 4743,
+        "sha256": "33861708e7f981b4eef5b93ef135ab3a43d2757533f64df6f61a146d823c355f",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-windows-default-manifest",
+        "base": "mingw-w64-cross-msysarm64-sysroot",
+        "version": "3.6.10.r0.ga527ace21-1",
+        "architecture": "x86_64",
+        "installedBytes": 1164,
+        "payloadMembers": 1,
+        "provides": [
+          "aarch64-pc-msys-windows-default-manifest=3.6.10.r0.ga527ace21",
+          "mingw-w64-cross-cygwinarm64-windows-default-manifest=3.6.10.r0.gee50e0223-1",
+          "mingw-w64-cross-msysarm64-windows-default-manifest=3.6.10.r0.gc7932d64f-1"
+        ],
+        "depends": []
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "a527-sysroot",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 376058416,
+        "tag": "msysarm64-runtime-pr10-a527-20260824",
+        "commit": "3f92608bfeea71102da9ee093c4db1d67f513a5c"
+      },
+      "asset": {
+        "id": 528366621,
+        "name": "mingw-w64-cross-msysarm64-sysroot-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-runtime-pr10-a527-20260824/mingw-w64-cross-msysarm64-sysroot-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 86822,
+        "sha256": "e30609e09eab2fa07aba2e6196b05f34e5e9107abc4ab8832966684758c743ca",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-sysroot",
+        "base": "mingw-w64-cross-msysarm64-sysroot",
+        "version": "3.6.10.r0.ga527ace21-1",
+        "architecture": "x86_64",
+        "installedBytes": 213340,
+        "payloadMembers": 1,
+        "provides": [
+          "aarch64-pc-msys-sysroot=3.6.10.r0.ga527ace21",
+          "mingw-w64-cross-cygwinarm64-sysroot=3.6.10.r0.gee50e0223-1",
+          "mingw-w64-cross-msysarm64-sysroot=3.6.10.r0.gc7932d64f-1"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-headers=3.6.10.r0.ga527ace21-1",
+          "mingw-w64-cross-msysarm64-windows-default-manifest=3.6.10.r0.ga527ace21-1"
+        ]
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "a527-runtime",
+      "role": "product-runtime",
+      "status": "resolved",
+      "shipPolicy": "mapped-native-target-only",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 376058416,
+        "tag": "msysarm64-runtime-pr10-a527-20260824",
+        "commit": "3f92608bfeea71102da9ee093c4db1d67f513a5c"
+      },
+      "asset": {
+        "id": 528366620,
+        "name": "mingw-w64-cross-msysarm64-runtime-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-runtime-pr10-a527-20260824/mingw-w64-cross-msysarm64-runtime-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 9893043,
+        "sha256": "158c505f45025a466950faa7c85c9fd85e9d32384dd27b53586ffc75d71ca78e",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-runtime",
+        "base": "mingw-w64-cross-msysarm64-runtime",
+        "version": "3.6.10.r0.ga527ace21-1",
+        "architecture": "x86_64",
+        "installedBytes": 32671914,
+        "payloadMembers": 7,
+        "provides": [
+          "aarch64-pc-msys-runtime=3.6.10.r0.ga527ace21"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-sysroot=3.6.10.r0.ga527ace21-1"
+        ]
+      },
+      "overlay": {
+        "enabled": true,
+        "mappings": [
+          {
+            "source": "opt/aarch64-pc-msys/bin/msys-2.0.dll",
+            "destination": "usr/bin/msys-2.0.dll",
+            "allowOverwrite": true,
+            "content": "pe-aa64",
+            "expectedDestinationBytes": 3371103,
+            "expectedDestinationSha256": "e55be2d89f2756f540a8f2acf18cd14bf275d1187a32d5189946ee5c896bcf03",
+            "bytes": 32482096,
+            "sha256": "39359823d6a75b309e6936a4456eb7e88026b36fa30d728046fbc77ccf775993"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING",
+            "allowOverwrite": false,
+            "content": "data"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING.LIB",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING.LIB",
+            "allowOverwrite": false,
+            "content": "data"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING.LIBGLOSS",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING.LIBGLOSS",
+            "allowOverwrite": false,
+            "content": "data"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING.NEWLIB",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING.NEWLIB",
+            "allowOverwrite": false,
+            "content": "data"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING3",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING3",
+            "allowOverwrite": false,
+            "content": "data"
+          },
+          {
+            "source": "usr/share/licenses/mingw-w64-cross-msysarm64-runtime/COPYING3.LIB",
+            "destination": "usr/share/licenses/msys2-runtime-arm64/COPYING3.LIB",
+            "allowOverwrite": false,
+            "content": "data"
+          }
+        ]
+      }
+    },
+    {
+      "id": "a527-runtime-devel",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 376058416,
+        "tag": "msysarm64-runtime-pr10-a527-20260824",
+        "commit": "3f92608bfeea71102da9ee093c4db1d67f513a5c"
+      },
+      "asset": {
+        "id": 528366619,
+        "name": "mingw-w64-cross-msysarm64-runtime-devel-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-runtime-pr10-a527-20260824/mingw-w64-cross-msysarm64-runtime-devel-3.6.10.r0.ga527ace21-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 4426157,
+        "sha256": "c18b51e483991770b8e06cc2d8f7002d06784d3071ac213a8fee24bb831267d1",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-runtime-devel",
+        "base": "mingw-w64-cross-msysarm64-runtime",
+        "version": "3.6.10.r0.ga527ace21-1",
+        "architecture": "x86_64",
+        "installedBytes": 20202519,
+        "payloadMembers": 22,
+        "provides": [
+          "aarch64-pc-msys-runtime-devel=3.6.10.r0.ga527ace21"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-runtime=3.6.10.r0.ga527ace21-1",
+          "mingw-w64-cross-msysarm64-sysroot=3.6.10.r0.ga527ace21-1"
+        ]
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "gcc-support-w32api",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377493699,
+        "tag": "msysarm64-gcc-pr13-support-20260826",
+        "commit": "42f1fb808363203a83c7f6f935ab7e4bdffbe127"
+      },
+      "asset": {
+        "id": 531517830,
+        "name": "mingw-w64-cross-msysarm64-w32api-runtime-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-gcc-pr13-support-20260826/mingw-w64-cross-msysarm64-w32api-runtime-14.0.0.r0.g9b3dd0125-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 2349635,
+        "sha256": "7727936f4212e5af04e9739eca60f157c0875796c1e82fcfb79fd4398b111e24",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-w32api-runtime",
+        "base": "mingw-w64-cross-msysarm64-w32api-runtime",
+        "version": "14.0.0.r0.g9b3dd0125-1",
+        "architecture": "x86_64",
+        "installedBytes": 69105422,
+        "payloadMembers": 438,
+        "provides": [
+          "aarch64-pc-msys-w32api-runtime=14.0.0.r0.g9b3dd0125-1",
+          "mingw-w64-cross-cygwinarm64-w32api-runtime=14.0.0.r0.g9b3dd0125-1"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-headers=3.6.10.r0.gc7932d64f-1",
+          "mingw-w64-cross-msysarm64-windows-default-manifest=3.6.10.r0.gc7932d64f-1"
+        ]
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "gcc-support-libstdcxx-headers",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377493699,
+        "tag": "msysarm64-gcc-pr13-support-20260826",
+        "commit": "42f1fb808363203a83c7f6f935ab7e4bdffbe127"
+      },
+      "asset": {
+        "id": 531517829,
+        "name": "mingw-w64-cross-msysarm64-libstdc++-headers-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-gcc-pr13-support-20260826/mingw-w64-cross-msysarm64-libstdc%2B%2B-headers-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 1520166,
+        "sha256": "9715aab6894379bf5ab936a3a559f286fb4aedbb64f0774d7457182e00648e08",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-libstdc++-headers",
+        "base": "mingw-w64-cross-msysarm64-libstdc++-headers",
+        "version": "15.0.1dev-1",
+        "architecture": "x86_64",
+        "installedBytes": 13821970,
+        "payloadMembers": 873,
+        "provides": [
+          "aarch64-pc-msys-libstdc++-headers=15.0.1dev"
+        ],
+        "depends": [
+          "mingw-w64-cross-cygwinarm64-gcc-stage1=15.0.1dev-2",
+          "mingw-w64-cross-msysarm64-sysroot=3.6.10.r0.gc7932d64f-1"
+        ]
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "gcc-libs",
+      "role": "target-runtime",
+      "status": "resolved",
+      "shipPolicy": "mapped-native-target-only",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377482427,
+        "tag": "msysarm64-gcc-pr13-20260826",
+        "commit": "42f1fb808363203a83c7f6f935ab7e4bdffbe127"
+      },
+      "asset": {
+        "id": 531491794,
+        "name": "mingw-w64-cross-msysarm64-gcc-libs-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-gcc-pr13-20260826/mingw-w64-cross-msysarm64-gcc-libs-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 4963824,
+        "sha256": "990f163cacf9ffce1b58445be91fedc57f135cc26a88d7dba109806446b41438",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-gcc-libs",
+        "base": "mingw-w64-cross-msysarm64-gcc",
+        "version": "15.0.1dev-1",
+        "architecture": "x86_64",
+        "installedBytes": 33716868,
+        "payloadMembers": 75,
+        "provides": [
+          "aarch64-pc-msys-gcc-libs=15.0.1dev"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-runtime-devel=3.6.10.r0.ga527ace21-1",
+          "mingw-w64-cross-msysarm64-sysroot=3.6.10.r0.ga527ace21-1",
+          "mingw-w64-cross-msysarm64-w32api-runtime=14.0.0.r0.g9b3dd0125-1"
+        ]
+      },
+      "overlay": {
+        "enabled": true,
+        "mappings": [
+          {
+            "source": "opt/lib/gcc/aarch64-pc-msys/msys-gcc_s-seh-1.dll",
+            "destination": "usr/bin/msys-gcc_s-seh-1.dll",
+            "allowOverwrite": true,
+            "content": "pe-aa64",
+            "expectedDestinationBytes": 141537,
+            "expectedDestinationSha256": "59b816ee2880c2140ac8d7726f59e4e7435e309f272a80fd590d3130215f77f5",
+            "bytes": 920101,
+            "sha256": "33e742835a6b6de68a98e673580446b487e13384b9118f5d95d2bcdcaf93d1ff"
+          }
+        ]
+      }
+    },
+    {
+      "id": "gcc",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377482427,
+        "tag": "msysarm64-gcc-pr13-20260826",
+        "commit": "42f1fb808363203a83c7f6f935ab7e4bdffbe127"
+      },
+      "asset": {
+        "id": 531491795,
+        "name": "mingw-w64-cross-msysarm64-gcc-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/msysarm64-gcc-pr13-20260826/mingw-w64-cross-msysarm64-gcc-15.0.1dev-1-x86_64.pkg.tar.zst",
+        "expectedBytes": 83876291,
+        "sha256": "a74887c76a933ec424933bf662729d94975b83138af783bd93f2e7acd95c3a22",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-msysarm64-gcc",
+        "base": "mingw-w64-cross-msysarm64-gcc",
+        "version": "15.0.1dev-1",
+        "architecture": "x86_64",
+        "installedBytes": 239224596,
+        "payloadMembers": 28,
+        "provides": [
+          "aarch64-pc-msys-gcc=15.0.1dev"
+        ],
+        "depends": [
+          "mingw-w64-cross-msysarm64-gcc-libs=15.0.1dev-1",
+          "mingw-w64-cross-msysarm64-libstdc++-headers=15.0.1dev-1",
+          "mingw-w64-cross-cygwinarm64-binutils>=2.44.50"
+        ]
+      },
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "fixed-binutils",
+      "role": "build-validation",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377908415,
+        "tag": "cygwinarm64-binutils-pr21-3356eec-20260827",
+        "commit": "3356eec1411983cc252b04afac32bca5f3b8d824"
+      },
+      "asset": {
+        "id": 532446043,
+        "name": "mingw-w64-cross-cygwinarm64-binutils-2.44.50-2-x86_64.pkg.tar.zst",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/cygwinarm64-binutils-pr21-3356eec-20260827/mingw-w64-cross-cygwinarm64-binutils-2.44.50-2-x86_64.pkg.tar.zst",
+        "expectedBytes": 6545114,
+        "sha256": "3c7b47529181dab726d22cf6ed045184260af915eea583488c13c07e478ac02b",
+        "format": "pkg.tar.zst"
+      },
+      "package": {
+        "name": "mingw-w64-cross-cygwinarm64-binutils",
+        "base": "mingw-w64-cross-cygwinarm64-binutils",
+        "version": "2.44.50-2",
+        "architecture": "x86_64",
+        "installedBytes": 25895358,
+        "payloadMembers": 88,
+        "provides": [
+          "aarch64-pc-cygwin-binutils=2.44.50",
+          "aarch64-pc-msys-binutils=2.44.50",
+          "mingw-w64-cross-cygwin-arm64-binutils=2.44.50"
+        ],
+        "depends": [
+          "libiconv",
+          "libintl",
+          "zlib",
+          "libzstd"
+        ]
+      },
+      "linker": {
+        "path": "opt/bin/aarch64-pc-cygwin-ld.exe",
+        "bytes": 1887140,
+        "sha256": "075ed377a430eb120a994dfdc7c3187e937331239204578d696f08ee1c72fb1f"
+      },
+      "sealedMembers": [
+        {
+          "path": "opt/bin/aarch64-pc-cygwin-ld.exe",
+          "bytes": 1887140,
+          "sha256": "075ed377a430eb120a994dfdc7c3187e937331239204578d696f08ee1c72fb1f"
+        }
+      ],
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "native-compiler-proof",
+      "role": "validation-evidence",
+      "status": "resolved",
+      "shipPolicy": "forbidden",
+      "identity": {
+        "repository": "crutkas/MSYS2-packages",
+        "releaseId": 377908415,
+        "tag": "cygwinarm64-binutils-pr21-3356eec-20260827",
+        "commit": "3356eec1411983cc252b04afac32bca5f3b8d824"
+      },
+      "asset": {
+        "id": 532446046,
+        "name": "native-arm64-fixed-linker-run33083775213.zip",
+        "url": "https://github.com/crutkas/MSYS2-packages/releases/download/cygwinarm64-binutils-pr21-3356eec-20260827/native-arm64-fixed-linker-run33083775213.zip",
+        "expectedBytes": 19392209,
+        "sha256": "b0546f2d78882d4112a25861fd1b2ba9fc3cd2061b917de48a703079189af118",
+        "format": "zip"
+      },
+      "package": null,
+      "overlay": {
+        "enabled": false,
+        "mappings": []
+      }
+    },
+    {
+      "id": "ncurses-runtime",
+      "role": "product-runtime",
+      "status": "unresolved",
+      "shipPolicy": "mapped-native-target-only",
+      "identity": null,
+      "asset": null,
+      "package": null,
+      "overlay": null,
+      "admission": {
+        "pkgbase": "mingw-w64-cross-msysarm64-ncurses",
+        "pkgname": "mingw-w64-cross-msysarm64-ncurses",
+        "packageFamily": [
+          "mingw-w64-cross-msysarm64-ncurses",
+          "mingw-w64-cross-msysarm64-ncurses-devel"
+        ],
+        "pkgver": "6.6.20260822-1",
+        "pkgrel": 1,
+        "architecture": "x86_64",
+        "license": "MIT",
+        "project": "GNU ncurses",
+        "requiredResolvedArchitecture": "x86_64",
+        "requiredProvidesName": "aarch64-pc-msys-ncurses",
+        "requiredDependencyInputs": [
+          "a527-runtime",
+          "a527-sysroot"
+        ],
+        "ownershipRoots": [
+          "opt/aarch64-pc-msys/bin",
+          "opt/aarch64-pc-msys/lib",
+          "opt/aarch64-pc-msys/include",
+          "opt/aarch64-pc-msys/share",
+          "usr/share/licenses"
+        ],
+        "ownershipPolicy": "complete-explicit-members-only",
+        "linkPolicy": "explicit-manifest-no-cross-package-hardlinks",
+        "collisionPolicy": "fork-local-ncurses-replacements-only",
+        "requiredPayloadShape": {
+          "peCount": 13,
+          "symlinkCount": 3,
+          "forbiddenDestinations": [
+            "usr/bin/msys-ncurses++w6.dll"
+          ]
+        },
+        "omittedLegacyMembers": [
+          {
+            "path": "usr/bin/msys-ncurses++w6.dll",
+            "kind": "pe",
+            "bytes": 67120,
+            "sha256": "8755b5e3220272ba6fde2fe1a1ff8d594031f2b55ee44eb1f2494591136e491e",
+            "finalDisposition": "remove-after-zero-reverse-imports",
+            "requiredImportName": "msys-ncurses++w6.dll",
+            "proofScope": "post-overlay-all-files"
+          }
+        ]
+      },
+      "unresolvedFields": [
+        "identity.repository",
+        "identity.releaseId",
+        "identity.tag",
+        "identity.commit",
+        "identity.tree",
+        "asset.id",
+        "asset.name",
+        "asset.url",
+        "asset.expectedBytes",
+        "asset.sha256",
+        "package.name",
+        "package.version",
+        "package.provides",
+        "package.depends",
+        "overlay.mappings",
+        "overlay.manifestSha256",
+        "scanner.seals"
+      ]
+    },
+    {
+      "id": "ncurses-devel",
+      "role": "build-validation",
+      "status": "unresolved",
+      "shipPolicy": "forbidden",
+      "identity": null,
+      "asset": null,
+      "package": null,
+      "overlay": null,
+      "admission": {
+        "pkgbase": "mingw-w64-cross-msysarm64-ncurses",
+        "pkgname": "mingw-w64-cross-msysarm64-ncurses-devel",
+        "packageFamily": [
+          "mingw-w64-cross-msysarm64-ncurses",
+          "mingw-w64-cross-msysarm64-ncurses-devel"
+        ],
+        "pkgver": "6.6.20260822-1",
+        "pkgrel": 1,
+        "architecture": "x86_64",
+        "license": "MIT",
+        "project": "GNU ncurses",
+        "requiredResolvedArchitecture": "x86_64",
+        "requiredProvidesName": "aarch64-pc-msys-ncurses-devel",
+        "requiredDependencyInputs": [
+          "a527-runtime",
+          "a527-sysroot"
+        ],
+        "ownershipRoots": [
+          "opt/aarch64-pc-msys/bin",
+          "opt/aarch64-pc-msys/lib",
+          "opt/aarch64-pc-msys/include",
+          "opt/aarch64-pc-msys/share",
+          "usr/share/licenses"
+        ],
+        "ownershipPolicy": "complete-explicit-members-only",
+        "linkPolicy": "explicit-manifest-no-cross-package-hardlinks",
+        "collisionPolicy": "fork-local-ncurses-replacements-only"
+      },
+      "unresolvedFields": [
+        "identity.repository",
+        "identity.releaseId",
+        "identity.tag",
+        "identity.commit",
+        "identity.tree",
+        "asset.id",
+        "asset.name",
+        "asset.url",
+        "asset.expectedBytes",
+        "asset.sha256",
+        "package.name",
+        "package.version",
+        "package.provides",
+        "package.depends",
+        "overlay.mappings",
+        "overlay.manifestSha256",
+        "scanner.seals"
+      ]
+    },
+    {
+      "id": "readline",
+      "role": "product-runtime",
+      "status": "unresolved",
+      "shipPolicy": "mapped-native-target-only",
+      "identity": null,
+      "asset": null,
+      "package": null,
+      "overlay": null,
+      "admission": {
+        "packageFamily": [
+          "mingw-w64-cross-msysarm64-readline",
+          "mingw-w64-cross-msysarm64-readline-devel"
+        ],
+        "requiredProvidesNames": [
+          "aarch64-pc-msys-readline",
+          "aarch64-pc-msys-readline-devel"
+        ],
+        "requiredResolvedArchitecture": "x86_64",
+        "requiredDependencyInputs": [
+          "ncurses-runtime",
+          "ncurses-devel",
+          "a527-runtime",
+          "a527-sysroot"
+        ],
+        "ownedContent": [
+          "canonical-runtime-dll",
+          "import-libraries",
+          "static-libraries",
+          "headers",
+          "pkg-config-metadata",
+          "package-owned-runtime-data"
+        ],
+        "ownershipPolicy": "complete-explicit-members-only",
+        "linkPolicy": "canonical-aliases-only-no-cross-package-hardlinks",
+        "collisionPolicy": "no-file-collisions-with-dependency-or-product-inputs"
+      },
+      "unresolvedFields": [
+        "identity.repository",
+        "identity.releaseId",
+        "identity.tag",
+        "identity.commit",
+        "asset.id",
+        "asset.name",
+        "asset.url",
+        "asset.expectedBytes",
+        "asset.sha256",
+        "package.name",
+        "package.version",
+        "package.provides",
+        "package.depends",
+        "overlay.mappings",
+        "overlay.finalDllBasename",
+        "overlay.manifestSha256",
+        "scanner.seals"
+      ]
+    },
+    {
+      "id": "bash",
+      "role": "product-shell",
+      "status": "unresolved",
+      "shipPolicy": "mapped-native-target-only",
+      "identity": null,
+      "asset": null,
+      "package": null,
+      "overlay": null,
+      "admission": {
+        "pkgbase": "bash",
+        "packageFamily": [
+          "bash",
+          "bash-devel"
+        ],
+        "pkgver": "5.2.037",
+        "pkgrel": 3,
+        "architectures": [
+          "i686",
+          "x86_64",
+          "aarch64"
+        ],
+        "description": "The GNU Bourne Again shell",
+        "projectUrl": "https://www.gnu.org/software/bash/bash.html",
+        "sourcePolicy": "GNU Bash 5.2 tarball plus fork-local patch set",
+        "runtimeProvides": [
+          "sh"
+        ],
+        "requiredResolvedArchitecture": "aarch64",
+        "runtimeDepends": [],
+        "runtimeOwnership": "upstream-make-install-under-usr-plus-explicit-alias-fanout",
+        "develOwnership": [
+          "usr/include/bash/**",
+          "usr/lib/libbash.dll.a"
+        ],
+        "shellAlias": {
+          "path": "usr/bin/sh.exe",
+          "semantics": "copy-of-bash.exe-not-link"
+        },
+        "ownershipPolicy": "complete-explicit-members-only",
+        "collisionPolicy": "only-explicit-shell-entrypoint-coordination"
+      },
+      "unresolvedFields": [
+        "identity.repository",
+        "identity.releaseId",
+        "identity.tag",
+        "identity.commit",
+        "asset.id",
+        "asset.name",
+        "asset.url",
+        "asset.expectedBytes",
+        "asset.sha256",
+        "package.name",
+        "package.version",
+        "package.provides",
+        "package.depends",
+        "overlay.mappings",
+        "overlay.manifestSha256",
+        "runtime.byteHashesAndSignatures",
+        "devel.importLibraryByteHashesAndSignatures",
+        "scanner.seals"
+      ]
+    }
+  ],
+  "smokeContract": [
+    "shell-startup",
+    "pty-terminal",
+    "quoting",
+    "globbing",
+    "utf8",
+    "pipes",
+    "signals",
+    "fork",
+    "spawn",
+    "git-init",
+    "git-commit",
+    "git-hooks",
+    "git-local-clone"
+  ]
+}
