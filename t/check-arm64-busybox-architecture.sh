@@ -109,6 +109,8 @@ scan () {
 		"$root/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 		"$source/make-file-list.sh" >"$tmp/$label.files" ||
 	die "Could not generate the $label file list"
+	sort -u -o "$tmp/$label.files" "$tmp/$label.files" ||
+	die "Could not normalize the $label file list"
 	powershell.exe -NoProfile -ExecutionPolicy Bypass \
 		-File "$(cygpath -aw "$scanner")" \
 		-ArchitectureOnly -Root "$(cygpath -aw "$root")" \
