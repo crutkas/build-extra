@@ -451,7 +451,8 @@ use_arm64_native_openssh () { # [--root=<directory>]
 		then
 			pacman "$@"
 		else
-			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+			"$root/usr/bin/pacman.exe" \
+				--config "$root/etc/pacman.conf" --root "$root" "$@"
 		fi
 	}
 
