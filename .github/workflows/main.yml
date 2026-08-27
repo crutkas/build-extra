@@ -683,6 +683,7 @@ jobs:
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-combined \
+            --arm64-vim-baseline \
             build-installers &&
           ./please.sh create-sdk-artifact \
             --architecture=aarch64 \

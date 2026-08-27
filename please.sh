@@ -525,13 +525,14 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	die "Could not configure Azure SSH compatibility\n"
 }
 
-create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
+create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] [--arm64-vim-baseline] <name>
 	git_sdk_path=/
 	output_path=
 	force=
 	architecture=auto
 	bitness=
 	keep_worktree=
+	arm64_vim_baseline=
 	while case "$1" in
 	--out|-o)
 		shift
@@ -579,6 +580,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		;;
 	--no-keep-worktree)
 		keep_worktree=
+		;;
+	--arm64-vim-baseline)
+		arm64_vim_baseline=t
 		;;
 	-*) die "Unknown option: %s\n" "$1";;
 	*) break;;
@@ -658,6 +662,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	minimal-sdk|makepkg-git|build-installers|full-sdk) mode=$1;;
 	*) die "Unhandled artifact: '%s'\n" "$1";;
 	esac
+	test -z "$arm64_vim_baseline" ||
+	{ test aarch64 = "$architecture" && test build-installers = "$mode"; } ||
+	die "--arm64-vim-baseline requires an aarch64 build-installers artifact\n"
 
 	test ! -d "$output_path" ||
 	if test -z "$force"
@@ -822,7 +829,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
 			{ test aarch64 != "$architecture" ||
 				use_arm64_native_openssh --root="$output_path"; } &&
-			{ test aarch64 != "$architecture" ||
+			{ test -n "$arm64_vim_baseline" ||
+				test aarch64 != "$architecture" ||
 				ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
 					--stage --root="$output_path"; } &&
 			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
@@ -871,7 +879,8 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/arm64-busybox/install.sh"
 	fi &&
-	{ test build-installers != "$mode" ||
+	{ test -n "$arm64_vim_baseline" ||
+		test build-installers != "$mode" ||
 		test aarch64 != "$architecture" ||
 		ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
 			--finalize --root="$output_path"; } &&

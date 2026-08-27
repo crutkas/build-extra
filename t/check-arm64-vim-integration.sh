@@ -23,6 +23,8 @@ die "The public Vim input is not fully admitted"
 test 2 = "$(grep -Fc 'arm64-vim/install.sh" \' "$root/please.sh")" &&
 grep -Fq -- '--stage --root="$output_path"' "$root/please.sh" &&
 grep -Fq -- '--finalize --root="$output_path"' "$root/please.sh" &&
+grep -Fq -- '--arm64-vim-baseline' "$root/please.sh" &&
+test 1 = "$(grep -Fc -- '--arm64-vim-baseline \' "$root/.github/workflows/main.yml")" &&
 grep -Fq '/var/cache/arm64-vim/payload-paths.txt' "$root/make-file-list.sh" &&
 grep -Fq 'test -z "$MINIMAL_GIT"' "$root/make-file-list.sh" ||
 die "The ARM64 Vim staging or full-distribution contract is not wired"
