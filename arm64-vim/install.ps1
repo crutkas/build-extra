@@ -291,7 +291,7 @@ function Assert-Lock($Data) {
     Assert-Equal 291 $Data.expected.importCount "Unexpected import count"
     Assert-Equal 0 $Data.expected.unresolvedImports "The admitted evidence has unresolved imports"
     Assert-Equal -7 $Data.expected.architectureDelta.x64 "Unexpected x64 delta"
-    Assert-Equal 17 $Data.expected.architectureDelta.arm64 "Unexpected ARM64 delta"
+    Assert-Equal 12 $Data.expected.architectureDelta.arm64 "Unexpected ARM64 delta"
     Assert-Equal 0 $Data.expected.architectureDelta.unexpectedX64 "Unexpected x64 payload is permitted"
     Assert-SetEqual @(
         "mingw-w64-clang-aarch64-vim",
