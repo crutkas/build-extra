@@ -234,6 +234,59 @@ function Assert-Lock($Data) {
     Assert-Equal "any" $Data.expected.packageArchitecture "Unexpected package filename architecture"
     Assert-SetEqual $expectedReplacements @($Data.expected.replacements) "Unexpected replacement contract"
     Assert-SetEqual @("usr/bin/vimtutor") @($Data.expected.retained) "Unexpected retained-path contract"
+    $baseClosure = $Data.expected.baseDependencyClosure
+    Assert-SetEqual @(
+        "mingw-w64-clang-aarch64-gettext-runtime",
+        "mingw-w64-clang-aarch64-libc++",
+        "mingw-w64-clang-aarch64-libiconv"
+    ) @($baseClosure.packages.name) "Unexpected base dependency package set"
+    Assert-Equal 3 @($baseClosure.packages).Count "Unexpected base dependency package count"
+    $basePackageContracts = @{
+        "mingw-w64-clang-aarch64-gettext-runtime" = @(
+            "1.0-1",
+            "mingw-w64-clang-aarch64-gettext-runtime-1.0-1-any.pkg.tar.zst",
+            395859,
+            "b5364a7c78cc4b73273a4a28e07e3c6d9cc8ec0ce269527409d944ab1c8f5a70"
+        )
+        "mingw-w64-clang-aarch64-libc++" = @(
+            "22.1.8-1",
+            "mingw-w64-clang-aarch64-libc++-22.1.8-1-any.pkg.tar.zst",
+            1894929,
+            "6755aa5a658d0a906e1e8477858b3518fd87d380ac5c854a226f5a3a2c78d794"
+        )
+        "mingw-w64-clang-aarch64-libiconv" = @(
+            "1.19-1",
+            "mingw-w64-clang-aarch64-libiconv-1.19-1-any.pkg.tar.zst",
+            734170,
+            "955499bc5cb73d86ea2850ece9bbdbbfd66b213e272e032f28147ecd42897e21"
+        )
+    }
+    foreach ($package in $baseClosure.packages) {
+        $contract = $basePackageContracts[$package.name]
+        if (-not $contract) {
+            throw "Unexpected base dependency package '$($package.name)'"
+        }
+        Assert-Equal $contract[0] $package.version "Unexpected base dependency package version"
+        Assert-Equal $contract[1] $package.archive "Unexpected base dependency archive"
+        Assert-Equal ([long]$contract[2]) ([long]$package.bytes) `
+            "Unexpected base dependency archive size"
+        Assert-Equal $contract[3] $package.sha256 "Unexpected base dependency archive SHA-256"
+    }
+    Assert-Equal 10 @($baseClosure.pes).Count "Unexpected base dependency PE set"
+    Assert-SetEqual @(
+        "clangarm64/bin/envsubst.exe",
+        "clangarm64/bin/gettext.exe",
+        "clangarm64/bin/libasprintf-0.dll",
+        "clangarm64/bin/libc++.dll",
+        "clangarm64/bin/libcharset-1.dll",
+        "clangarm64/bin/libiconv-2.dll",
+        "clangarm64/bin/libintl-8.dll",
+        "clangarm64/bin/ngettext.exe",
+        "clangarm64/bin/printf_gettext.exe",
+        "clangarm64/bin/printf_ngettext.exe"
+    ) @($baseClosure.pes.sourceMember) "Unexpected base dependency PE paths"
+    Assert-SetEqual @("libiconv-2.dll", "libintl-8.dll") `
+        @($baseClosure.loaderCopies) "Unexpected loader copy set"
     Assert-Equal 19 $Data.expected.candidateAndDependencyPeCount "Unexpected PE closure count"
     Assert-Equal 291 $Data.expected.importCount "Unexpected import count"
     Assert-Equal 0 $Data.expected.unresolvedImports "The admitted evidence has unresolved imports"
@@ -428,9 +481,12 @@ function Resolve-Package([object]$Asset, [string]$Destination, $PublicAssets) {
     Assert-Equal $Asset.sha256 (Get-Sha256 $Destination) "Unexpected asset SHA-256"
 }
 
-function Get-PackageOwner([string]$Member) {
+function Get-PackageMetadata([string]$Member) {
     if ($TestMode) {
-        return "synthetic-base"
+        return [pscustomobject]@{
+            Name = "synthetic-base"
+            Version = "synthetic"
+        }
     }
     $owners = [Collections.Generic.List[string]]::new()
     $database = Join-Path $Root "var\lib\pacman\local"
@@ -446,10 +502,22 @@ function Get-PackageOwner([string]$Member) {
         if ($index -lt 0 -or $index + 1 -ge $lines.Count) {
             throw "Could not read the package owner for $Member"
         }
-        $owners.Add($lines[$index + 1])
+        $versionIndex = [Array]::IndexOf($lines, "%VERSION%")
+        if ($versionIndex -lt 0 -or $versionIndex + 1 -ge $lines.Count) {
+            throw "Could not read the package version for $Member"
+        }
+        $owners.Add("$($lines[$index + 1])`t$($lines[$versionIndex + 1])")
     }
     Assert-Equal 1 $owners.Count "Unexpected package ownership for $Member"
-    return $owners[0]
+    $fields = $owners[0] -split "`t", 2
+    return [pscustomobject]@{
+        Name = $fields[0]
+        Version = $fields[1]
+    }
+}
+
+function Get-PackageOwner([string]$Member) {
+    return (Get-PackageMetadata $Member).Name
 }
 
 function Get-DependencyClosure($Stage) {
@@ -479,9 +547,69 @@ function Get-DependencyClosure($Stage) {
                 sourceMember = "clangarm64/bin/$_"
                 destinationPath = "usr/bin/$_"
                 type = "pe"
+                copy = $true
                 bytes = (Get-Item -LiteralPath $path).Length
                 sha256 = Get-Sha256 $path
             }
+        })
+    }
+
+    $dependencyRecords = [Collections.Generic.List[object]]::new()
+    $scanEntries = [Collections.Generic.List[object]]::new()
+    $selectedNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    foreach ($locked in $data.expected.baseDependencyClosure.pes) {
+        $path = Join-Path $Root $locked.sourceMember
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Missing admitted base dependency $($locked.sourceMember)"
+        }
+        Assert-Equal ([long]$locked.bytes) (Get-Item -LiteralPath $path).Length `
+            "Unexpected base dependency size"
+        Assert-Equal $locked.sha256 (Get-Sha256 $path) "Unexpected base dependency SHA-256"
+        $owner = Get-PackageMetadata $locked.sourceMember
+        Assert-Equal $locked.package $owner.Name `
+            "Unexpected base dependency package owner"
+        $package = @($data.expected.baseDependencyClosure.packages |
+            Where-Object name -eq $owner.Name)
+        Assert-Equal 1 $package.Count "Could not resolve locked base dependency package"
+        Assert-Equal $package[0].version $owner.Version `
+            "Unexpected base dependency package version"
+        Assert-Equal 0xAA64 (Get-PeMachine $path) "Base dependency is not ARM64"
+        [void]$selectedNames.Add([IO.Path]::GetFileName($path))
+        $record = [pscustomobject][ordered]@{
+            package = $locked.package
+            sourceInput = "base"
+            sourceMember = $locked.sourceMember
+            destinationPath = $locked.sourceMember
+            type = "pe"
+            copy = $false
+            bytes = [long]$locked.bytes
+            sha256 = $locked.sha256
+        }
+        $dependencyRecords.Add($record)
+        $scanEntries.Add([pscustomobject]@{
+            Identity = "base:$($locked.sourceMember)"
+            Path = $path
+        })
+    }
+    foreach ($name in $data.expected.baseDependencyClosure.loaderCopies) {
+        $locked = @($data.expected.baseDependencyClosure.pes | Where-Object {
+            [IO.Path]::GetFileName($_.sourceMember) -eq $name
+        })
+        Assert-Equal 1 $locked.Count "Could not resolve admitted loader dependency"
+        $record = [pscustomobject][ordered]@{
+            package = $locked[0].package
+            sourceInput = "base"
+            sourceMember = $locked[0].sourceMember
+            destinationPath = "usr/bin/$name"
+            type = "pe"
+            copy = $true
+            bytes = [long]$locked[0].bytes
+            sha256 = $locked[0].sha256
+        }
+        $dependencyRecords.Add($record)
+        $scanEntries.Add([pscustomobject]@{
+            Identity = "loader:$name"
+            Path = Join-Path $Root $locked[0].sourceMember
         })
     }
 
@@ -491,18 +619,19 @@ function Get-DependencyClosure($Stage) {
         ForEach-Object { [void]$systemDlls.Add($_.Name) }
     $queue = [Collections.Generic.Queue[object]]::new()
     $seen = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $closure = [Collections.Generic.List[object]]::new()
     foreach ($record in $candidate) {
         $queue.Enqueue([pscustomobject]@{
+            Identity = "candidate:$($record.destinationPath)"
             Path = Join-Path (Join-Path $cache $record.package) $record.sourceMember
-            Record = $record
-            Candidate = $true
         })
+    }
+    foreach ($entry in $scanEntries) {
+        $queue.Enqueue($entry)
     }
     $importCount = 0
     while ($queue.Count) {
         $entry = $queue.Dequeue()
-        if (-not $seen.Add($entry.Path)) {
+        if (-not $seen.Add($entry.Identity)) {
             continue
         }
         if ((Get-PeMachine $entry.Path) -ne 0xAA64) {
@@ -523,25 +652,9 @@ function Get-DependencyClosure($Stage) {
             if (-not $dependency) {
                 throw "Unresolved native Vim import '$import' from $($entry.Path)"
             }
-            if (-not $seen.Contains($dependency)) {
-                $record = [pscustomobject][ordered]@{
-                    package = Get-PackageOwner "clangarm64/bin/$([IO.Path]::GetFileName($dependency))"
-                    sourceInput = "base"
-                    sourceMember = "clangarm64/bin/$([IO.Path]::GetFileName($dependency))"
-                    destinationPath = "usr/bin/$([IO.Path]::GetFileName($dependency))"
-                    type = "pe"
-                    bytes = (Get-Item -LiteralPath $dependency).Length
-                    sha256 = Get-Sha256 $dependency
-                }
-                $queue.Enqueue([pscustomobject]@{
-                    Path = $dependency
-                    Record = $record
-                    Candidate = $false
-                })
+            if (-not $selectedNames.Contains([IO.Path]::GetFileName($dependency))) {
+                throw "Native Vim import '$import' is outside the admitted dependency closure"
             }
-        }
-        if (-not $entry.Candidate) {
-            $closure.Add($entry.Record)
         }
     }
     Assert-Equal ([int]$data.expected.candidateAndDependencyPeCount) $seen.Count `
@@ -550,7 +663,7 @@ function Get-DependencyClosure($Stage) {
         "Unexpected native Vim import count"
     Assert-Equal 0 ([int]$data.expected.unresolvedImports) `
         "The native Vim closure permits unresolved imports"
-    return @($closure)
+    return @($dependencyRecords)
 }
 
 function Invoke-Stage($Data) {
@@ -690,7 +803,7 @@ function Invoke-Finalize($Data) {
             throw "Legacy Vim replacement $path is not x64"
         }
     }
-    foreach ($record in $dependencyRecords) {
+    foreach ($record in @($dependencyRecords | Where-Object copy)) {
         $destination = Join-Path $Root $record.destinationPath
         if (Test-Path -LiteralPath $destination) {
             throw "Native Vim dependency destination collides with $($record.destinationPath)"
@@ -705,12 +818,20 @@ function Invoke-Finalize($Data) {
             Join-Path (Join-Path $cache $record.package) $record.sourceMember
         }
         $destination = Join-Path $Root $record.destinationPath
-        $replaces = if (Test-Path -LiteralPath $destination) { "base" } else { $null }
-        $parent = Split-Path -Parent $destination
-        New-Item -ItemType Directory -Force -Path $parent | Out-Null
-        $temporary = "$destination.arm64-vim-$PID"
-        Copy-Item -LiteralPath $source -Destination $temporary
-        Move-Item -Force -LiteralPath $temporary -Destination $destination
+        $preservedBase = $record.sourceInput -eq "base" -and
+            $record.destinationPath -eq $record.sourceMember
+        $replaces = if (-not $preservedBase -and (Test-Path -LiteralPath $destination)) {
+            "base"
+        } else {
+            $null
+        }
+        if (-not $preservedBase) {
+            $parent = Split-Path -Parent $destination
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            $temporary = "$destination.arm64-vim-$PID"
+            Copy-Item -LiteralPath $source -Destination $temporary
+            Move-Item -Force -LiteralPath $temporary -Destination $destination
+        }
         Assert-Equal $record.sha256 (Get-Sha256 $destination) "Installed file hash mismatch"
         $provenanceRecord = [ordered]@{
             sourceInput = if ($record.sourceInput) { $record.sourceInput } else { $Data.inputId }

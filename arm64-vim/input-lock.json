@@ -123,6 +123,97 @@
     "retained": [
       "usr/bin/vimtutor"
     ],
+    "baseDependencyClosure": {
+      "packages": [
+        {
+          "name": "mingw-w64-clang-aarch64-gettext-runtime",
+          "version": "1.0-1",
+          "archive": "mingw-w64-clang-aarch64-gettext-runtime-1.0-1-any.pkg.tar.zst",
+          "bytes": 395859,
+          "sha256": "b5364a7c78cc4b73273a4a28e07e3c6d9cc8ec0ce269527409d944ab1c8f5a70"
+        },
+        {
+          "name": "mingw-w64-clang-aarch64-libc++",
+          "version": "22.1.8-1",
+          "archive": "mingw-w64-clang-aarch64-libc++-22.1.8-1-any.pkg.tar.zst",
+          "bytes": 1894929,
+          "sha256": "6755aa5a658d0a906e1e8477858b3518fd87d380ac5c854a226f5a3a2c78d794"
+        },
+        {
+          "name": "mingw-w64-clang-aarch64-libiconv",
+          "version": "1.19-1",
+          "archive": "mingw-w64-clang-aarch64-libiconv-1.19-1-any.pkg.tar.zst",
+          "bytes": 734170,
+          "sha256": "955499bc5cb73d86ea2850ece9bbdbbfd66b213e272e032f28147ecd42897e21"
+        }
+      ],
+      "pes": [
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/envsubst.exe",
+          "bytes": 139264,
+          "sha256": "2a54f35f923376211830ba88f6d0d59641db4548c8102ebc9aab692999fa90ea"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/gettext.exe",
+          "bytes": 133120,
+          "sha256": "e8b987615cb411a44cfdca24f144993cc26da3f85a6b66f9d38846042650f8bc"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/libasprintf-0.dll",
+          "bytes": 135168,
+          "sha256": "fd3729b173ba8a46e0da171fc67e6b60733545d85c7f5548633e49303c70c9d4"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-libc++",
+          "sourceMember": "clangarm64/bin/libc++.dll",
+          "bytes": 1631232,
+          "sha256": "863b2275e85846197903fdb398b476737ddb0fda57406450683a9ce41ee79262"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-libiconv",
+          "sourceMember": "clangarm64/bin/libcharset-1.dll",
+          "bytes": 40448,
+          "sha256": "4a956422125f64b91621be5331f365d66ff8e88044ace0c2178b3200071ac515"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-libiconv",
+          "sourceMember": "clangarm64/bin/libiconv-2.dll",
+          "bytes": 1108992,
+          "sha256": "5eb3e024adbeb40e990530b64498fa5305b4ebeaa34db971196f92317f70a35d"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/libintl-8.dll",
+          "bytes": 268288,
+          "sha256": "31db0d0e7780cf28dca1309a894cb775b2ab130c4ba777c546a206970ca47320"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/ngettext.exe",
+          "bytes": 133120,
+          "sha256": "625917e3f8068adf3ef7f9d84aeb77c4d177b8d67a2e6c7ea9954011150a3b50"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/printf_gettext.exe",
+          "bytes": 198656,
+          "sha256": "5e41943126eb3626d5bf1ba217d45b298cd715dd2218e5dc6c2a45bed88964d1"
+        },
+        {
+          "package": "mingw-w64-clang-aarch64-gettext-runtime",
+          "sourceMember": "clangarm64/bin/printf_ngettext.exe",
+          "bytes": 199168,
+          "sha256": "66484d2c02913e92de6ade45d2200cf54a75a9cdb07ec39df1216e3e0dc0fa34"
+        }
+      ],
+      "loaderCopies": [
+        "libiconv-2.dll",
+        "libintl-8.dll"
+      ]
+    },
     "candidateAndDependencyPeCount": 19,
     "importCount": 291,
     "unresolvedImports": 0,
