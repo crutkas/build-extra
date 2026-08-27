@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/schemas/runtime-evidence-v1.schema.json",
+  "title": "ARM64 runtime evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "previewId",
+    "admissionMode",
+    "sourceLockSha256",
+    "lockSha256",
+    "provenanceSha256",
+    "payloadManifestSha256",
+    "rootInventorySha256",
+    "validator",
+    "host",
+    "collector",
+    "collectedUtc",
+    "scenarios"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "previewId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$"
+    },
+    "admissionMode": {
+      "enum": [
+        "Preview",
+        "Final"
+      ]
+    },
+    "sourceLockSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "lockSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "provenanceSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "payloadManifestSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "rootInventorySha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "path",
+        "bytes",
+        "sha256",
+        "mode"
+      ],
+      "properties": {
+        "repository": {
+          "const": "crutkas/build-extra"
+        },
+        "commit": {
+          "$ref": "common-v1.schema.json#/$defs/commit"
+        },
+        "path": {
+          "const": "validate-arm64-bundle.ps1"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        "mode": {
+          "const": "Runtime"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture"
+      ],
+      "properties": {
+        "os": {
+          "const": "Windows"
+        },
+        "architecture": {
+          "const": "ARM64"
+        }
+      }
+    },
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "path",
+        "bytes",
+        "sha256",
+        "method"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^crutkas/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {
+          "$ref": "common-v1.schema.json#/$defs/commit"
+        },
+        "path": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        "method": {
+          "const": "ETW-Kernel-Process-ImageLoad"
+        }
+      }
+    },
+    "collectedUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scenarios": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/scenario"
+      }
+    }
+  },
+  "$defs": {
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status",
+        "reason",
+        "command",
+        "behavior",
+        "trace"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "Git Bash",
+            "Git",
+            "SSH",
+            "GPG",
+            "hook",
+            "submodule",
+            "rebase",
+            "git-svn"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "unresolved"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "behavior": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/behavior"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trace": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/trace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "passed",
+        "exitCode"
+      ],
+      "properties": {
+        "operation": {
+          "enum": [
+            "git-bash-startup",
+            "git-command",
+            "ssh-command",
+            "gpg-command",
+            "git-hook",
+            "git-submodule",
+            "git-rebase",
+            "git-svn"
+          ]
+        },
+        "passed": {
+          "const": true
+        },
+        "exitCode": {
+          "const": 0
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "processEventsComplete",
+        "imageLoadEventsComplete",
+        "processTreeComplete",
+        "lostEvents",
+        "startUtc",
+        "endUtc",
+        "processes"
+      ],
+      "properties": {
+        "complete": {
+          "const": true
+        },
+        "processEventsComplete": {
+          "const": true
+        },
+        "imageLoadEventsComplete": {
+          "const": true
+        },
+        "processTreeComplete": {
+          "const": true
+        },
+        "lostEvents": {
+          "const": 0
+        },
+        "startUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "processes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/process"
+          }
+        }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId",
+        "parentInstanceId",
+        "processId",
+        "startUtc",
+        "endUtc",
+        "role",
+        "path",
+        "sha256",
+        "architecture",
+        "personality",
+        "modulesComplete",
+        "modules"
+      ],
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parentInstanceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "processId": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "role": {
+          "enum": [
+            "role",
+            "support"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\"
+        },
+        "sha256": {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        "architecture": {
+          "enum": [
+            "arm64",
+            "arm64ec",
+            "anycpu",
+            "x64",
+            "x86",
+            "unknown"
+          ]
+        },
+        "personality": {
+          "enum": [
+            "msys",
+            "mingw",
+            "managed",
+            "cygwin"
+          ]
+        },
+        "modulesComplete": {
+          "type": "boolean"
+        },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "architecture",
+        "personality"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\"
+        },
+        "sha256": {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        "architecture": {
+          "enum": [
+            "arm64",
+            "arm64ec",
+            "anycpu",
+            "x64",
+            "x86",
+            "unknown"
+          ]
+        },
+        "personality": {
+          "enum": [
+            "msys",
+            "mingw",
+            "managed",
+            "cygwin"
+          ]
+        }
+      }
+    }
+  }
+}

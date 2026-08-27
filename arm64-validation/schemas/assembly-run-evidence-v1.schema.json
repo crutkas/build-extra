@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/schemas/assembly-run-evidence-v1.schema.json",
+  "title": "ARM64 assembly run evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "previewId",
+    "sourceLockSha256",
+    "lockSha256",
+    "provenanceSha256",
+    "payloadManifestSha256",
+    "rootInventorySha256",
+    "host",
+    "observedUtc",
+    "externalObservation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "previewId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$"
+    },
+    "sourceLockSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "lockSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "provenanceSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "payloadManifestSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "rootInventorySha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "host": {
+      "$ref": "#/$defs/arm64WindowsHost"
+    },
+    "observedUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "externalObservation": {
+      "$ref": "#/$defs/externalObservation"
+    }
+  },
+  "$defs": {
+    "arm64WindowsHost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture",
+        "processArchitecture"
+      ],
+      "properties": {
+        "os": {
+          "const": "Windows"
+        },
+        "architecture": {
+          "enum": [
+            "AMD64",
+            "ARM64"
+          ]
+        },
+        "processArchitecture": {
+          "enum": [
+            "AMD64",
+            "ARM64"
+          ]
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "log",
+        "database"
+      ],
+      "properties": {
+        "log": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bytes",
+            "sha256"
+          ],
+          "properties": {
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            }
+          }
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "files",
+            "bytes",
+            "canonicalManifestSha256"
+          ],
+          "properties": {
+            "files": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "canonicalManifestSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "externalObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rootPath",
+        "authoritative",
+        "usedAsInput",
+        "cutoffUtc",
+        "before",
+        "after",
+        "commands"
+      ],
+      "properties": {
+        "rootPath": {
+          "const": "C:\\msys64"
+        },
+        "authoritative": {
+          "const": false
+        },
+        "usedAsInput": {
+          "const": false
+        },
+        "cutoffUtc": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "before": {
+          "$ref": "#/$defs/snapshot"
+        },
+        "after": {
+          "$ref": "#/$defs/snapshot"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

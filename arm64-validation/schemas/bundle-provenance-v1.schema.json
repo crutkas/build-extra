@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/schemas/bundle-provenance-v1.schema.json",
+  "title": "ARM64 bundle provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lockSha256",
+    "sourceDateEpoch",
+    "nativeShellClosure",
+    "assembler",
+    "inputs",
+    "overlayOrder",
+    "replacements",
+    "finalMembers",
+    "pseudoReloc"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "lockSha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "sourceDateEpoch": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "nativeShellClosure": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common-v1.schema.json#/$defs/relativePath"
+      }
+    },
+    "assembler": {
+      "$ref": "#/$defs/commitIdentity"
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/input"
+      }
+    },
+    "overlayOrder": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "replacements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/replacement"
+      }
+    },
+    "finalMembers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finalMember"
+      }
+    },
+    "pseudoReloc": {
+      "$ref": "#/$defs/pseudoReloc"
+    }
+  },
+  "$defs": {
+    "commitIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^crutkas/[A-Za-z0-9_.-]+$"
+        },
+        "commit": {
+          "$ref": "common-v1.schema.json#/$defs/commit"
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "release",
+        "asset",
+        "package",
+        "archiveMembers"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "release": {
+          "$ref": "common-v1.schema.json#/$defs/release"
+        },
+        "asset": {
+          "$ref": "common-v1.schema.json#/$defs/asset"
+        },
+        "package": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/package"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "archiveMembers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/archiveMember"
+          }
+        }
+      }
+    },
+    "archiveMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceMember",
+        "type",
+        "bytes",
+        "sha256",
+        "selected",
+        "destinationPath",
+        "linkTarget"
+      ],
+      "properties": {
+        "sourceMember": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "type": {
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "hardlink"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "destinationPath": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkTarget": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "finalMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destinationPath",
+        "inputId",
+        "sourceMember",
+        "type",
+        "bytes",
+        "sha256",
+        "linkTarget"
+      ],
+      "properties": {
+        "destinationPath": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "inputId": {
+          "type": "string"
+        },
+        "sourceMember": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "type": {
+          "enum": [
+            "file",
+            "directory",
+            "symlink",
+            "hardlink"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linkTarget": {
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/relativePath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "replacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destinationPath",
+        "replacedInputId",
+        "replacedSourceMember",
+        "winnerInputId",
+        "winnerSourceMember"
+      ],
+      "properties": {
+        "destinationPath": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "replacedInputId": {
+          "type": "string"
+        },
+        "replacedSourceMember": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "winnerInputId": {
+          "type": "string"
+        },
+        "winnerSourceMember": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        }
+      }
+    },
+    "pseudoReloc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scanner",
+        "toolInputId",
+        "objdumpMember",
+        "nmMember",
+        "linkerMember",
+        "candidates"
+      ],
+      "properties": {
+        "scanner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "commit",
+            "path",
+            "bytes",
+            "sha256"
+          ],
+          "properties": {
+            "repository": {
+              "const": "crutkas/MSYS2-packages"
+            },
+            "commit": {
+              "const": "3356eec1411983cc252b04afac32bca5f3b8d824"
+            },
+            "path": {
+              "const": ".ci/check-aarch64-pseudo-relocs.ps1"
+            },
+            "bytes": {
+              "const": 10569
+            },
+            "sha256": {
+              "const": "888939b57d1bce2e3c119e7c4824703e893bd449d49a5142f040dd935741ddb9"
+            }
+          }
+        },
+        "toolInputId": {
+          "type": "string"
+        },
+        "objdumpMember": {
+          "const": "opt/bin/aarch64-pc-cygwin-objdump.exe"
+        },
+        "nmMember": {
+          "const": "opt/bin/aarch64-pc-cygwin-nm.exe"
+        },
+        "linkerMember": {
+          "const": "opt/bin/aarch64-pc-cygwin-ld.exe"
+        },
+        "candidates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "destinationPath",
+              "inputId",
+              "sourceMember"
+            ],
+            "properties": {
+              "destinationPath": {
+                "$ref": "common-v1.schema.json#/$defs/relativePath"
+              },
+              "inputId": {
+                "type": "string"
+              },
+              "sourceMember": {
+                "$ref": "common-v1.schema.json#/$defs/relativePath"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

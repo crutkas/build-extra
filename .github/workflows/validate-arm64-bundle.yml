@@ -1,0 +1,31 @@
+name: ARM64 bundle validator
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/validate-arm64-bundle.yml"
+      - "validate-arm64-bundle.ps1"
+      - "arm64-validation/README.md"
+      - "arm64-validation/check-aarch64-pseudo-relocs.ps1"
+      - "arm64-validation/schemas/**"
+      - "arm64-x64-payload-baseline.txt"
+      - "arm64-payload-architecture-v2.55.0.4.tsv"
+      - "t/validate-arm64-bundle.ps1"
+      - "t/check-payload-architecture.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-contract:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'crutkas/build-extra' &&
+      github.event.pull_request.base.repo.full_name == 'crutkas/build-extra'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate ARM64 bundle contract
+        shell: pwsh
+        run: ./t/validate-arm64-bundle.ps1

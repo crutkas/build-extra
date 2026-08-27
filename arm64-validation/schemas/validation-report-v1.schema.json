@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/schemas/validation-report-v1.schema.json",
+  "title": "ARM64 bundle validation report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "admissionMode",
+    "result",
+    "exitCode",
+    "readyForFinal",
+    "digests",
+    "summary",
+    "unresolvedInputs",
+    "nativeShellClosure",
+    "remainingX64",
+    "classifications",
+    "pseudoReloc",
+    "runtime",
+    "errors"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "mode": {
+      "enum": [
+        "Preview",
+        "Final",
+        "Runtime"
+      ]
+    },
+    "admissionMode": {
+      "enum": [
+        "Preview",
+        "Final",
+        null
+      ]
+    },
+    "result": {
+      "enum": [
+        "pass",
+        "fail",
+        "error"
+      ]
+    },
+    "exitCode": {
+      "enum": [
+        0,
+        10,
+        20,
+        30,
+        40
+      ]
+    },
+    "readyForFinal": {
+      "type": "boolean"
+    },
+    "digests": {
+      "type": "object"
+    },
+    "summary": {
+      "type": "object"
+    },
+    "unresolvedInputs": {
+      "type": "array"
+    },
+    "nativeShellClosure": {
+      "type": "array"
+    },
+    "remainingX64": {
+      "type": "array"
+    },
+    "classifications": {
+      "type": "array"
+    },
+    "pseudoReloc": {
+      "type": "array"
+    },
+    "runtime": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "errors": {
+      "type": "array"
+    }
+  }
+}
