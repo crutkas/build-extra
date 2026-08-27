@@ -684,7 +684,7 @@ jobs:
             --sdk=.sdk \
             --out=sdk-combined \
             build-installers &&
-          GFW_ARM64_VIM_MEASURE=1 ./please.sh create-sdk-artifact \
+          ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-integrated \

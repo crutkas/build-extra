@@ -21,3 +21,6 @@ The `measuring` state permits asset consumption only when
 Git byte deltas, the lock advances atomically to `admitted`.
 `-TestMode` is reserved for synthetic temporary fixtures in
 `t/check-arm64-vim-integration.ps1`; it must not be used with release bytes.
+
+The admitted lock records an installer delta of 1,681,284 bytes and a Portable
+Git delta of 1,100,461 bytes. MinGit and BusyBox MinGit remain unchanged.

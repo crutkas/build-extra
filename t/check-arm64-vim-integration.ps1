@@ -237,9 +237,23 @@ try {
             "-Scanner", $scanner, "-RequireAdmission"
         )
     } "public immutable release locator is unresolved"
+    $admittedProbe = Invoke-ProductionInstaller @(
+        "-Phase", "Probe", "-Root", $unresolvedRoot, "-Lock", $sourceLock,
+        "-Scanner", $scanner, "-RequireAdmission"
+    )
+    if (@($admittedProbe) -notcontains "admitted") {
+        throw "The repository lock is not admitted"
+    }
+
+    $measuringData = Get-Content -Raw -LiteralPath $sourceLock | ConvertFrom-Json
+    $measuringData.status = "measuring"
+    $measuringData.expected.distributionBytesDelta.installer = $null
+    $measuringData.expected.distributionBytesDelta.portable = $null
+    $measuringLock = Join-Path $trash "measuring.json"
+    Save-Lock $measuringData $measuringLock
     Assert-Fails {
         Invoke-ProductionInstaller @(
-            "-Phase", "Probe", "-Root", $unresolvedRoot, "-Lock", $sourceLock,
+            "-Phase", "Probe", "-Root", $unresolvedRoot, "-Lock", $measuringLock,
             "-Scanner", $scanner, "-RequireAdmission"
         )
     } "requires explicit measurement mode"
@@ -423,15 +437,25 @@ try {
     $unchanged = Join-Path $trash "unchanged-product.bin"
     "unchanged" | Set-Content -Encoding ascii -LiteralPath $unchanged
     $distributionReport = Join-Path $trash "distribution.json"
-    & $distributionChecker -Lock $sourceLock `
+    & $distributionChecker -Lock $measuringLock `
         -BaseInstaller $unchanged -IntegratedInstaller $unchanged `
         -BasePortable $unchanged -IntegratedPortable $unchanged `
         -BaseMinGit $unchanged -IntegratedMinGit $unchanged `
         -BaseBusyBoxMinGit $unchanged -IntegratedBusyBoxMinGit $unchanged `
         -Output $distributionReport
-    if ($LASTEXITCODE -ne 0 -or
+    if (-not $? -or
         (Get-Content -Raw -LiteralPath $distributionReport | ConvertFrom-Json).mode -ne "measurement") {
         throw "The measurement distribution impact check failed"
+    }
+    & $distributionChecker -Lock $case.LockPath `
+        -BaseInstaller $unchanged -IntegratedInstaller $unchanged `
+        -BasePortable $unchanged -IntegratedPortable $unchanged `
+        -BaseMinGit $unchanged -IntegratedMinGit $unchanged `
+        -BaseBusyBoxMinGit $unchanged -IntegratedBusyBoxMinGit $unchanged `
+        -Output $distributionReport
+    if (-not $? -or
+        (Get-Content -Raw -LiteralPath $distributionReport | ConvertFrom-Json).mode -ne "final") {
+        throw "The final distribution impact check failed"
     }
 
     Write-Host "ARM64 Vim fail-closed integration checks passed"
