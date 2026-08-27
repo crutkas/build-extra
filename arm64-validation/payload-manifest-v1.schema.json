@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/payload-manifest-v1.schema.json",
+  "title": "Git for Windows ARM64 preview payload manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "previewId", "scope", "lock", "files"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "git-for-windows/arm64-preview-payload-manifest" },
+    "previewId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "excludedPrefixes"],
+      "properties": {
+        "root": { "const": "." },
+        "excludedPrefixes": {
+          "type": "array",
+          "prefixItems": [{ "const": "preview-evidence/" }],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        }
+      }
+    },
+    "lock": { "$ref": "#/$defs/fileBinding" },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/member" }
+    },
+    "archives": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/archiveEvidence" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!preview-evidence/)(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?/)(?!.*//)(?!.*\\\\).+[^/]$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256"],
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "type", "bytes", "sha256", "linkTarget", "owner"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "type": { "enum": ["file", "symlink"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "linkTarget": { "type": ["string", "null"] },
+        "owner": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "file" } } },
+          "then": {
+            "properties": {
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "linkTarget": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "bytes": { "const": 0 },
+              "sha256": { "type": "null" },
+              "linkTarget": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "archiveEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "bytes", "sha256", "owner", "members"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "format": { "enum": ["zip", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "owner": { "type": "string", "minLength": 1 },
+        "members": { "type": "array", "items": { "$ref": "#/$defs/member" } }
+      }
+    }
+  }
+}

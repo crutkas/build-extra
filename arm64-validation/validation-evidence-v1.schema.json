@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/validation-evidence-v1.schema.json",
+  "title": "Authoritative Git for Windows ARM64 validation evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "mode", "previewId", "validator", "bindings", "portableRoot", "peInventory", "closure", "archiveChecks", "broaderNonCompliantBinaries", "unresolvedPackages", "violations", "result", "ready", "exitCode", "runtime"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "git-for-windows/arm64-preview-validation-evidence" },
+    "mode": { "enum": ["preview", "final"] },
+    "previewId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "files", "inventoryAlgorithm"],
+      "properties": {
+        "repository": { "const": "crutkas/build-extra" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "files": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/fileBinding" }
+        },
+        "inventoryAlgorithm": { "const": "gfw-arm64-preview-root-inventory-v1" }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lock", "provenance", "payloadManifest", "runtimeEvidence"],
+      "properties": {
+        "lock": {
+          "allOf": [
+            { "$ref": "#/$defs/fileBinding" },
+            { "properties": { "path": { "const": "bundle-lock.v1.json" } } }
+          ]
+        },
+        "provenance": {
+          "allOf": [
+            { "$ref": "#/$defs/fileBinding" },
+            { "properties": { "path": { "const": "deterministic-provenance.v1.json" } } }
+          ]
+        },
+        "payloadManifest": {
+          "allOf": [
+            { "$ref": "#/$defs/fileBinding" },
+            { "properties": { "path": { "const": "payload-manifest.v1.json" } } }
+          ]
+        },
+        "runtimeEvidence": {
+          "allOf": [
+            { "$ref": "#/$defs/fileBinding" },
+            { "properties": { "path": { "const": "runtime-evidence.v1.json" } } }
+          ]
+        }
+      }
+    },
+    "portableRoot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "inventorySha256", "inventoryAlgorithm", "entryCount", "fileCount", "linkCount", "entries"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "inventorySha256": { "$ref": "#/$defs/sha256" },
+        "inventoryAlgorithm": { "const": "gfw-arm64-preview-root-inventory-v1" },
+        "entryCount": { "type": "integer", "minimum": 0 },
+        "fileCount": { "type": "integer", "minimum": 0 },
+        "linkCount": { "type": "integer", "minimum": 0 },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "type", "bytes", "sha256", "linkTarget", "owner"],
+            "properties": {
+              "path": { "$ref": "#/$defs/path" },
+              "type": { "enum": ["file", "symlink"] },
+              "bytes": { "type": "integer", "minimum": 0 },
+              "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+              "linkTarget": { "type": ["string", "null"] },
+              "owner": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "peInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "count", "counts", "clrCounts"],
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "architecture", "clrKind", "acceptable", "inClosure"],
+            "properties": {
+              "path": { "$ref": "#/$defs/path" },
+              "architecture": { "enum": ["arm64", "anycpu", "x64", "x86", "unknown"] },
+              "clrKind": { "enum": ["native", "anycpu", "anycpu-prefer32", "clr-x86", "clr-x64", "clr-arm64", "unknown"] },
+              "acceptable": { "type": "boolean" },
+              "inClosure": { "type": "boolean" }
+            }
+          }
+        },
+        "count": { "type": "integer", "minimum": 0 },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["arm64", "anycpu", "x64", "x86", "unknown"],
+          "properties": {
+            "arm64": { "$ref": "#/$defs/count" },
+            "anycpu": { "$ref": "#/$defs/count" },
+            "x64": { "$ref": "#/$defs/count" },
+            "x86": { "$ref": "#/$defs/count" },
+            "unknown": { "$ref": "#/$defs/count" }
+          }
+        },
+        "clrCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["native", "anycpu", "anycpu-prefer32", "clr-x86", "clr-x64", "clr-arm64", "unknown"],
+          "properties": {
+            "native": { "$ref": "#/$defs/count" },
+            "anycpu": { "$ref": "#/$defs/count" },
+            "anycpu-prefer32": { "$ref": "#/$defs/count" },
+            "clr-x86": { "$ref": "#/$defs/count" },
+            "clr-x64": { "$ref": "#/$defs/count" },
+            "clr-arm64": { "$ref": "#/$defs/count" },
+            "unknown": { "$ref": "#/$defs/count" }
+          }
+        }
+      }
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entries", "count"],
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/path" } },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "archiveChecks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared", "archives", "inventory"],
+      "properties": {
+        "declared": { "type": "integer", "minimum": 0 },
+        "archives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "format", "declaredMembers", "verifiedMembers", "verified"],
+            "properties": {
+              "path": { "$ref": "#/$defs/path" },
+              "format": { "enum": ["zip", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst"] },
+              "declaredMembers": { "$ref": "#/$defs/count" },
+              "verifiedMembers": { "$ref": "#/$defs/count" },
+              "verified": { "type": "boolean" }
+            }
+          }
+        },
+        "inventory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/archiveEvidence" }
+        }
+      }
+    },
+    "broaderNonCompliantBinaries": { "type": "array", "items": { "$ref": "#/$defs/path" } },
+    "unresolvedPackages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "slot"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "slot": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "violations": { "type": "array", "items": { "$ref": "#/$defs/violation" } },
+    "result": { "enum": ["pass", "not-ready", "fail"] },
+    "ready": { "type": "boolean" },
+    "exitCode": { "enum": [0, 2, 3] },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "complete", "droppedEvents", "hostArchitecture", "startedAt", "completedAt", "smokeCount", "processCount", "moduleCount", "reverifiedBinaries"],
+      "properties": {
+        "method": { "const": "etw-image-load" },
+        "complete": { "type": "boolean" },
+        "droppedEvents": { "type": "integer", "minimum": 0 },
+        "hostArchitecture": { "type": "string" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "smokeCount": { "type": "integer", "minimum": 0 },
+        "processCount": { "type": "integer", "minimum": 0 },
+        "moduleCount": { "type": "integer", "minimum": 0 },
+        "reverifiedBinaries": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "result": { "const": "pass" },
+        "ready": { "const": true },
+        "exitCode": { "const": 0 }
+      },
+      "required": ["result", "ready", "exitCode"]
+    },
+    {
+      "properties": {
+        "result": { "const": "not-ready" },
+        "mode": { "const": "preview" },
+        "ready": { "const": false },
+        "exitCode": { "const": 2 }
+      },
+      "required": ["result", "mode", "ready", "exitCode"]
+    },
+    {
+      "properties": {
+        "result": { "const": "fail" },
+        "ready": { "const": false },
+        "exitCode": { "const": 3 }
+      },
+      "required": ["result", "ready", "exitCode"]
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!preview-evidence/)(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?/)(?!.*//)(?!.*\\\\).+[^/]$"
+    },
+    "fileBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "count": { "type": "integer", "minimum": 0 },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "type", "bytes", "sha256", "linkTarget", "owner"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "type": { "enum": ["file", "symlink"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+        "linkTarget": { "type": ["string", "null"] },
+        "owner": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "file" } } },
+          "then": {
+            "properties": {
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "linkTarget": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "bytes": { "const": 0 },
+              "sha256": { "type": "null" },
+              "linkTarget": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "archiveEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "format", "bytes", "sha256", "owner", "members"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "format": { "enum": ["zip", "tar", "tar.gz", "tar.bz2", "tar.xz", "tar.zst"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "owner": { "type": "string", "minLength": 1 },
+        "members": { "type": "array", "items": { "$ref": "#/$defs/member" } }
+      }
+    },
+    "violation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "path", "detail"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "path": { "type": "string" },
+        "detail": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -12,15 +12,20 @@
 #
 # -ArchitectureOnly writes one tab-separated FILE/ARCHITECTURE row for
 # every PE file and silently skips non-PE files.
+# -FailOnMalformedPe makes malformed MZ/PE input fail the inventory instead of
+# being silently skipped.
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$ArchitectureOnly,
+    [switch]$FailOnMalformedPe,
     [string]$Root,
     [string]$FileList,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$Path
 )
+
+$hadFailure = $false
 
 if ($FileList) {
     $inputFiles = Get-Content -LiteralPath $FileList
@@ -44,6 +49,7 @@ foreach ($file in $inputFiles) {
         }
     } catch {
         Write-Error "pe-imports: ${file}: cannot read file"
+        $hadFailure = $true
         continue
     }
 
@@ -67,9 +73,10 @@ foreach ($file in $inputFiles) {
         if ($peSignatureOffset + 24 -gt $bytes.Length -or
             $bytes[$peSignatureOffset] -ne 0x50 -or $bytes[$peSignatureOffset+1] -ne 0x45 -or
             $bytes[$peSignatureOffset+2] -ne 0 -or $bytes[$peSignatureOffset+3] -ne 0) {
-            if (-not $ArchitectureOnly) {
+            if (-not $ArchitectureOnly -or $FailOnMalformedPe) {
                 Write-Error "pe-imports: ${file}: bad PE signature"
             }
+            if ($FailOnMalformedPe) { $hadFailure = $true }
             continue
         }
         $peOffset = $peSignatureOffset + 4
@@ -100,11 +107,12 @@ foreach ($file in $inputFiles) {
             }
         }
         if ($dataDirBase -eq 0) {
-            if ($ArchitectureOnly) {
+            if ($ArchitectureOnly -and -not $FailOnMalformedPe) {
                 Write-Output "${file}$([char]9)x86$([char]9)0x014C"
             } else {
                 Write-Error "pe-imports: ${file}: unknown optional header magic 0x$($magic.ToString('X4'))"
             }
+            if ($FailOnMalformedPe) { $hadFailure = $true }
             continue
         }
         $optHdrEnd = $optHdrOff + $optHdrSize
@@ -221,6 +229,9 @@ foreach ($file in $inputFiles) {
         }
     } catch {
         Write-Error "pe-imports: ${file}: $_"
+        $hadFailure = $true
         continue
     }
 }
+
+if ($hadFailure) { exit 1 }

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/deterministic-provenance-v1.schema.json",
+  "title": "Git for Windows ARM64 deterministic preview provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "previewId", "lock", "payload", "assembler", "validator", "inputs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "git-for-windows/arm64-preview-provenance" },
+    "previewId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "lock": {
+      "allOf": [
+        { "$ref": "#/$defs/pathSha" },
+        { "properties": { "path": { "const": "bundle-lock.v1.json" } } }
+      ]
+    },
+    "payload": {
+      "allOf": [
+        { "$ref": "#/$defs/pathSha" },
+        { "properties": { "path": { "const": "payload-manifest.v1.json" } } }
+      ]
+    },
+    "assembler": { "$ref": "#/$defs/revision" },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "files"],
+      "properties": {
+        "repository": { "const": "crutkas/build-extra" },
+        "commit": { "$ref": "#/$defs/commit" },
+        "files": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "$ref": "#/$defs/file" }
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "bytes", "sha256"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "path": { "$ref": "#/$defs/path" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?/)(?!.*//)(?!.*\\\\).+[^/]$"
+    },
+    "pathSha": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/path" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 3 },
+        "commit": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "enum": ["validate-arm64-preview.ps1", "pe-imports.ps1"] },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

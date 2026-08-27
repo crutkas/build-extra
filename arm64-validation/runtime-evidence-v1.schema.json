@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/runtime-evidence-v1.schema.json",
+  "title": "Git for Windows ARM64 native process/module evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "previewId", "mode", "binding", "collection", "smokes", "processes", "modules"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "kind": { "const": "git-for-windows/arm64-preview-runtime-evidence" },
+    "previewId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$" },
+    "mode": { "enum": ["preview", "final"] },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lockSha256", "provenanceSha256", "payloadManifestSha256", "rootInventorySha256"],
+      "properties": {
+        "lockSha256": { "$ref": "#/$defs/sha256" },
+        "provenanceSha256": { "$ref": "#/$defs/sha256" },
+        "payloadManifestSha256": { "$ref": "#/$defs/sha256" },
+        "rootInventorySha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "complete", "droppedEvents", "startedAt", "completedAt", "hostArchitecture"],
+      "properties": {
+        "method": { "const": "etw-image-load" },
+        "complete": { "const": true },
+        "droppedEvents": { "const": 0 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "hostArchitecture": { "const": "arm64" }
+      }
+    },
+    "smokes": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "command", "exitCode", "succeeded", "processPid"],
+        "properties": {
+          "name": { "enum": ["shell", "git"] },
+          "command": { "type": "string", "minLength": 1 },
+          "exitCode": { "const": 0 },
+          "succeeded": { "const": true },
+          "processPid": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "processes": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pid", "path", "architecture", "modulesComplete", "modules"],
+        "properties": {
+          "pid": { "type": "integer", "minimum": 1 },
+          "path": { "$ref": "#/$defs/path" },
+          "architecture": { "enum": ["arm64", "x64", "x86", "unknown"] },
+          "modulesComplete": { "type": "boolean" },
+          "modules": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "payloadPath", "origin", "architecture", "bytes", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "payloadPath": { "oneOf": [{ "$ref": "#/$defs/path" }, { "type": "null" }] },
+          "origin": { "enum": ["payload", "windows"] },
+          "architecture": { "enum": ["arm64", "x64", "x86", "unknown"] },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!preview-evidence/)(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.?/)(?!.*//)(?!.*\\\\).+[^/]$"
+    }
+  }
+}
