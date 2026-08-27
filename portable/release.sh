@@ -122,9 +122,10 @@ die "Could not determine the path of the system config"
 LIST="$(ARCH=$ARCH ETC_GITCONFIG="$etc_gitconfig" \
 	PACKAGE_VERSIONS_FILE="$SCRIPT_PATH"/root/etc/package-versions.txt \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@" |
-	grep -v "^$etc_gitconfig$" |
-	sort -u)" ||
+	grep -v "^$etc_gitconfig$")" ||
 die "Could not generate file list"
+LIST="$(printf '%s\n' "$LIST" | sort -u)" ||
+die "Could not normalize file list"
 
 mkdir -p "$SCRIPT_PATH/root/${etc_gitconfig%/*}" &&
 cp /"$etc_gitconfig" "$SCRIPT_PATH/root/$etc_gitconfig" &&
