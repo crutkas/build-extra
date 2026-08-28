@@ -12,6 +12,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: check ARM64 OpenSSH integration
+        shell: bash
+        run: ./t/check-arm64-openssh-integration.sh
       - name: determine packages to build
         id: set-matrix
         shell: bash

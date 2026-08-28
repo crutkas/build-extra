@@ -18,6 +18,7 @@ $packageVersion = "10.0.0.0-2"
 $expectedPackageHash = "26f302a73a58395de8d7741077365d2e0f296343358a5f62bc5385ec8c04d2f8"
 $expectedConfigSourceHash = "f783f00ce880ead34b01d6db20f35f0e9141e199ffc32ca14cd330a3165853a4"
 $expectedConfigHash = "8afa8d96895abae6a4770bde0916b985b28bef5979b016da5621d65f92e1c3de"
+$privatePacmanConfig = "[options]`nArchitecture = aarch64`nSigLevel = Never`nLocalFileSigLevel = Never`n"
 $trash = Join-Path ([IO.Path]::GetTempPath()) "arm64-openssh-package-$PID"
 
 function Get-Sha256([string]$Path) {
@@ -39,6 +40,59 @@ function Assert-SetEqual([string[]]$Expected, [string[]]$Actual, [string]$Messag
     if ($difference) {
         throw "$Message`: $($difference | Out-String)"
     }
+}
+
+function New-PrivatePacmanContext([string]$Root) {
+    $privateRoot = Join-Path $trash "pacman"
+    $cache = Join-Path $privateRoot "cache"
+    $hooks = Join-Path $privateRoot "hooks"
+    $gpg = Join-Path $privateRoot "gnupg"
+    New-Item -ItemType Directory -Force -Path $cache, $hooks, $gpg | Out-Null
+    $config = Join-Path $privateRoot "pacman.conf"
+    [IO.File]::WriteAllText(
+        $config,
+        $privatePacmanConfig,
+        [Text.UTF8Encoding]::new($false)
+    )
+    return [pscustomobject]@{
+        Pacman = Join-Path $Root "usr\bin\pacman.exe"
+        Root = $Root
+        DbPath = Join-Path $Root "var\lib\pacman"
+        Cache = $cache
+        Log = Join-Path $privateRoot "pacman.log"
+        Config = $config
+        Hooks = $hooks
+        Gpg = $gpg
+    }
+}
+
+function Invoke-TargetRootPacman(
+    [pscustomobject]$Context,
+    [string[]]$PacmanArguments
+) {
+    if (-not (Test-Path -LiteralPath $Context.Config) -or
+        -not [string]::Equals(
+            [IO.File]::ReadAllText($Context.Config),
+            $privatePacmanConfig,
+            [StringComparison]::Ordinal
+        )) {
+        throw "Private Pacman configuration is missing or invalid: $($Context.Config)"
+    }
+    $arguments = @(
+        "--root", $Context.Root,
+        "--dbpath", $Context.DbPath,
+        "--cachedir", $Context.Cache,
+        "--logfile", $Context.Log,
+        "--config", $Context.Config,
+        "--hookdir", $Context.Hooks,
+        "--gpgdir", $Context.Gpg
+    ) + $PacmanArguments
+    $output = @(& $Context.Pacman @arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "Pacman exited with status $exitCode`: $($output -join ' | ')"
+    }
+    return $output
 }
 
 function Test-PeFiles([string]$Root, [string[]]$RelativePaths) {
@@ -407,9 +461,9 @@ try {
 
     if ($SdkRoot) {
         $SdkRoot = (Resolve-Path -LiteralPath $SdkRoot).Path
-        $pacman = Join-Path $SdkRoot "usr\bin\pacman.exe"
-        $installed = @(& $pacman --root $SdkRoot -Q $packageName 2>$null)
-        if ($LASTEXITCODE -ne 0 -or $installed -ne "$packageName $packageVersion") {
+        $pacmanContext = New-PrivatePacmanContext $SdkRoot
+        $installed = @(Invoke-TargetRootPacman $pacmanContext @("-Q", $packageName))
+        if ($installed -ne "$packageName $packageVersion") {
             throw "The SDK does not own the expected native package: $installed"
         }
         $msysOpenSsh = @(Get-ChildItem -LiteralPath (
@@ -418,10 +472,7 @@ try {
         if ($msysOpenSsh.Count -ne 0) {
             throw "The SDK still owns MSYS openssh"
         }
-        $qkk = @(& $pacman --root $SdkRoot -Qkk $packageName 2>&1)
-        if ($LASTEXITCODE -ne 0) {
-            throw "pacman -Qkk failed: $($qkk -join ' | ')"
-        }
+        $null = @(Invoke-TargetRootPacman $pacmanContext @("-Qkk", $packageName))
         $installedDesc = Join-Path $SdkRoot (
             "var\lib\pacman\local\$packageName-$packageVersion\desc"
         )
@@ -432,7 +483,7 @@ try {
             $descLines[$providesIndex + 1] -ne "openssh") {
             throw "The installed native package does not satisfy the OpenSSH dependency"
         }
-        $ownedFiles = @(& $pacman --root $SdkRoot -Ql $packageName |
+        $ownedFiles = @(Invoke-TargetRootPacman $pacmanContext @("-Ql", $packageName) |
             ForEach-Object {
                 if ($_ -match "^[^ ]+ /(.+[^/])$") {
                     $Matches[1]
@@ -461,8 +512,10 @@ try {
                 throw "Legacy OpenSSH path remains in the SDK: $relative"
             }
         }
-        $pageantFiles = @(& $pacman --root $SdkRoot -Ql ssh-pageant 2>&1)
-        if ($LASTEXITCODE -ne 0 -or -not ($pageantFiles -match "/usr/bin/ssh-pageant\.exe$")) {
+        $pageantFiles = @(
+            Invoke-TargetRootPacman $pacmanContext @("-Ql", "ssh-pageant")
+        )
+        if (-not ($pageantFiles -match "/usr/bin/ssh-pageant\.exe$")) {
             throw "ssh-pageant is no longer owned separately"
         }
     }
