@@ -2,13 +2,15 @@ name: ARM64 PR governance
 
 # Bootstrap: PR #17 cannot self-admit because main lacks this trusted gate.
 # It requires an independent read-only audit of the exact diff before merge.
-# Session trailers: the Copilot-Session identifier written into a commit
-# must be read from the CLI session-state folder set on disk, and must never
-# be taken from the prompt header, which supplies an app project-session
-# identifier from a different namespace. Both namespaces are lowercase
-# UUIDs, so a wrong identifier is invisible on inspection. The only check is
-# mechanical: the identifier either exists as a session-state folder or it
-# does not.
+# Session trailers: take the Copilot-Session identifier from the
+# COPILOT_AGENT_SESSION_ID environment variable and verify it resolves to an
+# existing directory under the CLI session-state folder before committing.
+# Never take it from the prompt header, and never from the mc_session_id or
+# mc_task_id fields of session-state workspace.yaml; those are app-side
+# identifiers, and workspace.yaml carries them next to the correct id field.
+# Every one of these is a lowercase UUID, so a wrong value is invisible on
+# inspection and only the resolution check catches it: the identifier either
+# exists as a session-state directory or it does not.
 on: pull_request_target
 
 permissions:
