@@ -18,9 +18,9 @@ try {
 	$guardRegex = [regex]::new(
 		$guardPattern,
 		[Text.RegularExpressions.RegexOptions]::CultureInvariant)
-	$matches = $guardRegex.Matches($source)
-	if ($matches.Count -ne 1) {
-		throw "Expected exactly one production ADS rejection; found $($matches.Count)"
+	$guardMatches = $guardRegex.Matches($source)
+	if ($guardMatches.Count -ne 1) {
+		throw "Expected exactly one production ADS rejection; found $($guardMatches.Count)"
 	}
 	$mutated = $guardRegex.Replace($source, '', 1)
 	[IO.File]::WriteAllText(
