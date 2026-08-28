@@ -1,0 +1,217 @@
+{
+  "schemaVersion": 1,
+  "repository": "crutkas/build-extra",
+  "expectedCopilotSession": "b6f1996e-6689-4aca-92fc-07e4d6815369",
+  "bootstrap": {
+    "pullRequest": 17,
+    "selfAdmission": false,
+    "requiredReview": "independent-read-only-audit",
+    "commit": "737ea2e89258b19defcf347af37eeac64cf16e2c",
+    "session": "b3c52e9a-e880-4744-82aa-225db6ff93ef"
+  },
+  "payloadPolicy": {
+    "pullRequestExecution": "disabled",
+    "publication": "disabled",
+    "admittedExecution": "protected-exact-commit-only"
+  },
+  "ancestryManifest": {
+    "path": ".github/arm64-denied-ancestry.json",
+    "digest": "sha256:d9f4968a3a8e4f4822f4a46f485270a95b749a76539c40b53785a1162d7383c3"
+  },
+  "trustedFiles": [
+    {
+      "path": ".github/workflows/add-release-note.yml",
+      "digest": "sha256:f24ccfc2216c5392b15590b24125eb82db6a7c6777293376cc2004885f903351"
+    },
+    {
+      "path": "add-release-note.js",
+      "digest": "sha256:d8bbcbaee1c951d3fec3c2fb81cea994016c323f3fca078a2ce74d9e98343428"
+    }
+  ],
+  "releaseLock": null,
+  "actions": [
+    {
+      "identity": "actions/checkout",
+      "commit": "11d5960a326750d5838078e36cf38b85af677262",
+      "tree": "f8a7b72dc00648d050099727d25ca92a43ad1162",
+      "source": {
+        "type": "lightweight-tag",
+        "ref": "refs/tags/v4.4.0",
+        "tagObject": null
+      },
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "disposition": "verified"
+      }
+    },
+    {
+      "identity": "msys2/setup-msys2",
+      "commit": "66cd2cce69caa17b53920067426061ca1de3a884",
+      "tree": "e44409e0abb209473d580a1de6f1640312a2ec11",
+      "source": {
+        "type": "lightweight-tag",
+        "ref": "refs/tags/v2.32.0",
+        "tagObject": null
+      },
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "disposition": "policy-required-exception"
+      }
+    },
+    {
+      "identity": "actions/upload-artifact",
+      "commit": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+      "tree": "90fba5b2fb462e7dd5b3b810757b73327d2d66bc",
+      "source": {
+        "type": "lightweight-tag",
+        "ref": "refs/tags/v4.6.2",
+        "tagObject": null
+      },
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "disposition": "verified"
+      }
+    },
+    {
+      "identity": "actions/download-artifact",
+      "commit": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+      "tree": "064a6e5489b0f9f42ede63b1262704c4e73e4093",
+      "source": {
+        "type": "lightweight-tag",
+        "ref": "refs/tags/v4.3.0",
+        "tagObject": null
+      },
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "disposition": "verified"
+      }
+    },
+    {
+      "identity": "git-for-windows/setup-git-for-windows-sdk",
+      "commit": "335917db02da4280d3d5e87915d7b86196677f9f",
+      "tree": "f616ede9f2e8d602cb182254ecffdac324ed6212",
+      "source": {
+        "type": "branch",
+        "ref": "refs/heads/v2",
+        "tagObject": null
+      },
+      "verification": {
+        "verified": false,
+        "reason": "unsigned",
+        "disposition": "unsigned-source-ref-review"
+      }
+    },
+    {
+      "identity": "actions/github-script",
+      "commit": "3a2844b7e9c422d3c10d287c895573f7108da1b3",
+      "tree": "23894d36d73527d5502aa7b2b9d53041f9e56f4e",
+      "source": {
+        "type": "annotated-tag",
+        "ref": "refs/tags/v9",
+        "tagObject": "373c709c69115d41ff229c7e5df9f8788daa9553"
+      },
+      "verification": {
+        "verified": true,
+        "reason": "valid",
+        "disposition": "verified"
+      }
+    }
+  ],
+  "deniedCampaignCommits": [
+    {
+      "source": "refs/heads/crutkas-arm64-bundle-validator-303",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+      "tip": "61b465b368d208025bf4b57227358e3f08f6b058",
+      "commitCount": 5
+    },
+    {
+      "source": "refs/heads/crutkas-arm64-busybox-packaging",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "50de8f12409d8cc8e16aef190629073db1a8606d",
+      "commitCount": 9
+    },
+    {
+      "source": "refs/heads/crutkas-arm64-dos2unix",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "bc3ec5555a95355dfc6832dcd5e38ada98ff6e45",
+      "commitCount": 93
+    },
+    {
+      "source": "refs/heads/crutkas-arm64-native-leaf-tools",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "39ffc22208aa99e287a9f433431fb9a56f443b62",
+      "commitCount": 2
+    },
+    {
+      "source": "refs/heads/crutkas-arm64-ownership-backlog",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+      "tip": "3ef6d935092dc6ab2e376bcd0ffc74fa52dac39d",
+      "commitCount": 4
+    },
+    {
+      "source": "refs/heads/crutkas-arm64-payload-inventory",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+      "tip": "9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19",
+      "commitCount": 3
+    },
+    {
+      "source": "refs/heads/crutkas-combine-arm64-payloads",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "eaf77f6d84ee33119ae2bcba1460712c67cbf6f8",
+      "commitCount": 60
+    },
+    {
+      "source": "refs/heads/crutkas-default-arm64-openssh",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "f5fc22b61661d339583cb1b64f714c211448e1ed",
+      "commitCount": 41
+    },
+    {
+      "source": "refs/heads/crutkas-integrate-arm64-openssh",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "ec2f5e14bb19c3a0f68b01d0fb8ee5378fb9116c",
+      "commitCount": 11
+    },
+    {
+      "source": "refs/heads/crutkas-integrate-native-arm64-shell",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "f3c0077891ec5686ad6ed27b1e802850e4550963",
+      "commitCount": 60
+    },
+    {
+      "source": "refs/heads/crutkas-integrate-native-arm64-vim",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "b3e048e2d3a941be2e971aeb670f2c4c87cff626",
+      "commitCount": 80
+    },
+    {
+      "source": "refs/heads/crutkas-native-arm64-gawk",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829",
+      "commitCount": 232
+    },
+    {
+      "source": "pull/15/head",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
+      "tip": "7731cd019b7fa0c8e77b99cecced2a93c5962e4f",
+      "commitCount": 10
+    }
+  ]
+}
