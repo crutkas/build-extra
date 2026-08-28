@@ -13,6 +13,7 @@ import sys
 import unicodedata
 import zlib
 from dataclasses import asdict, dataclass
+from fractions import Fraction
 
 try:
     from compression import zstd
@@ -20,8 +21,8 @@ except ImportError:
     zstd = None
 
 
-SCHEMA = "git-for-windows.archive-audit/v1"
-COMPARISON_SCHEMA = "git-for-windows.archive-comparison/v1"
+SCHEMA = "git-for-windows.archive-audit/v2"
+COMPARISON_SCHEMA = "git-for-windows.archive-comparison/v2"
 SEVEN_ZIP_SIGNATURE = b"7z\xbc\xaf'\x1c"
 MAX_SFX_PREFIX_LENGTH = 16 * 1024 * 1024
 MAX_SFX_OVERLAY_SCAN_BYTES = 16 * 1024 * 1024
@@ -63,6 +64,8 @@ UNIX_FILE_TYPES = {
 UNIX_SPECIAL_FILE_TYPES = (S_IFIFO, S_IFCHR, S_IFBLK, S_IFSOCK)
 ZIP_UNIX_CREATOR_SYSTEMS = (3, 19)
 SEVEN_ZIP_UNIX_EXTENSION = 0x8000
+MAX_LIMIT_VALUE = (1 << 63) - 1
+MAX_COMPRESSION_RATIO = 1 << 32
 WINDOWS_RESERVED = re.compile(
     r"^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|"
     r"com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\..*)?$",
@@ -343,6 +346,44 @@ def physical_partition(data, ranges, owner):
     }
 
 
+def validate_limit(name, value, minimum, maximum, allow_fraction=False):
+    """Validate a configured limit without ever overflowing later math.
+
+    `math.isfinite` raises OverflowError on an int too large to convert to a
+    float, so integers are never handed to it. Every accepted value is
+    bounded so that the integer arithmetic it later participates in stays
+    exact and finite.
+    """
+    if isinstance(value, bool):
+        reject("INVALID_LIMIT", f"{name} must not be a boolean", limit=name)
+    if isinstance(value, int):
+        pass
+    elif allow_fraction and isinstance(value, float):
+        if not math.isfinite(value):
+            reject("INVALID_LIMIT", f"{name} must be a finite number", limit=name)
+    else:
+        reject(
+            "INVALID_LIMIT",
+            f"{name} must be {'a finite number' if allow_fraction else 'an integer'}",
+            limit=name,
+            valueType=type(value).__name__,
+        )
+    if value < minimum or value > maximum:
+        reject(
+            "INVALID_LIMIT",
+            f"{name} is outside the supported range",
+            limit=name,
+            minimum=minimum,
+            maximum=maximum,
+        )
+
+
+def exact_ratio(value):
+    """Represent a validated compression ratio as an exact bounded rational."""
+    fraction = Fraction(value)
+    return fraction.numerator, fraction.denominator
+
+
 class PathRegistry:
     def __init__(self):
         self.raw = {}
@@ -411,6 +452,8 @@ class AuditState:
         self.signature_occurrences = 0
         self.signature_candidates = 0
         self.envelope_work = 0
+        self.overlay_scan_bytes = 0
+        self.ratio_numerator, self.ratio_denominator = exact_ratio(limits.max_compression_ratio)
 
     def totals(self):
         return {
@@ -418,8 +461,24 @@ class AuditState:
             "expandedBytes": self.total_expanded,
             "sfxSignatureOccurrences": self.signature_occurrences,
             "sfxSignatureCandidates": self.signature_candidates,
+            "sfxOverlayScanBytes": self.overlay_scan_bytes,
             "envelopeWorkBytes": self.envelope_work,
         }
+
+    def charge_overlay_scan(self, length, offset):
+        """Charge a signature search span before the search runs."""
+        if length < 0:
+            reject("INVALID_LENGTH", "Overlay scan span is negative", offset=offset)
+        if self.overlay_scan_bytes + length > self.limits.max_sfx_overlay_scan_bytes:
+            reject(
+                "SFX_OVERLAY_SCAN_LIMIT",
+                "MZ/PE overlay scanning exceeds the configured scan allowance",
+                offset=offset,
+                requestedLength=length,
+                total=self.overlay_scan_bytes + length,
+                limit=self.limits.max_sfx_overlay_scan_bytes,
+            )
+        self.overlay_scan_bytes += length
 
     def charge_signature_occurrence(self, offset):
         self.signature_occurrences += 1
@@ -479,7 +538,7 @@ class AuditState:
     def check_expansion(self, expanded, stored, owner):
         if expanded < 0 or stored < 0:
             reject("INVALID_LENGTH", "Archive record declares a negative length", owner=owner)
-        if expanded and expanded / max(1, stored) > self.limits.max_compression_ratio:
+        if expanded and expanded * self.ratio_denominator > max(1, stored) * self.ratio_numerator:
             reject(
                 "COMPRESSION_RATIO_LIMIT",
                 "Archive record exceeds the configured compression ratio",
@@ -502,6 +561,10 @@ class AuditState:
 
     def remaining_expansion(self):
         return self.limits.max_total_expanded_bytes - self.total_expanded
+
+    def ratio_ceiling(self, stored):
+        """Exact integer expansion ceiling; never a float multiplication."""
+        return (max(1, stored) * self.ratio_numerator) // self.ratio_denominator
 
 
 def member_record(
@@ -578,7 +641,8 @@ class BinaryReader:
             reject(code, "Structured archive header has undeclared trailing bytes", offset=self.absolute(), length=self.remaining())
 
 
-def read_bit_vector(reader, count):
+def read_bit_vector(reader, count, strict=True):
+    """Read a 7z bit vector, requiring canonical zero padding by default."""
     result = []
     mask = 0
     current = 0
@@ -588,6 +652,15 @@ def read_bit_vector(reader, count):
             mask = 0x80
         result.append(bool(current & mask))
         mask >>= 1
+    if strict and mask:
+        padding = current & (2 * mask - 1)
+        if padding:
+            reject(
+                "NONCANONICAL_7Z_BIT_VECTOR",
+                "7z bit vector has nonzero padding bits",
+                count=count,
+                paddingBits=f"{padding:02x}",
+            )
     return result
 
 
@@ -610,24 +683,28 @@ class ArchiveAuditor:
             "maxEnvelopeWorkBytes": self.limits.max_envelope_work_bytes,
             "maxCertificateEntries": self.limits.max_certificate_entries,
         }
-        if (
-            isinstance(self.limits.max_depth, bool)
-            or not isinstance(self.limits.max_depth, int)
-            or not 0 <= self.limits.max_depth <= 128
-        ):
-            reject("INVALID_LIMIT", "maxDepth must be an integer between 0 and 128")
+        validate_limit("maxDepth", self.limits.max_depth, 0, 128)
         for name, value in integer_limits.items():
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                reject("INVALID_LIMIT", f"{name} must be a positive integer")
+            validate_limit(name, value, 1, MAX_LIMIT_VALUE)
         if self.limits.max_sfx_prefix_bytes < 88:
-            reject("INVALID_LIMIT", "maxSfxPrefixBytes must leave room for a bounded PE header")
-        if (
-            isinstance(self.limits.max_compression_ratio, bool)
-            or not isinstance(self.limits.max_compression_ratio, (int, float))
-            or not math.isfinite(self.limits.max_compression_ratio)
-            or self.limits.max_compression_ratio <= 0
-        ):
-            reject("INVALID_LIMIT", "maxCompressionRatio must be a positive finite number")
+            reject(
+                "INVALID_LIMIT",
+                "maxSfxPrefixBytes must leave room for a bounded PE header",
+                limit="maxSfxPrefixBytes",
+            )
+        validate_limit(
+            "maxCompressionRatio",
+            self.limits.max_compression_ratio,
+            0,
+            MAX_COMPRESSION_RATIO,
+            allow_fraction=True,
+        )
+        if self.limits.max_compression_ratio <= 0:
+            reject(
+                "INVALID_LIMIT",
+                "maxCompressionRatio must be greater than zero",
+                limit="maxCompressionRatio",
+            )
 
     def audit_path(self, path):
         size = os.path.getsize(path)
@@ -971,24 +1048,6 @@ class ArchiveAuditor:
                 reject("AMBIGUOUS_ZIP_DESCRIPTOR", "Streaming ZIP local sizes must be zero", offset=offset)
 
             data_offset = offset + header_length
-            compressed = checked_slice(data, data_offset, entry["compressedSize"])
-            expanded = self._inflate_zip(compressed, method, entry["expandedSize"], entry["nameRaw"])
-            if zlib.crc32(expanded) & 0xffffffff != entry["crc"]:
-                reject("ZIP_CRC_MISMATCH", "ZIP member checksum is invalid", ordinal=ordinal)
-            descriptor_length = 0
-            end = data_offset + entry["compressedSize"]
-            if descriptor:
-                if checked_slice(data, end, 4) == b"PK\x07\x08":
-                    descriptor_length = 16
-                    values = struct.unpack_from("<3I", checked_slice(data, end + 4, 12))
-                else:
-                    descriptor_length = 12
-                    values = struct.unpack_from("<3I", checked_slice(data, end, 12))
-                if values != (entry["crc"], entry["compressedSize"], entry["expandedSize"]):
-                    reject("ZIP_DESCRIPTOR_MISMATCH", "ZIP data descriptor disagrees with central metadata", offset=end)
-                end += descriptor_length
-            expected_offset = end
-
             encoding = "utf-8" if flags & 0x0800 else "cp437"
             text = strict_decode(entry["nameRaw"], encoding)
             unix_mode = (entry["externalAttributes"] >> 16) & 0xffff
@@ -1018,6 +1077,25 @@ class ArchiveAuditor:
             registry.add(entry["nameRaw"], logical, ordinal)
             link_target = None
             member_type = "directory" if is_directory else "file"
+
+            compressed = checked_slice(data, data_offset, entry["compressedSize"])
+            expanded = self._inflate_zip(compressed, method, entry["expandedSize"], entry["nameRaw"])
+            if zlib.crc32(expanded) & 0xffffffff != entry["crc"]:
+                reject("ZIP_CRC_MISMATCH", "ZIP member checksum is invalid", ordinal=ordinal)
+            descriptor_length = 0
+            end = data_offset + entry["compressedSize"]
+            if descriptor:
+                if checked_slice(data, end, 4) == b"PK\x07\x08":
+                    descriptor_length = 16
+                    values = struct.unpack_from("<3I", checked_slice(data, end + 4, 12))
+                else:
+                    descriptor_length = 12
+                    values = struct.unpack_from("<3I", checked_slice(data, end, 12))
+                if values != (entry["crc"], entry["compressedSize"], entry["expandedSize"]):
+                    reject("ZIP_DESCRIPTOR_MISMATCH", "ZIP data descriptor disagrees with central metadata", offset=end)
+                end += descriptor_length
+            expected_offset = end
+
             content = expanded
             if is_directory and expanded:
                 reject("DIRECTORY_WITH_DATA", "ZIP directory carries file data", path=logical)
@@ -1494,7 +1572,7 @@ class ArchiveAuditor:
 
     def _bounded_decompress(self, decoder, data, owner):
         remaining = self.state.remaining_expansion()
-        ratio_ceiling = int(max(1, len(data)) * self.limits.max_compression_ratio)
+        ratio_ceiling = self.state.ratio_ceiling(len(data))
         maximum = min(remaining, ratio_ceiling) + 1
         try:
             expanded = decoder.decompress(data, max_length=maximum)
@@ -1564,7 +1642,7 @@ class ArchiveAuditor:
 
         decoder = zlib.decompressobj(-15)
         remaining = self.state.remaining_expansion()
-        ratio_ceiling = int(max(1, len(data) - cursor - 8) * self.limits.max_compression_ratio)
+        ratio_ceiling = self.state.ratio_ceiling(len(data) - cursor - 8)
         maximum = min(remaining, ratio_ceiling) + 1
         try:
             expanded = decoder.decompress(data[cursor:], maximum)
@@ -1668,6 +1746,18 @@ class ArchiveAuditor:
             else:
                 reject("INVALID_7Z_HEADER", "7z next header has an unsupported top-level identifier", nid=nid)
 
+        names = files["names"]
+        empty_streams = files.get("emptyStreams", [False] * len(names))
+        empty_files = files.get("emptyFiles", [False] * sum(empty_streams))
+        anti = files.get("anti", [False] * sum(empty_streams))
+        if any(anti):
+            reject("UNSUPPORTED_7Z_ANTI_ITEM", "7z anti-items are unsupported")
+
+        # Bounded structural phase: every member type is decided and every
+        # contradiction rejected before a single stream is decoded, allocated,
+        # or checksummed.
+        classifications = self._seven_classify_members(files, names, empty_streams, empty_files)
+
         decoded_streams = []
         if streams is not None:
             decoded_streams, ranges = self._seven_decode_streams(data, signature_offset, streams, "main")
@@ -1681,46 +1771,19 @@ class ArchiveAuditor:
             "7z",
         )
 
-        names = files["names"]
-        empty_streams = files.get("emptyStreams", [False] * len(names))
-        empty_files = files.get("emptyFiles", [False] * sum(empty_streams))
-        anti = files.get("anti", [False] * sum(empty_streams))
-        if any(anti):
-            reject("UNSUPPORTED_7Z_ANTI_ITEM", "7z anti-items are unsupported")
         stream_iter = iter(decoded_streams)
-        empty_index = 0
         members = []
         registry = PathRegistry()
         archive_count = 0
         for ordinal, (name_raw, name_text) in enumerate(names):
-            attributes = files.get("attributes", [None] * len(names))[ordinal]
-            windows_attributes = attributes or 0
-            if windows_attributes & 0x0400:
-                reject("UNSAFE_REPARSE_POINT", "7z member carries the Windows reparse-point attribute", path=name_text)
-            declares_unix_mode = bool(windows_attributes & SEVEN_ZIP_UNIX_EXTENSION)
-            unix_mode = (windows_attributes >> 16) & 0xffff
-            if declares_unix_mode:
-                unix_type, unix_type_name = classify_unix_file_type(
-                    unix_mode,
-                    "UNSUPPORTED_7Z_MEMBER_TYPE",
-                    "7z member",
-                    name_text,
-                )
-            else:
-                if unix_mode:
-                    reject(
-                        "AMBIGUOUS_MEMBER_TYPE",
-                        "7z member carries Unix mode bits without the Unix extension attribute",
-                        path=name_text,
-                        unixMode=f"{unix_mode:06o}",
-                        windowsAttributes=f"{windows_attributes:08x}",
-                    )
-                unix_type, unix_type_name = 0, "unspecified"
+            classification = classifications[ordinal]
+            windows_attributes = classification["windowsAttributes"]
+            declares_unix_mode = classification["unixModeDeclared"]
+            unix_mode = classification["unixMode"]
+            unix_type_name = classification["unixFileType"]
+            is_directory = classification["isDirectory"]
 
-            if empty_streams[ordinal]:
-                is_empty_file = empty_files[empty_index]
-                empty_index += 1
-                is_directory = not is_empty_file
+            if classification["emptyStream"]:
                 stream = {
                     "content": b"",
                     "offset": None,
@@ -1740,9 +1803,6 @@ class ArchiveAuditor:
                     stream = next(stream_iter)
                 except StopIteration:
                     reject("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has fewer data streams than files")
-                is_directory = bool(windows_attributes & 0x10) or unix_type == S_IFDIR
-                if is_directory:
-                    reject("DIRECTORY_WITH_DATA", "7z directory carries file data", path=name_text)
             logical = normalize_path(name_text, is_directory, self.limits.max_path_length)
             registry.add(name_raw, logical, ordinal)
             content = stream["content"]
@@ -1817,6 +1877,110 @@ class ArchiveAuditor:
             "peLayout": pe_layout.manifest() if pe_layout is not None else None,
             "provenance": physical_partition(data, partition_ranges, "7z"),
         }
+
+    def _seven_classify_members(self, files, names, empty_streams, empty_files):
+        """Decide and validate every 7z member type before any payload work.
+
+        Cross-checks the structural EmptyStream/EmptyFile record, the Windows
+        directory attribute, and the Unix S_IFMT type. Only coherent
+        combinations are accepted: a structural directory may not declare a
+        regular type, a structural file may not declare a directory type, the
+        Windows and Unix indicators must agree with each other and with the
+        structural record, and an unspecified mode defers to the structural
+        flags. An empty regular file is an empty stream whose EmptyFile bit is
+        set; a directory is an empty stream whose EmptyFile bit is clear.
+        """
+        attributes = files.get("attributes", [None] * len(names))
+        if len(attributes) != len(names):
+            reject(
+                "SEVEN_ZIP_PROPERTY_COUNT_MISMATCH",
+                "7z attribute vector length does not match the file count",
+                attributeCount=len(attributes),
+                fileCount=len(names),
+            )
+        expected_empty = sum(1 for value in empty_streams if value)
+        if len(empty_files) < expected_empty:
+            reject(
+                "SEVEN_ZIP_PROPERTY_COUNT_MISMATCH",
+                "7z EmptyFile vector is shorter than the declared empty-stream count",
+                emptyFileCount=len(empty_files),
+                emptyStreamCount=expected_empty,
+            )
+
+        classifications = []
+        empty_index = 0
+        for ordinal, (_, name_text) in enumerate(names):
+            declared = attributes[ordinal]
+            windows_attributes = declared or 0
+            if windows_attributes & 0x0400:
+                reject(
+                    "UNSAFE_REPARSE_POINT",
+                    "7z member carries the Windows reparse-point attribute",
+                    path=name_text,
+                )
+            declares_unix_mode = bool(windows_attributes & SEVEN_ZIP_UNIX_EXTENSION)
+            unix_mode = (windows_attributes >> 16) & 0xffff
+            if declares_unix_mode:
+                unix_type, unix_type_name = classify_unix_file_type(
+                    unix_mode,
+                    "UNSUPPORTED_7Z_MEMBER_TYPE",
+                    "7z member",
+                    name_text,
+                )
+            else:
+                if unix_mode:
+                    reject(
+                        "AMBIGUOUS_MEMBER_TYPE",
+                        "7z member carries Unix mode bits without the Unix extension attribute",
+                        path=name_text,
+                        unixMode=f"{unix_mode:06o}",
+                        windowsAttributes=f"{windows_attributes:08x}",
+                    )
+                unix_type, unix_type_name = 0, "unspecified"
+
+            empty_stream = bool(empty_streams[ordinal])
+            if empty_stream:
+                is_empty_file = bool(empty_files[empty_index])
+                empty_index += 1
+            else:
+                is_empty_file = False
+            structural = "file" if (not empty_stream or is_empty_file) else "directory"
+            windows_directory = bool(windows_attributes & 0x10)
+
+            def contradiction(message, **details):
+                reject(
+                    "INCONSISTENT_7Z_MEMBER_TYPE",
+                    message,
+                    path=name_text,
+                    structuralType=structural,
+                    emptyStream=empty_stream,
+                    emptyFile=is_empty_file,
+                    windowsAttributes=f"{windows_attributes:08x}",
+                    unixMode=f"{unix_mode:06o}",
+                    unixFileType=unix_type_name,
+                    **details,
+                )
+
+            if declared is not None:
+                if windows_directory and structural != "directory":
+                    contradiction("7z member sets the Windows directory attribute but carries file data")
+                if not windows_directory and structural == "directory":
+                    contradiction("7z structural directory does not set the Windows directory attribute")
+            if unix_type == S_IFDIR and structural != "directory":
+                contradiction("7z member declares a Unix directory but is structurally a file")
+            if unix_type == S_IFREG and structural == "directory":
+                contradiction("7z member declares a regular Unix file but is structurally a directory")
+
+            classifications.append({
+                "windowsAttributes": windows_attributes,
+                "unixMode": unix_mode,
+                "unixFileType": unix_type_name,
+                "unixModeDeclared": declares_unix_mode,
+                "emptyStream": empty_stream,
+                "emptyFile": is_empty_file,
+                "isDirectory": structural == "directory",
+            })
+        return classifications
 
     def _seven_parse_header(self, reader):
         streams = None
@@ -2300,13 +2464,24 @@ class ArchiveAuditor:
     def _seven_optional_values(self, payload, count, width):
         reader = BinaryReader(payload)
         all_defined = reader.byte()
+        if all_defined not in (0, 1):
+            reject(
+                "NONCANONICAL_7Z_PROPERTY",
+                "7z optional-value vector has a noncanonical allDefined marker",
+                allDefined=all_defined,
+            )
         defined = [True] * count if all_defined else read_bit_vector(reader, count)
-        if reader.byte() != 0:
-            reject("UNSUPPORTED_7Z_EXTERNAL_PROPERTY", "Externally stored 7z file properties are unsupported")
+        external = reader.byte()
+        if external != 0:
+            reject(
+                "UNSUPPORTED_7Z_EXTERNAL_PROPERTY",
+                "Externally stored 7z file properties are unsupported",
+                external=external,
+            )
         values = []
         for present in defined:
             values.append(int.from_bytes(reader.read(width), "little") if present else None)
-        reader.require_end()
+        reader.require_end("NONCANONICAL_7Z_PROPERTY")
         return values
 
     def _validate_physical_ranges(self, ranges, start, end, owner):
@@ -2650,7 +2825,6 @@ class PeLayout:
     container_length: int
     certificate_offset: int = None
     certificate_length: int = None
-    certificate_sha256: str = None
     certificate_entries: tuple = ()
 
     @property
@@ -2679,7 +2853,6 @@ class PeLayout:
             "signatureDisposition": "signed" if self.signed else "unsigned",
             "certificateOffset": self.certificate_offset,
             "certificateLength": self.certificate_length,
-            "certificateSha256": self.certificate_sha256,
             "certificateEntries": [entry.manifest() for entry in self.certificate_entries],
         }
 
@@ -2956,7 +3129,6 @@ def parse_pe_layout(data, limits):
         len(data),
         certificate_offset,
         certificate_length,
-        sha256_range(data, certificate_offset, certificate_offset + certificate_length),
         entries,
     )
 
@@ -3023,35 +3195,32 @@ def describe_unclassified_overlay(data, layout, limits, nested):
 def detect_sfx_7z(data, state, nested=False):
     """Locate the single legal 7z overlay in an MZ/PE input.
 
-    The PE layout is parsed exactly once, and the search for a 7z signature
-    starts at the end of the PE image rather than rescanning the image, so
-    the cost is proportional to the overlay rather than to a potentially
-    huge executable.
+    The PE layout is parsed exactly once and every signature search happens
+    inside one bounded window that starts at the end of the PE image:
 
-    Every signature occurrence is charged against a bounded occurrence
-    budget, each candidate against a bounded candidate budget, and each
-    declared next-header length against a bounded work budget before its CRC
-    runs. A candidate that reaches validation and is malformed fails the
-    whole input closed: a later valid candidate can never erase it, so
-    malformed signature-bearing bytes cannot masquerade as inert gap.
+        [peImageEnd, min(overlayEnd, peImageEnd + maxSfxOverlayScanBytes))
 
-    A nested member is reported as an opaque leaf only when every byte is
-    provably accounted for as PE image plus an optional validated terminal
-    certificate table, leaving no unclassified overlay. An unclassified
-    overlay is a rejection, not a leaf.
+    The image is never scanned on the accepting path, so discovery costs
+    O(configured scan bound + configured envelope work) rather than O(input).
+    Each search span is charged against the scan allowance before the search
+    runs, and each occurrence, candidate, and declared next-header length is
+    charged before the work it pays for.
+
+    Discovery is overlay-relative once the PE layout is valid, so a large but
+    structurally sound image is never itself a reason to reject; only the
+    distance from the end of that image to the archive is bounded.
+
+    A candidate that reaches validation and is malformed fails the whole
+    input closed, so malformed signature-bearing bytes cannot masquerade as
+    inert gap. Two valid candidates remain ambiguous.
+
+    A nested member is an opaque leaf only after parse_pe_layout SUCCEEDS and
+    proves that every byte is PE image plus an optional validated terminal
+    certificate table with no overlay. A malformed PE or certificate is never
+    converted into an opaque leaf; it fails exactly as it does at the root.
     """
     limits = state.limits
-    try:
-        layout = parse_pe_layout(data, limits)
-    except AuditError:
-        if nested:
-            fallback_end = min(
-                len(data),
-                limits.max_sfx_overlay_scan_bytes + len(SEVEN_ZIP_SIGNATURE),
-            )
-            if data.find(SEVEN_ZIP_SIGNATURE, 0, fallback_end) < 0:
-                return Detection()
-        raise
+    layout = parse_pe_layout(data, limits)
 
     overlay_start = layout.overlay_start
     overlay_end = layout.overlay_end
@@ -3060,34 +3229,17 @@ def detect_sfx_7z(data, state, nested=False):
             return Detection()
         describe_unclassified_overlay(data, layout, limits, nested)
 
-    scan_end = min(
-        overlay_end,
-        overlay_start + limits.max_sfx_overlay_scan_bytes + len(SEVEN_ZIP_SIGNATURE),
-    )
-    first_occurrence = data.find(SEVEN_ZIP_SIGNATURE, overlay_start, scan_end)
-    if first_occurrence < 0:
-        if overlay_end - overlay_start > limits.max_sfx_overlay_scan_bytes:
-            reject(
-                "SFX_OVERLAY_SCAN_LIMIT",
-                "No 7z signature occurs within the configured overlay scan allowance",
-                overlayStart=overlay_start,
-                overlayLength=overlay_end - overlay_start,
-                limit=limits.max_sfx_overlay_scan_bytes,
-            )
-        describe_unclassified_overlay(data, layout, limits, nested)
-    if first_occurrence > limits.max_sfx_prefix_bytes:
-        reject(
-            "SFX_PREFIX_LIMIT",
-            "Embedded 7z signature lies beyond the configured physical prefix ceiling",
-            signatureOffset=first_occurrence,
-            limit=limits.max_sfx_prefix_bytes,
-        )
+    allowance = limits.max_sfx_overlay_scan_bytes
+    gap_limit = min(overlay_end, overlay_start + allowance)
+    find_end = min(overlay_end, overlay_start + allowance + len(SEVEN_ZIP_SIGNATURE))
+    fully_scanned = find_end >= overlay_end
+    state.charge_overlay_scan(gap_limit - overlay_start, overlay_start)
 
-    cursor = first_occurrence
+    cursor = overlay_start
     valid_candidates = []
     valid_envelope = None
-    while True:
-        candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, overlay_end)
+    while cursor < find_end:
+        candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, find_end)
         if candidate < 0:
             break
         cursor = candidate + 1
@@ -3108,7 +3260,21 @@ def detect_sfx_7z(data, state, nested=False):
                 secondOffset=valid_candidates[1],
             )
 
-    return Detection("7z", valid_candidates[0], layout, valid_envelope)
+    if valid_candidates:
+        # The accepted envelope is required to end exactly at overlayEnd, so
+        # the archive itself proves that nothing beyond the scanned window is
+        # unclassified and no hidden suffix can exist.
+        return Detection("7z", valid_candidates[0], layout, valid_envelope)
+    if not fully_scanned:
+        reject(
+            "SFX_OVERLAY_SCAN_LIMIT",
+            "MZ/PE overlay extends past the configured scan allowance with no 7z archive found",
+            overlayStart=overlay_start,
+            overlayLength=overlay_end - overlay_start,
+            scannedLength=find_end - overlay_start,
+            limit=allowance,
+        )
+    describe_unclassified_overlay(data, layout, limits, nested)
 
 
 def detect_format(data, tar_member_limit=Limits.max_members_per_archive, state=None, nested=False):
@@ -3174,6 +3340,16 @@ def compare_values(left, right, path="$", differences=None):
 
 
 def compare_manifests(left, right):
+    for side, manifest in (("a", left), ("b", right)):
+        schema = manifest.get("schema") if isinstance(manifest, dict) else None
+        if schema != SCHEMA:
+            reject(
+                "UNSUPPORTED_MANIFEST_SCHEMA",
+                "Manifest schema is not the schema this auditor emits",
+                side=side,
+                schema=schema,
+                expected=SCHEMA,
+            )
     differences = compare_values(manifest_for_comparison(left), manifest_for_comparison(right))
     return {
         "schema": COMPARISON_SCHEMA,
@@ -3190,56 +3366,49 @@ def compare_manifests(left, right):
     }
 
 
-def positive_int(value):
-    parsed = int(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be greater than zero")
-    return parsed
+def integer_argument(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be an integer")
 
 
-def nonnegative_int(value):
-    parsed = int(value)
-    if parsed < 0:
-        raise argparse.ArgumentTypeError("must not be negative")
-    return parsed
-
-
-def positive_float(value):
-    parsed = float(value)
-    if not math.isfinite(parsed) or not parsed > 0:
-        raise argparse.ArgumentTypeError("must be finite and greater than zero")
-    return parsed
+def number_argument(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a number")
 
 
 def add_limit_arguments(parser):
-    parser.add_argument("--max-depth", type=nonnegative_int, default=Limits.max_depth)
-    parser.add_argument("--max-total-expanded-bytes", type=positive_int, default=Limits.max_total_expanded_bytes)
-    parser.add_argument("--max-members-per-archive", type=positive_int, default=Limits.max_members_per_archive)
-    parser.add_argument("--max-members-total", type=positive_int, default=Limits.max_members_total)
-    parser.add_argument("--max-compression-ratio", type=positive_float, default=Limits.max_compression_ratio)
-    parser.add_argument("--max-path-length", type=positive_int, default=Limits.max_path_length)
-    parser.add_argument("--max-sfx-prefix-bytes", type=positive_int, default=Limits.max_sfx_prefix_bytes)
+    parser.add_argument("--max-depth", type=integer_argument, default=Limits.max_depth)
+    parser.add_argument("--max-total-expanded-bytes", type=integer_argument, default=Limits.max_total_expanded_bytes)
+    parser.add_argument("--max-members-per-archive", type=integer_argument, default=Limits.max_members_per_archive)
+    parser.add_argument("--max-members-total", type=integer_argument, default=Limits.max_members_total)
+    parser.add_argument("--max-compression-ratio", type=number_argument, default=Limits.max_compression_ratio)
+    parser.add_argument("--max-path-length", type=integer_argument, default=Limits.max_path_length)
+    parser.add_argument("--max-sfx-prefix-bytes", type=integer_argument, default=Limits.max_sfx_prefix_bytes)
     parser.add_argument(
         "--max-sfx-overlay-scan-bytes",
-        type=positive_int,
+        type=integer_argument,
         default=Limits.max_sfx_overlay_scan_bytes,
     )
     parser.add_argument(
         "--max-sfx-signature-occurrences",
-        type=positive_int,
+        type=integer_argument,
         default=Limits.max_sfx_signature_occurrences,
     )
     parser.add_argument(
         "--max-sfx-signature-candidates",
-        type=positive_int,
+        type=integer_argument,
         default=Limits.max_sfx_signature_candidates,
     )
     parser.add_argument(
         "--max-envelope-work-bytes",
-        type=positive_int,
+        type=integer_argument,
         default=Limits.max_envelope_work_bytes,
     )
-    parser.add_argument("--max-certificate-entries", type=positive_int, default=Limits.max_certificate_entries)
+    parser.add_argument("--max-certificate-entries", type=integer_argument, default=Limits.max_certificate_entries)
 
 
 def limits_from_args(args):

@@ -43,18 +43,28 @@ The configurable limits and defaults are:
 | `--max-members-total` | 200,000 physical members |
 | `--max-compression-ratio` | 1000 |
 | `--max-path-length` | 4096 UTF-8 bytes |
-| `--max-sfx-prefix-bytes` | 16 MiB ceiling on the embedded 7z signature offset |
+| `--max-sfx-prefix-bytes` | 16 MiB ceiling on PE header structures |
 | `--max-sfx-overlay-scan-bytes` | 16 MiB searched past the PE image for a signature |
 | `--max-sfx-signature-occurrences` | 4096 signature byte matches examined |
 | `--max-sfx-signature-candidates` | 64 overlay candidates parsed |
 | `--max-envelope-work-bytes` | 256 MiB of 7z next-header CRC across the audit |
 | `--max-certificate-entries` | 64 `WIN_CERTIFICATE` entries |
 
-Every limit is validated as a positive integer of the correct type,
-`--max-depth` additionally as 0 to 128, and `--max-compression-ratio` as a
-positive finite number. A limit of the wrong type, including a `bool`, is an
-`INVALID_LIMIT` rejection rather than a coerced value. The effective limits
-are echoed in the manifest so a decision can be replayed.
+Every limit is validated as a value of the correct type and inside a bounded
+range, so a configured value can never overflow the arithmetic it later
+participates in. Integers are never handed to `math.isfinite`, which raises
+`OverflowError` on an integer too large to convert to a float.
+`--max-compression-ratio` accepts an integer or a finite float in
+`(0, 4294967296]` and is then held as an exact rational, so the ratio test is
+integer-only (`expanded * denominator > stored * numerator`) with no float
+multiplication and no `int(inf)` conversion. A value of the wrong type,
+including `bool`, `str`, `Decimal`, `NaN`, an infinity, or an integer beyond
+the safe maximum, is an `INVALID_LIMIT` rejection.
+
+The command line and the API agree exactly: the argument parsers only parse,
+and every policy decision happens in one validator. `--max-compression-ratio
+1e308` therefore exits 2 with a structured `INVALID_LIMIT` document rather
+than a traceback.
 
 The decompression paths apply output bounds before materializing the full
 stream. A limit violation is therefore a rejection boundary, not only an
@@ -71,10 +81,12 @@ Discovery is therefore explicitly budgeted, and every budget is charged
 *before* the work it pays for:
 
 1. The PE layout is parsed exactly once, before any candidate is considered.
-2. The search for a signature starts at the end of the PE image and is
-   bounded by `--max-sfx-overlay-scan-bytes`, so the cost is proportional to
-   the overlay rather than to a potentially huge executable. The image is
-   never rescanned on the accepting path.
+2. Every signature search happens inside one bounded window that starts at
+   the end of the PE image:
+   `[peImageEnd, min(overlayEnd, peImageEnd + maxSfxOverlayScanBytes))`.
+   The image is never scanned on the accepting path, and the searched span is
+   charged against the allowance before any search runs, so discovery costs
+   O(configured scan bound + configured envelope work) rather than O(input).
 3. Each signature byte match is charged against
    `--max-sfx-signature-occurrences`, and each candidate against
    `--max-sfx-signature-candidates`.
@@ -84,6 +96,15 @@ Discovery is therefore explicitly budgeted, and every budget is charged
    `--max-envelope-work-bytes` before the next-header CRC runs. The CRC is
    computed incrementally over bounded `memoryview` chunks, so no candidate
    ever materializes a copy of its next header.
+
+Once the PE layout is valid, discovery is overlay-relative. A structurally
+sound image is never itself a reason to reject, however large it is; only the
+distance from the end of that image to the archive is bounded. If the overlay
+extends past the scanned window and no archive was found, the input is
+rejected with `SFX_OVERLAY_SCAN_LIMIT`. When a valid archive is found, its
+envelope is required to end exactly at the end of the overlay, so the archive
+structure itself proves that nothing beyond the window is unclassified and no
+hidden suffix can exist.
 
 A candidate that reaches validation and proves malformed fails the whole
 input closed. A later valid candidate can never erase an earlier malformed
@@ -95,11 +116,12 @@ cannot contribute to ambiguity; they are still reported specifically on the
 rejection path.
 
 Because a stray six-byte signature sequence inside already-classified
-archive bytes is also treated as a malformed candidate, an archive that
-happens to contain that sequence is rejected rather than accepted. This is
-the deliberate stricter reading: the probability is about one in a few
-million for a 100 MB archive, and a false rejection is recoverable whereas a
-missed embedded archive is not.
+archive bytes is also treated as a malformed candidate when it falls inside
+the scanned window, an archive that happens to contain that sequence within
+the window is rejected rather than accepted. This is the deliberate stricter
+reading: the probability is about one in a few million for a 100 MB archive,
+and a false rejection is recoverable whereas a missed embedded archive is
+not.
 
 Candidate storage is bounded: only the first two valid envelopes are
 retained for reporting. Budgets are held on the shared audit state, so
@@ -139,19 +161,23 @@ TAR so that strict parsing rejects it rather than treating it as an opaque
 leaf. Opaque decompressed content remains a leaf.
 
 A nested member that begins with `MZ` is recorded as an opaque leaf only
-when every one of its bytes is provably accounted for as PE image plus an
-optional validated terminal certificate table, leaving no unclassified
-overlay. Packages that ship ordinary `.exe` members, including large ones
-and signed ones, are therefore auditable. If an overlay exists it must be
-classified: a 7z archive is audited, and anything else is a rejection
+after the PE layout parses successfully and proves that every one of its
+bytes is PE image plus an optional validated terminal certificate table,
+leaving no unclassified overlay. A malformed PE or a malformed certificate is
+never converted into an opaque leaf: it fails with exactly the same
+structured code and details as it would at the root, because the policy is
+identical. Only the root-only rule that an ordinary, structurally valid PE is
+not an archive differs.
+
+Packages that ship ordinary `.exe` members, including large ones and signed
+ones, are therefore auditable. If an overlay exists it must be classified: a
+7z archive is audited, and anything else is a rejection
 (`UNCLASSIFIED_PE_OVERLAY`, or `SFX_OVERLAY_SCAN_LIMIT` when the overlay is
 larger than the configured search allowance). A nested member is never
 silently opaque because a signature sits beyond a scan threshold, and the
-nested and root paths apply the same ceilings to the same bytes. A root
-input that is an ordinary PE with no embedded archive is still rejected,
-because it is not an archive.
+nested and root paths apply the same ceilings to the same bytes.
 
-### Unix file types
+### Unix file types and member classification
 
 ZIP and 7z members can carry a Unix mode. `S_IFMT` is decoded explicitly and
 the allowlist is small: a regular file, a directory where that is
@@ -161,13 +187,34 @@ nonzero type are rejected with a format-specific structured error carrying
 the octal mode and decoded type name, so a device node or socket can never
 be recorded, hashed, or descended into as if it were a regular file.
 
+Member types are decided in a bounded structural phase that runs *before* any
+payload work. No stream is decompressed, allocated, expanded-size checked,
+ratio checked, CRC checked, or hashed until every member type is known and
+every contradiction rejected. An unsupported type therefore rejects
+deterministically even when the payload compression metadata is corrupt or a
+tight ratio limit would otherwise bind first.
+
 A ZIP mode is interpreted only when the central-directory creator system is
 Unix-like; otherwise the high sixteen bits are not a Unix mode and the type
 is classified from the DOS attributes and the trailing slash. A 7z mode is
 interpreted only when the member sets the Unix extension attribute; mode
 bits present without it are an `AMBIGUOUS_MEMBER_TYPE` rejection rather than
-a silently trusted type. TAR keeps its own explicit typeflag handling, which
-already distinguishes and validates each record type.
+a silently trusted type. TAR keeps its own explicit typeflag handling.
+
+For 7z the structural record and the declared attributes are cross-checked.
+An empty stream whose `EmptyFile` bit is set is an empty regular file; an
+empty stream whose bit is clear is a directory; a member with a stream is a
+regular file. A structural directory may not declare a regular type, a
+structural file may not declare a directory type, and the Windows directory
+attribute must agree with the structural record whenever attributes are
+declared at all. Every contradiction is an `INCONSISTENT_7Z_MEMBER_TYPE`
+rejection naming both sides.
+
+7z optional-value vectors must be canonical: the `allDefined` marker is
+exactly 0 or 1, a defined-bit vector must have zero padding bits, the vector
+must consume its declared payload exactly, and external storage is
+unsupported. The same validation applies in plain and encoded headers,
+because both flow through the same parser.
 
 An MZ prefix must contain bounded DOS, PE, optional-header, data-directory,
 and section-table structures. Both PE32 (`0x10b`) and PE32+ (`0x20b`)
@@ -230,8 +277,13 @@ added to this explicit allowlist.
 ## Manifest
 
 The top-level schema identifier is
-`git-for-windows.archive-audit/v1`. It contains the source length and
+`git-for-windows.archive-audit/v2`. It contains the source length and
 SHA-256, the effective limits, recursive totals, and one archive node.
+Version 2 removed the overlapping legacy prefix fields and introduced the
+exact-once provenance partition, so it is not interchangeable with version 1.
+`compare` rejects any manifest whose schema is not the schema this auditor
+emits, with `UNSUPPORTED_MANIFEST_SCHEMA`, rather than silently comparing
+across versions.
 
 Every archive node contains:
 
@@ -316,9 +368,14 @@ overlap every partition by construction and are therefore corroboration, not
 ownership: the partition is the ownership record. Changing one region
 changes exactly that region's partition digest plus the whole-bytes digest.
 
-The legacy `sfxPrefixLength`, `sfxPrefixSha256`, `overlayGapLength`, and
-`overlayGapSha256` fields are removed. They overlapped one another and could
-be misread as an exact partition.
+No other field hashes partition bytes a second time. `peLayout` records the
+certificate offset, length, and per-entry framing, but the certificate bytes
+are hashed only once, by the `certificate` partition, so ownership is never
+duplicated across two fields that could drift apart.
+
+The legacy `sfxPrefixLength`, `sfxPrefixSha256`, `overlayGapLength`,
+`overlayGapSha256`, and `peLayout.certificateSha256` fields are removed. They
+overlapped one another and could be misread as an exact partition.
 
 `peLayout` records the parsed PE geometry: optional-header magic and length,
 `NumberOfRvaAndSizes`, section count, `SizeOfHeaders`, the image end, the
@@ -339,17 +396,18 @@ cost is visible and comparable.
 | Names and encoding | Duplicate raw names, case-insensitive logical collisions, invalid UTF-8/UTF-16, non-NFC text, or any Unicode `Cc` control (including C0 and C1) in names, links, or metadata |
 | Paths | Absolute, drive-qualified, traversal, control-character, reserved Windows, or over-limit paths |
 | Links | Absolute or escaping targets, undeclared targets, forward/invalid hardlinks, reparse points, and link cycles |
-| Member types | ZIP or 7z symlinks, character and block devices, FIFOs, sockets, unknown Unix types, and Unix mode bits declared without the metadata that gives them meaning |
-| Structure | Overlap, gaps, out-of-range records, undeclared members or pack streams, header/catalog disagreement, malformed PE prefixes, or ambiguous SFX signatures |
+| Member types | ZIP or 7z symlinks, character and block devices, FIFOs, sockets, unknown Unix types, Unix mode bits declared without the metadata that gives them meaning, and structural/attribute contradictions in 7z |
+| Structure | Overlap, gaps, out-of-range records, undeclared members or pack streams, header/catalog disagreement, malformed PE prefixes, noncanonical 7z property vectors, or ambiguous SFX signatures |
 | Integrity | ZIP/TAR/gzip/7z checksum failures, malformed lengths, nonzero TAR padding |
 | Compression | Unsupported methods, invalid streams, dictionaries, ratio excess, or expanded-byte excess |
 | Recursion | Depth excess, global member excess, and repeated ancestor archive identity |
 | Trailing data | ZIP data after EOCD, nonzero TAR data after terminators, a second valid gzip member/bzip2 stream/xz stream/zstd frame, and bytes after the 7z next header |
 | SFX bounds | Missing or out-of-ceiling embedded signatures, signatures overlapping declared PE image ranges, signatures inside a declared certificate table, and unclassified PE overlay bytes |
 | SFX candidates | Any overlay signature that reaches validation and is malformed, regardless of whether a later candidate would have been valid |
-| SFX work budgets | More signature occurrences, overlay candidates, overlay scan bytes, prefix bytes, or aggregate next-header CRC bytes than the configured ceilings |
+| SFX work budgets | More signature occurrences, overlay candidates, overlay scan bytes, or aggregate next-header CRC bytes than the configured ceilings |
 | PE certificates | Malformed, misaligned, half-declared, nonterminal, overlapping, over-count, or inexactly consumed `WIN_CERTIFICATE` tables |
-| Provenance | Ownership partitions that are unordered, overlapping, or do not cover the containing stream exactly |
+| Provenance | Ownership partitions that are unordered, overlapping, or do not cover the containing stream exactly, and comparison across manifest schema versions |
+| Configuration | Limits of the wrong type or outside their bounded range, including huge integers, infinities, and `NaN`, reported identically from the API and the command line |
 
 `t/test_archive_auditor.py` creates all fixtures in repository-local test
 code. It commits no payload or package binaries. The suite covers valid
@@ -376,18 +434,27 @@ exact prefix-ceiling and overlay-allowance boundaries.
 Nested PE coverage proves that a large image-only executable and a signed
 executable with no overlay stay opaque, that a nested SFX whose overlay
 starts past an alignment gap is audited, and that an unclassified overlay,
-an over-allowance overlay, and an over-ceiling signature are rejected with
-the same codes at root and when nested. Member-type coverage builds an
-independent byte fixture for every `S_IFMT` value in both ZIP and 7z,
-including unknown types, DOS and unspecified controls, creator-system edge
-cases, and mode bits declared without their enabling metadata. Provenance
-coverage asserts exact sums, ordering, per-partition digests, mutation
-isolation, and compare-mode behaviour for signed, unsigned, zero-gap, and
-bare archives.
+an over-allowance overlay, and every malformed PE or certificate shape are
+rejected with the same code at root and when nested. Member-type coverage
+builds an independent byte fixture for every `S_IFMT` value in both ZIP and
+7z, including unknown types, DOS and unspecified controls, creator-system
+edge cases, mode bits declared without their enabling metadata, and every
+structural/attribute permutation, and instruments the decoders to prove that
+an unsupported type rejects before any decompression or checksum runs.
+Provenance coverage asserts exact sums, ordering, per-partition digests,
+same-length mutation isolation, tampered and reordered partitions, schema
+discrimination, and compare-mode behaviour.
+
+Limit coverage probes `bool`, `str`, `Decimal`, huge integers,
+`sys.float_info.max`, `NaN`, infinities, and subnormals against every numeric
+limit through both the API and the command line, and asserts a structured
+`INVALID_LIMIT` document and exit 2 for every compressed format rather than
+a traceback.
 
 The adversarial coverage is deterministic rather than timing-based: a
 fixture with thousands of valid-looking cheap decoys asserts a stable
 rejection code and asserts measured CRC and hash bytes against a hard bound
 derived from the configured limits, which is orders of magnitude below the
-unbounded cost. A generous wall-clock assertion is included only as an
-additional smoke check.
+unbounded cost. Overlay scanning is likewise asserted against the configured
+allowance through the reported `sfxOverlayScanBytes` total. A generous
+wall-clock assertion is included only as an additional smoke check.

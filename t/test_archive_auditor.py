@@ -9,6 +9,7 @@ import lzma
 from pathlib import Path
 import random
 import struct
+import sys
 import time
 import tempfile
 import unittest
@@ -249,7 +250,7 @@ def seven_bits(values):
     return bytes(result)
 
 
-def seven_files(entries, attributes=None):
+def seven_files(entries, attributes=None, attributes_payload=None, extra_properties=b""):
     names = [entry["name"] for entry in entries]
     names_payload = b"\0" + b"".join(
         name.encode("utf-16-le") + b"\0\0" for name in names
@@ -275,10 +276,12 @@ def seven_files(entries, attributes=None):
         ]
         bits = seven_bits(empty_files)
         result += b"\x0f" + seven_uint(len(bits)) + bits
-    if attributes is not None:
+    if attributes_payload is not None:
+        result += b"\x15" + seven_uint(len(attributes_payload)) + attributes_payload
+    elif attributes is not None:
         payload = b"\x01\x00" + b"".join(struct.pack("<I", value) for value in attributes)
         result += b"\x15" + seven_uint(len(payload)) + payload
-    return result + b"\0"
+    return result + extra_properties + b"\0"
 
 
 def wrap_7z(packed_region, next_header, sfx=b""):
@@ -327,7 +330,16 @@ def make_sfx_prefix(length=512, section_raw_size=0):
     return bytes(prefix)
 
 
-def make_7z(entries, method="copy", encoded_header=False, sfx=b"", huge_dictionary=False, attributes=None):
+def make_7z(
+    entries,
+    method="copy",
+    encoded_header=False,
+    sfx=b"",
+    huge_dictionary=False,
+    attributes=None,
+    attributes_payload=None,
+    extra_properties=b"",
+):
     contents = [
         entry.get("content", b"")
         for entry in entries
@@ -376,7 +388,12 @@ def make_7z(entries, method="copy", encoded_header=False, sfx=b"", huge_dictiona
         if contents
         else b""
     )
-    main_header = b"\x01" + (b"\x04" + streams if streams else b"") + seven_files(entries, attributes) + b"\0"
+    main_header = (
+        b"\x01"
+        + (b"\x04" + streams if streams else b"")
+        + seven_files(entries, attributes, attributes_payload, extra_properties)
+        + b"\0"
+    )
     if encoded_header:
         encoded_streams = seven_streams(
             main_header,
@@ -538,6 +555,26 @@ def signed_sfx(archive, certificates, **kwargs):
     """The physically common layout: PE image | 7z overlay | certificate table."""
     image = align_image(archive, **kwargs)
     return image, sign(image + archive, certificates)
+
+
+def build_pe_raw(section_count=None, magic=None, number_of_rva_and_sizes=None, **kwargs):
+    """Build a PE and then patch a single header field to an invalid value.
+
+    Used to reach malformed-header branches that the structural builder
+    cannot express directly.
+    """
+    image = bytearray(build_pe(**kwargs))
+    pe_offset = struct.unpack_from("<I", image, 0x3c)[0]
+    optional_offset = pe_offset + 24
+    if section_count is not None:
+        struct.pack_into("<H", image, pe_offset + 6, section_count)
+    if magic is not None:
+        struct.pack_into("<H", image, optional_offset, magic)
+    if number_of_rva_and_sizes is not None:
+        current_magic = struct.unpack_from("<H", image, optional_offset)[0]
+        relative = PE_DIRECTORY_COUNT_RELATIVE.get(current_magic, PE_DIRECTORY_COUNT_RELATIVE[0x20b])
+        struct.pack_into("<I", image, optional_offset + relative, number_of_rva_and_sizes)
+    return bytes(image)
 
 
 def partition(node, role):
@@ -1429,11 +1466,17 @@ class ArchiveAuditorTests(unittest.TestCase):
         )
 
     def test_7z_sfx_scan_ceiling_rejects_out_of_range_signature(self):
-        archive = (
-            make_sfx_prefix(AUDITOR.MAX_SFX_PREFIX_LENGTH + 1)
-            + wrap_7z(b"", b"")
-        )
-        self.assert_rejected("SFX_PREFIX_LIMIT", archive, "PortableGit.7z.exe")
+        archive = wrap_7z(b"", b"")
+        image_end = len(build_pe())
+        allowance = AUDITOR.MAX_SFX_OVERLAY_SCAN_BYTES
+
+        at_limit = build_pe(image_length=image_end + allowance) + archive
+        node = self.audit(at_limit, "PortableGit.7z.exe")["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(allowance, partition(node, "overlay-gap")["length"])
+
+        past_limit = build_pe(image_length=image_end + allowance + 1) + archive
+        self.assert_rejected("SFX_OVERLAY_SCAN_LIMIT", past_limit, "PortableGit.7z.exe")
 
     def test_7z_checksums_offsets_methods_and_trailing_payload_rejected(self):
         valid = make_7z([{"name": "file", "content": b"x"}])
@@ -1806,6 +1849,38 @@ class ArchiveAuditorTests(unittest.TestCase):
             AUDITOR.Limits(max_sfx_signature_candidates=1),
         )
 
+    def test_pe_image_size_never_bounds_a_valid_sfx(self):
+        """Discovery is overlay-relative: a large valid image is not a reason to reject."""
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        image_end = len(build_pe())
+
+        small = AUDITOR.Limits(max_sfx_prefix_bytes=1024)
+        flush = build_pe(image_length=2048) + archive
+        node = self.audit(flush, "big.exe", small)["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(2048, node["headerOffset"])
+        self.assertEqual(
+            "7z-sfx",
+            self.audit(
+                make_zip([{"name": "inner.exe", "content": flush}]),
+                "package.zip",
+                small,
+            )["archive"]["members"][0]["nestedArchive"]["format"],
+        )
+
+        for image_length, expectation in (
+            (AUDITOR.MAX_SFX_PREFIX_LENGTH, "7z-sfx"),
+            (AUDITOR.MAX_SFX_PREFIX_LENGTH + 1, "7z-sfx"),
+        ):
+            with self.subTest(imageLength=image_length):
+                data = build_pe(
+                    sections=((".text", 0x400, image_length - 0x400),),
+                ) + archive
+                node = self.audit(data, "big.exe")["archive"]
+                self.assertEqual(expectation, node["format"])
+                self.assertEqual(image_length, node["headerOffset"])
+                self.assertEqual(0, partition(node, "overlay-gap")["length"])
+
     def test_overlay_scan_allowance_bounds_the_gap_before_the_signature(self):
         archive = make_7z([{"name": "file", "content": b"x"}])
         image_end = len(build_pe())
@@ -1821,6 +1896,10 @@ class ArchiveAuditorTests(unittest.TestCase):
                     node = self.audit(data, "sfx.bin", limits)["archive"]
                     self.assertEqual("7z-sfx", node["format"])
                     self.assertEqual(gap, partition(node, "overlay-gap")["length"])
+                    self.assertLessEqual(
+                        self.audit(data, "sfx.bin", limits)["totals"]["sfxOverlayScanBytes"],
+                        allowance,
+                    )
                 else:
                     self.assert_rejected(expectation, data, "sfx.bin", limits)
 
@@ -1854,7 +1933,6 @@ class ArchiveAuditorTests(unittest.TestCase):
 
         for limits, expected in (
             (AUDITOR.Limits(max_envelope_work_bytes=8), "ENVELOPE_WORK_LIMIT"),
-            (AUDITOR.Limits(max_sfx_prefix_bytes=512), "SFX_PREFIX_LIMIT"),
         ):
             with self.subTest(expected=expected):
                 self.assert_rejected(expected, hostile, "hostile.bin", limits)
@@ -1882,9 +1960,9 @@ class ArchiveAuditorTests(unittest.TestCase):
                 "ENVELOPE_WORK_LIMIT",
             ),
             (
-                ["--max-sfx-prefix-bytes", "512"],
-                {"max_sfx_prefix_bytes": 512},
-                "SFX_PREFIX_LIMIT",
+                ["--max-compression-ratio", "1e308"],
+                {"max_compression_ratio": 1e308},
+                "INVALID_LIMIT",
             ),
             (
                 ["--max-sfx-signature-candidates", "8"],
@@ -1937,6 +2015,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                 "expandedBytes",
                 "sfxSignatureOccurrences",
                 "sfxSignatureCandidates",
+                "sfxOverlayScanBytes",
                 "envelopeWorkBytes",
             },
             set(manifest["totals"]),
@@ -1967,19 +2046,20 @@ class ArchiveAuditorTests(unittest.TestCase):
     def test_sfx_prefix_ceiling_boundary_uses_candidate_offset_logic(self):
         ceiling = 4096
         archive = make_7z([{"name": "file", "content": b"x"}])
-        for prefix_length, expectation in (
+        image_end = len(build_pe())
+        for gap, expectation in (
             (ceiling - 1, "7z-sfx"),
             (ceiling, "7z-sfx"),
-            (ceiling + 1, "SFX_PREFIX_LIMIT"),
+            (ceiling + 1, "SFX_OVERLAY_SCAN_LIMIT"),
         ):
-            with self.subTest(prefixLength=prefix_length):
-                data = build_pe(image_length=prefix_length) + archive
-                self.assertEqual(prefix_length + len(archive), len(data))
-                limits = AUDITOR.Limits(max_sfx_prefix_bytes=ceiling)
+            with self.subTest(gap=gap):
+                data = build_pe(image_length=image_end + gap) + archive
+                limits = AUDITOR.Limits(max_sfx_overlay_scan_bytes=ceiling)
                 if expectation == "7z-sfx":
                     node = self.audit(data, "sfx.bin", limits)["archive"]
                     self.assertEqual("7z-sfx", node["format"])
-                    self.assertEqual(prefix_length, node["headerOffset"])
+                    self.assertEqual(image_end + gap, node["headerOffset"])
+                    self.assertEqual(gap, partition(node, "overlay-gap")["length"])
                 else:
                     self.assert_rejected(expectation, data, "sfx.bin", limits)
 
@@ -2060,7 +2140,7 @@ class ArchiveAuditorTests(unittest.TestCase):
         self.assertEqual("signed", layout["signatureDisposition"])
         self.assertEqual(len(image) + len(archive), layout["certificateOffset"])
         self.assertEqual(len(certificate), layout["certificateLength"])
-        self.assertEqual(AUDITOR.sha256(certificate), layout["certificateSha256"])
+        self.assertEqual(AUDITOR.sha256(certificate), partition(node, "certificate")["sha256"])
         self.assertEqual(1, len(layout["certificateEntries"]))
         self.assertEqual("0200", layout["certificateEntries"][0]["revision"])
 
@@ -2078,8 +2158,8 @@ class ArchiveAuditorTests(unittest.TestCase):
         self.assertFalse(AUDITOR.compare_manifests(baseline, changed)["equal"])
         self.assertNotEqual(baseline["source"]["sha256"], changed["source"]["sha256"])
         self.assertNotEqual(
-            baseline["archive"]["ownerDisposition"]["peLayout"]["certificateSha256"],
-            changed["archive"]["ownerDisposition"]["peLayout"]["certificateSha256"],
+            partition(baseline["archive"], "certificate")["sha256"],
+            partition(changed["archive"], "certificate")["sha256"],
         )
 
     def test_unsigned_sfx_and_certificate_gaps_must_not_leave_trailing_bytes(self):
@@ -2251,17 +2331,19 @@ class ArchiveAuditorTests(unittest.TestCase):
                 self.assertIsNone(member["nestedArchiveIdentity"])
                 self.assertNotIn("nestedArchive", member)
 
-        for label, blob in (
-            ("mz-text", b"MZ this is not a portable executable at all"),
-            ("mz-truncated", executable[:96]),
-            ("mz-bad-signature", executable[:0x80] + b"PX\0\0" + executable[0x84:]),
+        for label, blob, code in (
+            ("mz-text", b"MZ this is not a portable executable at all", "MALFORMED_SFX_PE_PREFIX"),
+            ("mz-truncated", executable[:96], "MALFORMED_SFX_PE_PREFIX"),
+            (
+                "mz-bad-signature",
+                executable[:0x80] + b"PX\0\0" + executable[0x84:],
+                "MALFORMED_SFX_PE_PREFIX",
+            ),
         ):
             with self.subTest(case=label):
-                member = self.audit(
-                    make_zip([{"name": "blob.bin", "content": blob}]),
-                    "package.zip",
-                )["archive"]["members"][0]
-                self.assertIsNone(member["nestedArchiveIdentity"])
+                nested = make_zip([{"name": "blob.bin", "content": blob}])
+                self.assert_rejected(code, nested, "package.zip")
+                self.assert_rejected(code, blob, "blob.bin")
 
         sfx = make_7z([{"name": "leaf", "content": b"x"}], sfx=build_pe())
         member = self.audit(
@@ -2279,7 +2361,64 @@ class ArchiveAuditorTests(unittest.TestCase):
         )
 
         self.assert_rejected("MISSING_7Z_SFX_SIGNATURE", executable, "git.exe")
-        self.assert_rejected("MALFORMED_SFX_PE_PREFIX", b"MZ not a real image", "blob.bin")
+
+    def test_malformed_nested_pe_never_becomes_an_opaque_leaf(self):
+        """Root and nested malformed PE shapes must agree exactly."""
+        valid = build_pe(sections=((".text", 0x400, 0x200),))
+        cases = {
+            "truncated-dos": b"MZ" + b"\0" * 40,
+            "dos-only": valid[:64],
+            "truncated-pe-header": valid[:0x84],
+            "truncated-coff": valid[:0x90],
+            "bad-pe-signature": valid[:0x80] + b"PX\0\0" + valid[0x84:],
+            "zero-sections": build_pe_raw(section_count=0),
+            "too-many-sections": build_pe_raw(section_count=97),
+            "bad-optional-magic": build_pe_raw(magic=0x999),
+            "short-optional-header": build_pe(optional_size=64, number_of_rva_and_sizes=0),
+            "overlapping-sections": build_pe(
+                sections=((".a", 0x400, 0x300), (".b", 0x600, 0x200)),
+            ),
+            "section-inside-headers": build_pe(sections=((".a", 0x100, 0x200),)),
+            "too-many-directories": build_pe_raw(number_of_rva_and_sizes=17),
+            "directories-past-optional": build_pe(
+                number_of_rva_and_sizes=16, optional_size=112 + 8 * 15,
+            ),
+        }
+        for label, blob in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(AUDITOR.AuditError) as root:
+                    self.audit(blob, "root.exe")
+                with self.assertRaises(AUDITOR.AuditError) as nested:
+                    self.audit(make_zip([{"name": "m.exe", "content": blob}]), "p.zip")
+                self.assertEqual(root.exception.code, nested.exception.code)
+                self.assertEqual("MALFORMED_SFX_PE_PREFIX", root.exception.code)
+
+        body = align_image(b"")
+        certificates = {
+            "bad-revision": sign(body, [win_certificate(b"sig", revision=0x0300)]),
+            "bad-type": sign(body, [win_certificate(b"sig", certificate_type=0x00ff)]),
+            "nonterminal": sign(body, [win_certificate(b"sig")], length=8),
+            "misaligned": sign(body, [win_certificate(b"sig")], offset=len(body) + 1),
+        }
+        for label, blob in certificates.items():
+            with self.subTest(certificate=label):
+                with self.assertRaises(AUDITOR.AuditError) as root:
+                    self.audit(blob, "root.exe")
+                with self.assertRaises(AUDITOR.AuditError) as nested:
+                    self.audit(make_zip([{"name": "m.exe", "content": blob}]), "p.zip")
+                self.assertEqual(root.exception.code, nested.exception.code)
+                self.assertIn(
+                    root.exception.code,
+                    ("MALFORMED_PE_CERTIFICATE", "MALFORMED_SFX_PE_PREFIX"),
+                )
+
+        signed_valid = sign(align_image(b""), [win_certificate(b"pkcs7")])
+        member = self.audit(
+            make_zip([{"name": "signed.exe", "content": signed_valid}]),
+            "p.zip",
+        )["archive"]["members"][0]
+        self.assertIsNone(member["nestedArchiveIdentity"])
+        self.assert_rejected("MISSING_7Z_SFX_SIGNATURE", signed_valid, "signed.exe")
 
     def test_accepted_envelope_is_validated_and_charged_exactly_once(self):
         archive = make_7z([{"name": "file", "content": b"payload"}])
@@ -2397,27 +2536,35 @@ class ArchiveAuditorTests(unittest.TestCase):
 
     def test_nested_and_root_pe_prefix_ceiling_agree(self):
         archive = make_7z([{"name": "file", "content": b"x"}])
-        blob = build_pe(image_length=1025) + archive
-        limits = AUDITOR.Limits(max_sfx_prefix_bytes=1024)
+        image_end = len(build_pe())
+        blob = build_pe(image_length=image_end + 1024) + archive
 
-        self.assert_rejected("SFX_PREFIX_LIMIT", blob, "blob.exe", limits)
-        self.assert_rejected(
-            "SFX_PREFIX_LIMIT",
-            make_zip([{"name": "inner.exe", "content": blob}]),
-            "package.zip",
-            limits,
-        )
-        self.assertEqual(
-            "7z-sfx",
-            self.audit(blob, "blob.exe")["archive"]["format"],
-        )
-        self.assertEqual(
-            "7z-sfx",
-            self.audit(
-                make_zip([{"name": "inner.exe", "content": blob}]),
+        def nested_of(data, limits=None):
+            return self.audit(
+                make_zip([{"name": "inner.exe", "content": data}]),
                 "package.zip",
-            )["archive"]["members"][0]["nestedArchive"]["format"],
-        )
+                limits,
+            )["archive"]["members"][0]
+
+        node = self.audit(blob, "blob.exe")["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual("7z-sfx", nested_of(blob)["nestedArchive"]["format"])
+
+        tight = AUDITOR.Limits(max_sfx_overlay_scan_bytes=512)
+        with self.assertRaises(AUDITOR.AuditError) as root:
+            self.audit(blob, "blob.exe", tight)
+        with self.assertRaises(AUDITOR.AuditError) as nested:
+            nested_of(blob, tight)
+        self.assertEqual("SFX_OVERLAY_SCAN_LIMIT", root.exception.code)
+        self.assertEqual(root.exception.code, nested.exception.code)
+
+        trailing = build_pe(sections=((".text", 0x400, 0x200),)) + b"\0" * 64
+        with self.assertRaises(AUDITOR.AuditError) as root:
+            self.audit(trailing, "blob.exe")
+        with self.assertRaises(AUDITOR.AuditError) as nested:
+            nested_of(trailing)
+        self.assertEqual("UNCLASSIFIED_PE_OVERLAY", root.exception.code)
+        self.assertEqual(root.exception.code, nested.exception.code)
 
     def test_zip_unix_file_types_are_decoded_explicitly(self):
         accepted = {
@@ -2556,7 +2703,11 @@ class ArchiveAuditorTests(unittest.TestCase):
             [{"name": "dir", "content": b"x"}],
             attributes=[(0o040755 << 16) | unix],
         )
-        self.assert_rejected("DIRECTORY_WITH_DATA", with_data, "modes.7z")
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            self.audit(with_data, "modes.7z")
+        self.assertEqual("INCONSISTENT_7Z_MEMBER_TYPE", context.exception.code)
+        self.assertEqual("file", context.exception.details["structuralType"])
+        self.assertEqual("directory", context.exception.details["unixFileType"])
 
     def test_provenance_partition_is_disjoint_and_exact(self):
         archive = make_7z([{"name": "file", "content": b"payload"}])
@@ -2641,6 +2792,457 @@ class ArchiveAuditorTests(unittest.TestCase):
                         self.assertEqual(base_hashes[other], hashes[other])
                 self.assertNotEqual(baseline["source"]["sha256"], changed["source"]["sha256"])
                 self.assertFalse(AUDITOR.compare_manifests(baseline, changed)["equal"])
+
+    def payload_probe(self, data, limits=None, name="probe.bin"):
+        """Audit while counting every payload decoder, CRC, and hash call."""
+        counters = {"inflate": 0, "decompressobj": 0, "lzma": 0, "crc32": 0, "sha256": 0}
+        real_decompressobj = AUDITOR.zlib.decompressobj
+        real_crc32 = AUDITOR.zlib.crc32
+        real_sha256 = AUDITOR.hashlib.sha256
+        real_lzma = AUDITOR.lzma.LZMADecompressor
+        real_inflate = AUDITOR.ArchiveAuditor._inflate_zip
+        real_decode = AUDITOR.ArchiveAuditor._seven_decode_streams
+
+        def counting_decompressobj(*a, **k):
+            counters["decompressobj"] += 1
+            return real_decompressobj(*a, **k)
+
+        def counting_crc32(payload, value=0):
+            counters["crc32"] += 1
+            return real_crc32(payload, value)
+
+        def counting_sha256(payload=b""):
+            counters["sha256"] += 1
+            return real_sha256(payload)
+
+        def counting_lzma(*a, **k):
+            counters["lzma"] += 1
+            return real_lzma(*a, **k)
+
+        def counting_inflate(self_, *a, **k):
+            counters["inflate"] += 1
+            return real_inflate(self_, *a, **k)
+
+        def counting_decode(self_, *a, **k):
+            counters["inflate"] += 1
+            return real_decode(self_, *a, **k)
+
+        patches = [
+            mock.patch.object(AUDITOR.zlib, "decompressobj", counting_decompressobj),
+            mock.patch.object(AUDITOR.zlib, "crc32", counting_crc32),
+            mock.patch.object(AUDITOR.hashlib, "sha256", counting_sha256),
+            mock.patch.object(AUDITOR.lzma, "LZMADecompressor", counting_lzma),
+            mock.patch.object(AUDITOR.ArchiveAuditor, "_inflate_zip", counting_inflate),
+            mock.patch.object(AUDITOR.ArchiveAuditor, "_seven_decode_streams", counting_decode),
+        ]
+        for patch in patches:
+            patch.start()
+        try:
+            try:
+                AUDITOR.ArchiveAuditor(limits).audit_bytes(data, name)
+                code = None
+            except AUDITOR.AuditError as exc:
+                code = exc.code
+        finally:
+            for patch in reversed(patches):
+                patch.stop()
+        return code, counters
+
+    def test_zip_special_types_reject_before_any_payload_work(self):
+        for label, entry in (
+            ("corrupt-deflate", {
+                "name": "dev",
+                "method": 8,
+                "compressed": b"\xff\xff\xff\xff\xff\xff",
+                "external": 0o020644 << 16,
+            }),
+            ("tight-ratio", {
+                "name": "dev",
+                "content": b"\0" * 8192,
+                "method": 8,
+                "external": 0o060644 << 16,
+            }),
+            ("symlink-corrupt", {
+                "name": "link",
+                "method": 8,
+                "compressed": b"\x00\x01\x02",
+                "external": 0o120777 << 16,
+            }),
+        ):
+            with self.subTest(case=label):
+                archive = make_zip([entry])
+                code, counters = self.payload_probe(
+                    archive,
+                    AUDITOR.Limits(max_compression_ratio=2),
+                )
+                self.assertEqual("UNSUPPORTED_ZIP_MEMBER_TYPE", code)
+                self.assertEqual(0, counters["inflate"])
+                self.assertEqual(0, counters["decompressobj"])
+
+    def test_seven_zip_special_types_reject_before_any_payload_work(self):
+        unix = AUDITOR.SEVEN_ZIP_UNIX_EXTENSION
+        for label, method, content in (
+            ("invalid-coder", "0301010101", b"x" * 64),
+            ("copy-stream", "copy", b"x" * 4096),
+        ):
+            with self.subTest(case=label):
+                archive = make_7z(
+                    [{"name": "dev", "content": content}],
+                    method=method,
+                    attributes=[(0o020644 << 16) | unix],
+                )
+                code, counters = self.payload_probe(
+                    archive,
+                    AUDITOR.Limits(max_compression_ratio=2),
+                )
+                self.assertEqual("UNSUPPORTED_7Z_MEMBER_TYPE", code)
+                self.assertEqual(0, counters["inflate"])
+                self.assertEqual(0, counters["lzma"])
+
+    def test_seven_zip_structural_and_attribute_types_must_agree(self):
+        unix = AUDITOR.SEVEN_ZIP_UNIX_EXTENSION
+        coherent = (
+            ("regular-with-data", {"name": "m", "content": b"x"}, (0o100644 << 16) | unix, False),
+            ("empty-regular", {"name": "m", "content": b""}, (0o100644 << 16) | unix, False),
+            ("directory", {"name": "m", "type": "directory"}, (0o040755 << 16) | unix | 0x10, True),
+            ("unspecified-file", {"name": "m", "content": b"x"}, 0, False),
+        )
+        for label, entry, attribute, expect_directory in coherent:
+            with self.subTest(coherent=label):
+                node = self.audit(make_7z([entry], attributes=[attribute]), "c.7z")["archive"]
+                member = node["members"][0]
+                self.assertEqual("directory" if expect_directory else "file", member["type"])
+
+        contradictions = (
+            ("dir-bit-with-data", {"name": "m", "content": b"x"}, 0x10),
+            ("dir-bit-empty-file", {"name": "m", "content": b""}, 0x10),
+            ("structural-dir-without-bit", {"name": "m", "type": "directory"}, unix | (0o040755 << 16)),
+            ("unix-dir-with-data", {"name": "m", "content": b"x"}, unix | (0o040755 << 16)),
+            ("unix-regular-on-directory", {"name": "m", "type": "directory"}, unix | (0o100644 << 16) | 0x10),
+        )
+        for label, entry, attribute in contradictions:
+            with self.subTest(contradiction=label):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    self.audit(make_7z([entry], attributes=[attribute]), "c.7z")
+                self.assertEqual("INCONSISTENT_7Z_MEMBER_TYPE", context.exception.code)
+                for field in ("path", "structuralType", "emptyStream", "emptyFile"):
+                    self.assertIn(field, context.exception.details)
+
+        self.assert_rejected(
+            "OUT_OF_RANGE_RECORD",
+            make_7z(
+                [{"name": "a", "content": b"x"}, {"name": "b", "content": b"y"}],
+                attributes_payload=b"\x01\x00" + struct.pack("<I", 0),
+            ),
+            "c.7z",
+        )
+        auditor = AUDITOR.ArchiveAuditor()
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            auditor._seven_classify_members(
+                {"attributes": [0]},
+                [(b"a", "a"), (b"b", "b")],
+                [False, False],
+                [],
+            )
+        self.assertEqual("SEVEN_ZIP_PROPERTY_COUNT_MISMATCH", context.exception.code)
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            auditor._seven_classify_members({}, [(b"a", "a")], [True], [])
+        self.assertEqual("SEVEN_ZIP_PROPERTY_COUNT_MISMATCH", context.exception.code)
+
+    def test_seven_zip_optional_values_must_be_canonical(self):
+        entries = [{"name": "m", "content": b"x"}]
+        canonical = b"\x01\x00" + struct.pack("<I", 0)
+        self.assertEqual(
+            "file",
+            self.audit(make_7z(entries, attributes_payload=canonical), "c.7z")["archive"]["members"][0]["type"],
+        )
+
+        cases = {
+            "all-defined-2": b"\x02\x00" + struct.pack("<I", 0),
+            "all-defined-255": b"\xff\x00" + struct.pack("<I", 0),
+        }
+        for label, payload in cases.items():
+            with self.subTest(case=label):
+                self.assert_rejected(
+                    "NONCANONICAL_7Z_PROPERTY",
+                    make_7z(entries, attributes_payload=payload),
+                    "c.7z",
+                )
+                self.assert_rejected(
+                    "NONCANONICAL_7Z_PROPERTY",
+                    make_7z(entries, attributes_payload=payload, encoded_header=True),
+                    "c.7z",
+                )
+
+        defined_vector = b"\x00\x80\x00" + struct.pack("<I", 0)
+        self.assertEqual(
+            "file",
+            self.audit(
+                make_7z(entries, attributes_payload=defined_vector), "c.7z",
+            )["archive"]["members"][0]["type"],
+        )
+
+        self.assert_rejected(
+            "NONCANONICAL_7Z_BIT_VECTOR",
+            make_7z(entries, attributes_payload=b"\x00\x81\x00" + struct.pack("<I", 0)),
+            "c.7z",
+        )
+        self.assert_rejected(
+            "NONCANONICAL_7Z_BIT_VECTOR",
+            make_7z(entries, attributes_payload=b"\x00\x01\x00"),
+            "c.7z",
+        )
+        self.assert_rejected(
+            "NONCANONICAL_7Z_PROPERTY",
+            make_7z(entries, attributes_payload=b"\x01\x00" + struct.pack("<I", 0) + b"\x00"),
+            "c.7z",
+        )
+        self.assert_rejected(
+            "OUT_OF_RANGE_RECORD",
+            make_7z(entries, attributes_payload=b"\x01\x00" + b"\x00\x00\x00"),
+            "c.7z",
+        )
+        self.assert_rejected(
+            "UNSUPPORTED_7Z_EXTERNAL_PROPERTY",
+            make_7z(entries, attributes_payload=b"\x01\x01" + struct.pack("<I", 0)),
+            "c.7z",
+        )
+        self.assert_rejected(
+            "DUPLICATE_7Z_FILE_PROPERTY",
+            make_7z(
+                entries,
+                attributes_payload=b"\x01\x00" + struct.pack("<I", 0),
+                extra_properties=b"\x15\x06\x01\x00" + struct.pack("<I", 0),
+            ),
+            "c.7z",
+        )
+
+    def test_numeric_limits_never_escape_as_unstructured_errors(self):
+        from decimal import Decimal
+
+        probes = (
+            ("bool", True),
+            ("string", "8"),
+            ("decimal", Decimal("2")),
+            ("huge-int", 10 ** 400),
+            ("float-max", sys.float_info.max),
+            ("nan", float("nan")),
+            ("inf", float("inf")),
+            ("negative-inf", float("-inf")),
+            ("zero", 0),
+            ("negative", -1),
+            ("subnormal-negative", -5e-324),
+        )
+        for label, value in probes:
+            with self.subTest(ratio=label):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.ArchiveAuditor(AUDITOR.Limits(max_compression_ratio=value))
+                self.assertEqual("INVALID_LIMIT", context.exception.code)
+
+        for label, value in (("subnormal", 5e-324), ("one", 1), ("max", AUDITOR.MAX_COMPRESSION_RATIO)):
+            with self.subTest(accepted=label):
+                AUDITOR.ArchiveAuditor(AUDITOR.Limits(max_compression_ratio=value))
+
+        for name in (
+            "max_depth",
+            "max_total_expanded_bytes",
+            "max_members_per_archive",
+            "max_members_total",
+            "max_path_length",
+            "max_sfx_prefix_bytes",
+            "max_sfx_overlay_scan_bytes",
+            "max_sfx_signature_occurrences",
+            "max_sfx_signature_candidates",
+            "max_envelope_work_bytes",
+            "max_certificate_entries",
+        ):
+            for value in (10 ** 400, float("inf"), float("nan"), "8", Decimal("2"), 1.5, True):
+                with self.subTest(limit=name, value=repr(value)):
+                    with self.assertRaises(AUDITOR.AuditError) as context:
+                        AUDITOR.ArchiveAuditor(AUDITOR.Limits(**{name: value}))
+                    self.assertEqual("INVALID_LIMIT", context.exception.code)
+
+        payloads = {
+            "gzip": make_gzip(b"x" * 4096),
+            "bzip2": bz2.compress(make_tar([{"name": "f", "content": b"x"}])),
+            "xz": lzma.compress(make_tar([{"name": "f", "content": b"x"}])),
+            "zip": make_zip([{"name": "f", "content": b"x" * 4096, "method": 8}]),
+            "7z": make_7z([{"name": "f", "content": b"x" * 64}]),
+        }
+        for label, payload in payloads.items():
+            with self.subTest(format=label):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.ArchiveAuditor(
+                        AUDITOR.Limits(max_compression_ratio=1e308)
+                    ).audit_bytes(payload, "x.bin")
+                self.assertEqual("INVALID_LIMIT", context.exception.code)
+
+    def test_cli_extreme_limits_return_structured_json(self):
+        payloads = {
+            "gzip": make_gzip(b"x" * 4096),
+            "zip": make_zip([{"name": "f", "content": b"x" * 4096, "method": 8}]),
+            "7z": make_7z([{"name": "f", "content": b"x" * 64}]),
+        }
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            for label, payload in payloads.items():
+                path = Path(directory) / f"{label}.bin"
+                path.write_bytes(payload)
+                for argument in ("1e308", "inf", "nan", "-1", "0"):
+                    with self.subTest(format=label, ratio=argument):
+                        stderr = io.StringIO()
+                        old_stderr = AUDITOR.sys.stderr
+                        try:
+                            AUDITOR.sys.stderr = stderr
+                            status = AUDITOR.main(
+                                ["audit", "--max-compression-ratio", argument, str(path)]
+                            )
+                        finally:
+                            AUDITOR.sys.stderr = old_stderr
+                        self.assertEqual(2, status)
+                        document = json.loads(stderr.getvalue())
+                        self.assertEqual("INVALID_LIMIT", document["error"]["code"])
+                        self.assertFalse(document["ok"])
+
+    def test_overlay_search_is_bounded_by_the_configured_window(self):
+        image_end = len(build_pe())
+        deep = b"\0" * 4096 + AUDITOR.SEVEN_ZIP_SIGNATURE + b"\0" * 4096
+        archive = make_7z([{"name": "payload", "content": deep}])
+        data = build_pe() + archive
+
+        limits = AUDITOR.Limits(max_sfx_overlay_scan_bytes=64)
+        node = self.audit(data, "sfx.bin", limits)["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(image_end, node["headerOffset"])
+        totals = self.audit(data, "sfx.bin", limits)["totals"]
+        self.assertLessEqual(totals["sfxOverlayScanBytes"], 64)
+
+        big_gap = build_pe(image_length=image_end + (1 << 20)) + make_7z(
+            [{"name": "clean", "content": b"x" * 128}]
+        )
+        measured = self.audit(big_gap, "sfx.bin")["totals"]
+        self.assertLessEqual(
+            measured["sfxOverlayScanBytes"],
+            AUDITOR.Limits().max_sfx_overlay_scan_bytes,
+        )
+
+        self.assert_rejected(
+            "SFX_OVERLAY_SCAN_LIMIT",
+            build_pe(image_length=image_end + 4096) + b"\0" * 64,
+            "sfx.bin",
+            AUDITOR.Limits(max_sfx_overlay_scan_bytes=64),
+        )
+
+        many = build_pe() + b"".join(
+            seven_zip_decoy(image_end + 32 * (index + 1), image_end + 32 * index)
+            for index in range(64)
+        )
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            self.audit(many, "sfx.bin")
+        self.assertIn(
+            context.exception.code,
+            ("TRAILING_7Z_PAYLOAD", "SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH"),
+        )
+
+        self.assertEqual(
+            "7z-sfx",
+            self.audit(
+                build_pe() + make_7z([{"name": "clean", "content": b"x" * 128}]),
+                "sfx.bin",
+                AUDITOR.Limits(max_sfx_overlay_scan_bytes=AUDITOR.MAX_LIMIT_VALUE),
+            )["archive"]["format"],
+        )
+        # With an unbounded window the stray signature inside the archive body
+        # is itself scanned, and a malformed candidate is fail-closed.
+        self.assert_rejected(
+            "SEVEN_ZIP_START_HEADER_CRC_MISMATCH",
+            data,
+            "sfx.bin",
+            AUDITOR.Limits(max_sfx_overlay_scan_bytes=AUDITOR.MAX_LIMIT_VALUE),
+        )
+
+        signed_archive = make_7z([{"name": "payload", "content": deep}])
+        _, signed = signed_sfx(signed_archive, [win_certificate(b"pkcs7")])
+        node = self.audit(signed, "signed.exe", AUDITOR.Limits(max_sfx_overlay_scan_bytes=64))["archive"]
+        self.assertEqual("signed", node["ownerDisposition"]["peLayout"]["signatureDisposition"])
+
+    def test_manifest_schema_is_versioned_and_not_interchangeable(self):
+        archive = make_zip([{"name": "f", "content": b"x"}])
+        manifest = self.audit(archive, "a.zip")
+        self.assertEqual("git-for-windows.archive-audit/v2", manifest["schema"])
+        self.assertEqual(
+            "git-for-windows.archive-comparison/v2",
+            AUDITOR.compare_manifests(manifest, manifest)["schema"],
+        )
+
+        legacy = json.loads(json.dumps(manifest))
+        legacy["schema"] = "git-for-windows.archive-audit/v1"
+        for left, right in ((legacy, manifest), (manifest, legacy)):
+            with self.subTest(side="a" if left is legacy else "b"):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.compare_manifests(left, right)
+                self.assertEqual("UNSUPPORTED_MANIFEST_SCHEMA", context.exception.code)
+
+        missing = json.loads(json.dumps(manifest))
+        del missing["schema"]
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            AUDITOR.compare_manifests(missing, manifest)
+        self.assertEqual("UNSUPPORTED_MANIFEST_SCHEMA", context.exception.code)
+
+    def test_provenance_has_no_duplicate_ownership_hashes(self):
+        archive = make_7z([{"name": "file", "content": b"payload"}])
+        _, signed = signed_sfx(archive, [win_certificate(b"pkcs7-placeholder")])
+        node = self.audit(signed, "signed.exe")["archive"]
+        layout = node["ownerDisposition"]["peLayout"]
+
+        self.assertNotIn("certificateSha256", layout)
+        self.assertIn("certificateEntries", layout)
+        for entry in layout["certificateEntries"]:
+            self.assertEqual({"offset", "length", "revision", "certificateType"}, set(entry))
+
+        digests = [item["sha256"] for item in node["ownerDisposition"]["provenance"]["partitions"]]
+        serialized = json.dumps(node, sort_keys=True)
+        for digest in digests:
+            self.assertEqual(1, serialized.count(digest), digest)
+
+    def test_same_length_partition_mutation_is_isolated(self):
+        archive = make_7z([{"name": "file", "content": b"payload"}])
+        image, signed = signed_sfx(archive, [win_certificate(b"pkcs7-placeholder")])
+        baseline = self.audit(signed, "a.exe")
+        base = {
+            item["role"]: item["sha256"]
+            for item in baseline["archive"]["ownerDisposition"]["provenance"]["partitions"]
+        }
+
+        mutated = bytearray(signed)
+        mutated[0x40] ^= 0xff
+        changed = self.audit(bytes(mutated), "b.exe")
+        after = {
+            item["role"]: item["sha256"]
+            for item in changed["archive"]["ownerDisposition"]["provenance"]["partitions"]
+        }
+        self.assertEqual(len(signed), len(mutated))
+        self.assertNotEqual(base["pe-image"], after["pe-image"])
+        for role in ("archive", "certificate"):
+            self.assertEqual(base[role], after[role])
+        self.assertEqual(
+            [item["length"] for item in baseline["archive"]["ownerDisposition"]["provenance"]["partitions"]],
+            [item["length"] for item in changed["archive"]["ownerDisposition"]["provenance"]["partitions"]],
+        )
+        self.assertFalse(AUDITOR.compare_manifests(baseline, changed)["equal"])
+
+    def test_tampered_partition_records_are_rejected(self):
+        data = make_7z([{"name": "file", "content": b"payload"}])
+        for label, ranges in (
+            ("reordered", [("archive", 32, len(data)), ("pe-image", 0, 32)]),
+            ("overlapping", [("pe-image", 0, 64), ("archive", 32, len(data))]),
+            ("gapped", [("pe-image", 0, 16), ("archive", 32, len(data))]),
+            ("short", [("archive", 0, len(data) - 1)]),
+            ("long", [("archive", 0, len(data) + 1)]),
+        ):
+            with self.subTest(case=label):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.physical_partition(data, ranges, "probe")
+                self.assertEqual("PROVENANCE_PARTITION_INVALID", context.exception.code)
 
 
 if __name__ == "__main__":
