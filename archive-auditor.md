@@ -134,9 +134,9 @@ accepted next header is CRC-checked and charged exactly once.
 
 Exhausting a budget is a deliberate, stable rejection
 (`SFX_SIGNATURE_OCCURRENCE_LIMIT`, `SFX_SIGNATURE_CANDIDATE_LIMIT`,
-`SFX_OVERLAY_SCAN_LIMIT`, `SFX_PREFIX_LIMIT`, or `ENVELOPE_WORK_LIMIT`). A
-candidate is never silently skipped so that an earlier or later candidate can
-be accepted in its place.
+`SFX_OVERLAY_SCAN_LIMIT`, or `ENVELOPE_WORK_LIMIT`). A candidate is never
+silently skipped so that an earlier or later candidate can be accepted in
+its place.
 
 ## Supported physical formats
 

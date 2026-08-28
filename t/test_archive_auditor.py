@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import ast
 import bz2
 import gzip
 import importlib.util
@@ -8,6 +9,7 @@ import json
 import lzma
 from pathlib import Path
 import random
+import re
 import struct
 import sys
 import time
@@ -26,6 +28,31 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("archive_auditor", ROOT / "archive-auditor.py")
 AUDITOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDITOR)
+
+# Upper-case identifiers that appear in the documentation as structure or
+# constant names rather than as structured rejection codes.
+NON_CODE_IDENTIFIERS = frozenset({
+    "CRC",
+    "FNAME",
+    "IMAGE_DIRECTORY_ENTRY_SECURITY",
+    "MZ",
+    "NFC",
+    "PAX",
+    "PE",
+    "SHA",
+    "S_IFBLK",
+    "S_IFCHR",
+    "S_IFDIR",
+    "S_IFIFO",
+    "S_IFLNK",
+    "S_IFMT",
+    "S_IFREG",
+    "S_IFSOCK",
+    "TAR",
+    "WIN_CERTIFICATE",
+    "ZIP",
+    "ZIP64",
+})
 
 
 def raw_deflate(data):
@@ -2288,6 +2315,71 @@ class ArchiveAuditorTests(unittest.TestCase):
                 with self.assertRaises(AUDITOR.AuditError) as context:
                     AUDITOR.crc32_range(data, start, end)
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
+
+    def test_documented_rejection_codes_match_production(self):
+        """The normative documented rejection contract must track production.
+
+        Production codes are derived from the auditor source by AST, and
+        documented codes from the normative Markdown, so neither side is
+        asserted against a hand-copied list. A retired or unreachable code
+        cannot be advertised, and the budget family cannot silently drift.
+        """
+        source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
+        text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
+        pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
+
+        literals = set()
+        raised = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if pattern.fullmatch(node.value):
+                    literals.add(node.value)
+            if isinstance(node, ast.Call) and node.args:
+                callee = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                first = node.args[0]
+                if (
+                    callee in ("reject", "AuditError")
+                    and isinstance(first, ast.Constant)
+                    and isinstance(first.value, str)
+                ):
+                    raised.add(first.value)
+
+        documented = {
+            code
+            for code in re.findall(r"`([A-Z][A-Z0-9_]{2,})`", text)
+            if code not in NON_CODE_IDENTIFIERS
+        }
+
+        # Anti-tautology anchors: a silently empty extraction must fail loudly.
+        self.assertGreater(len(raised), 40, "AST extraction found too few raised codes")
+        self.assertGreater(len(documented), 8, "documentation extraction found too few codes")
+        self.assertTrue(raised <= literals)
+        self.assertIn("UNRECOGNIZED_ARCHIVE", raised)
+        self.assertIn("AMBIGUOUS_7Z_SIGNATURE", documented)
+
+        undocumentable = sorted(documented - literals)
+        self.assertEqual(
+            [],
+            undocumentable,
+            f"documentation advertises codes that production cannot raise: {undocumentable}",
+        )
+
+        budget = re.compile(r"^(?:SFX_|ENVELOPE_).*_LIMIT$")
+        marker = "Exhausting a budget is a deliberate, stable rejection"
+        self.assertIn(marker, text)
+        start = text.index(marker)
+        paragraph = text[start:text.index("\n\n", start)]
+        documented_budget = set(re.findall(r"`([A-Z][A-Z0-9_]{2,})`", paragraph))
+        production_budget = {code for code in raised if budget.match(code)}
+
+        self.assertGreater(len(production_budget), 2)
+        self.assertEqual(
+            production_budget,
+            documented_budget,
+            "the normative budget family must equal the production budget family",
+        )
+        self.assertNotIn("SFX_PREFIX_LIMIT", literals)
+        self.assertNotIn("SFX_PREFIX_LIMIT", documented)
 
     def test_mutations_always_produce_a_structured_outcome(self):
         """Mutation control covering all eight third-audit findings.
