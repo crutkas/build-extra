@@ -173,6 +173,16 @@
       ]
     },
     {
+      "source": "refs/heads/crutkas-arm64-recursive-archive-auditor",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "8efdf3dadddc38fd340a8366b5cdf7b3d8e7c722",
+      "tip": "8efdf3dadddc38fd340a8366b5cdf7b3d8e7c722",
+      "commitCount": 1,
+      "commits": [
+        "8efdf3dadddc38fd340a8366b5cdf7b3d8e7c722"
+      ]
+    },
+    {
       "source": "refs/heads/crutkas-combine-arm64-payloads",
       "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
       "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
@@ -289,6 +299,19 @@
         "7585007c22fa08a3bc9dcf554b28cc89de0c57e9",
         "d33824da629c0278689a03a2e4c7b39868ee11e1",
         "f5fc22b61661d339583cb1b64f714c211448e1ed"
+      ]
+    },
+    {
+      "source": "refs/heads/crutkas-finalize-preview-validator",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+      "tip": "90da375235aa1f2ed2d5409794cf39ecdc466bd5",
+      "commitCount": 4,
+      "commits": [
+        "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+        "6e2413d20f7a409bbbd9bd0da9dbb27c1e084bfe",
+        "9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19",
+        "90da375235aa1f2ed2d5409794cf39ecdc466bd5"
       ]
     },
     {
@@ -708,6 +731,16 @@
         "8e4b0de5b61b25a0d7b0752d830558b53bb2060d",
         "b3e8ee2293f21e0d3f1652ebd61158e39cbbda43",
         "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829"
+      ]
+    },
+    {
+      "source": "refs/heads/crutkas-rebuild-arm64-ownership-ledger",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "15edfb9ec75fb8eabe33d177005b970815f10934",
+      "tip": "15edfb9ec75fb8eabe33d177005b970815f10934",
+      "commitCount": 1,
+      "commits": [
+        "15edfb9ec75fb8eabe33d177005b970815f10934"
       ]
     },
     {

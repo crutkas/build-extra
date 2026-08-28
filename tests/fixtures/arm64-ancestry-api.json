@@ -1,7 +1,7 @@
 {
   "deniedCampaignCommits": [
     {
-      "source": "refs/heads/denied-campaign",
+      "source": "refs/heads/crutkas-arm64-denied-campaign",
       "mergeBase": "0000000000000000000000000000000000000000",
       "root": "a527000000000000000000000000000000000000",
       "tip": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -21,8 +21,23 @@
     ]
   },
   "api": {
-    "/repos/crutkas/build-extra/git/ref/heads/denied-campaign": {
-      "ref": "refs/heads/denied-campaign",
+    "/repos/crutkas/build-extra/branches?per_page=100&page=1": [
+      {
+        "name": "main",
+        "commit": {
+          "sha": "0000000000000000000000000000000000000000"
+        }
+      },
+      {
+        "name": "crutkas-arm64-denied-campaign",
+        "commit": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    ],
+    "/repos/crutkas/build-extra/pulls?state=all&per_page=100&page=1": [],
+    "/repos/crutkas/build-extra/git/ref/heads/crutkas-arm64-denied-campaign": {
+      "ref": "refs/heads/crutkas-arm64-denied-campaign",
       "object": {
         "type": "commit",
         "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

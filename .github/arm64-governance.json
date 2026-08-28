@@ -16,17 +16,32 @@
   },
   "ancestryManifest": {
     "path": ".github/arm64-denied-ancestry.json",
-    "digest": "sha256:d9f4968a3a8e4f4822f4a46f485270a95b749a76539c40b53785a1162d7383c3"
+    "digest": "sha256:32a5a76027611f2501fb212f447169aa9df9654ae0bea8df88b67fb870e8e763"
   },
-  "trustedFiles": [
-    {
-      "path": ".github/workflows/add-release-note.yml",
-      "digest": "sha256:f24ccfc2216c5392b15590b24125eb82db6a7c6777293376cc2004885f903351"
-    },
-    {
-      "path": "add-release-note.js",
-      "digest": "sha256:d8bbcbaee1c951d3fec3c2fb81cea994016c323f3fca078a2ce74d9e98343428"
-    }
+  "governanceSources": [
+    ".github/arm64-denied-ancestry.json",
+    ".github/arm64-governance.json",
+    ".github/workflows/add-release-note.yml",
+    ".github/workflows/main.yml",
+    "add-release-note.js",
+    "tests/fixtures/arm64-ancestry-api.json",
+    "tests/fixtures/arm64-release-api.json",
+    "validate-arm64-governance.js",
+    "validate-arm64-governance.test.js"
+  ],
+  "deniedCampaignEnumeration": {
+    "branchPattern": "^crutkas-(?:.*arm64.*|finalize-preview-validator)$",
+    "pullRequestTitlePattern": "\\barm64\\b",
+    "excludedBranches": [
+      "crutkas-arm64-governance-pins"
+    ],
+    "excludedPullRequests": [
+      17
+    ],
+    "pageSize": 100
+  },
+  "deniedActions": [
+    "git-for-windows/setup-git-for-windows-sdk"
   ],
   "releaseLock": null,
   "actions": [
@@ -91,21 +106,6 @@
       }
     },
     {
-      "identity": "git-for-windows/setup-git-for-windows-sdk",
-      "commit": "335917db02da4280d3d5e87915d7b86196677f9f",
-      "tree": "f616ede9f2e8d602cb182254ecffdac324ed6212",
-      "source": {
-        "type": "branch",
-        "ref": "refs/heads/v2",
-        "tagObject": null
-      },
-      "verification": {
-        "verified": false,
-        "reason": "unsigned",
-        "disposition": "unsigned-source-ref-review"
-      }
-    },
-    {
       "identity": "actions/github-script",
       "commit": "3a2844b7e9c422d3c10d287c895573f7108da1b3",
       "tree": "23894d36d73527d5502aa7b2b9d53041f9e56f4e",
@@ -165,6 +165,13 @@
       "commitCount": 3
     },
     {
+      "source": "refs/heads/crutkas-arm64-recursive-archive-auditor",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "8efdf3dadddc38fd340a8366b5cdf7b3d8e7c722",
+      "tip": "8efdf3dadddc38fd340a8366b5cdf7b3d8e7c722",
+      "commitCount": 1
+    },
+    {
       "source": "refs/heads/crutkas-combine-arm64-payloads",
       "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
       "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
@@ -177,6 +184,13 @@
       "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
       "tip": "f5fc22b61661d339583cb1b64f714c211448e1ed",
       "commitCount": 41
+    },
+    {
+      "source": "refs/heads/crutkas-finalize-preview-validator",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "ce597a2bb3b0e496220aac2d160a46c93ccc8267",
+      "tip": "90da375235aa1f2ed2d5409794cf39ecdc466bd5",
+      "commitCount": 4
     },
     {
       "source": "refs/heads/crutkas-integrate-arm64-openssh",
@@ -205,6 +219,13 @@
       "root": "4b68dbb39007bc9b17b5fd356b16560569f06f2a",
       "tip": "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829",
       "commitCount": 232
+    },
+    {
+      "source": "refs/heads/crutkas-rebuild-arm64-ownership-ledger",
+      "mergeBase": "79f3c5fa9111e438b923222dd27392843a995995",
+      "root": "15edfb9ec75fb8eabe33d177005b970815f10934",
+      "tip": "15edfb9ec75fb8eabe33d177005b970815f10934",
+      "commitCount": 1
     },
     {
       "source": "pull/15/head",

@@ -13,18 +13,21 @@ const {
   APPROVED_ACTION_PINS,
   COPILOT_COAUTHOR,
   DEFAULT_YAML_PARSERS,
+  REQUIRED_GOVERNANCE_SOURCES,
   createFileSource,
   createFixtureApi,
   createGitSource,
   createMemorySource,
   inspectRun,
   parseYaml,
+  requireReleaseLock,
   validateActionSpec,
   validateAncestryManifest,
   validateCommitRange,
   validateGovernancePolicy,
   validateLocalAction,
   validateOwnedCommitMessage,
+  validateTrustedSources,
   validateWorkflowSet,
   verifyDeniedAncestry,
   verifyReleaseInput
@@ -58,6 +61,7 @@ test('uses an approved semantic YAML parser', () => {
   const parsed = parseYaml('value: true\n', 'parser probe')
   assert.strictEqual(parsed.document.value, true)
   assert.ok(DEFAULT_YAML_PARSERS.some(parser => parsed.parser.startsWith(`${parser.name}@`)))
+  if (parsed.parser.startsWith('powershell-yaml@')) assert.strictEqual(parsed.parser, 'powershell-yaml@0.4.12')
 })
 
 rejects('fails closed without a semantic YAML parser', () => {
@@ -70,6 +74,18 @@ rejects('rejects custom executable YAML tags before parsing', () => {
 
 rejects('rejects custom executable YAML tags in flow collections', () => {
   parseYaml('value: [!example/object payload]\n', 'flow-tagged YAML')
+})
+
+rejects('rejects an approved YAML document followed by a second document', () => {
+  parseYaml('value: true\n---\nvalue: false\n', 'multi-document YAML')
+})
+
+rejects('rejects an approved YAML document followed by an empty document', () => {
+  parseYaml('value: true\n---\n', 'trailing empty YAML document')
+})
+
+rejects('rejects an explicit YAML document terminator', () => {
+  parseYaml('value: true\n...\n', 'terminated YAML document')
 })
 
 for (const [identity, sha] of Object.entries(APPROVED_ACTION_PINS)) {
@@ -121,12 +137,13 @@ rejects('semantically resolves and rejects a merged uses key', () => {
   ].join('\n')), policy)
 })
 
-rejects('candidate cannot replace the trusted validator with a no-op', () => {
-  const source = workflowSource(
-    'jobs:\n  test:\n    steps:\n      - "uses": evil/action@v1\n',
-    { 'validate-arm64-governance.js': 'process.exit(0)\n' }
-  )
-  validateWorkflowSet(source, policy)
+test('candidate cannot replace only the trusted validator with a no-op', () => {
+  assert.throws(() => {
+    withGovernanceMutation(({ directory }) => {
+      fs.writeFileSync(path.join(directory, 'validate-arm64-governance.js'), 'process.exit(0)\n')
+      git(directory, ['add', '--', 'validate-arm64-governance.js'])
+    })
+  }, /candidate governance source validate-arm64-governance\.js differs from protected base/)
 })
 
 rejects('rejects a constructed release URL downloader', () => {
@@ -234,13 +251,11 @@ rejects('rejects elevated pull_request_target permissions', () => {
   }), policy)
 })
 
-rejects('rejects changes to an allowlisted delegated manual-workflow script', () => {
-  validateWorkflowSet(createMemorySource({
-    '.github/workflows/main.yml': mainWorkflow,
-    '.github/workflows/add-release-note.yml': fs.readFileSync('.github/workflows/add-release-note.yml', 'utf8'),
-    '.github/arm64-governance.json': JSON.stringify(policy),
-    'add-release-note.js': 'process.exit(0)\n'
-  }), policy)
+rejects('rejects changes to a protected delegated manual-workflow script', () => {
+  withGovernanceMutation(({ directory }) => {
+    fs.writeFileSync(path.join(directory, 'add-release-note.js'), 'process.exit(0)\n')
+    git(directory, ['add', '--', 'add-release-note.js'])
+  })
 })
 
 rejects('rejects publication commands in active execution', () => {
@@ -260,9 +275,9 @@ rejects('rejects candidate execution in place of the trusted admission command',
   validateWorkflowSet(source, policy)
 })
 
-test('validates all six Action provenance records', () => {
+test('validates all five Action provenance records', () => {
   validateGovernancePolicy(policy)
-  assert.strictEqual(policy.actions.length, 6)
+  assert.strictEqual(policy.actions.length, 5)
 })
 
 test('records setup-msys2 as an explicit required unsigned exception', () => {
@@ -272,10 +287,17 @@ test('records setup-msys2 as an explicit required unsigned exception', () => {
   assert.strictEqual(setup.verification.disposition, 'policy-required-exception')
 })
 
-test('records the SDK Action unsigned source-ref review', () => {
-  const setup = policy.actions.find(action => action.identity === 'git-for-windows/setup-git-for-windows-sdk')
-  assert.strictEqual(setup.verification.verified, false)
-  assert.strictEqual(setup.verification.disposition, 'unsigned-source-ref-review')
+for (const revision of [
+  '335917db02da4280d3d5e87915d7b86196677f9f',
+  'f52a672567ce424cb56dabb9b8d12995f041786f'
+]) {
+  rejects(`rejects dynamically resolved SDK Action revision ${revision}`, () => {
+    validateActionSpec(`git-for-windows/setup-git-for-windows-sdk@${revision}`, 'SDK Action')
+  })
+}
+
+test('excludes the dynamically resolved SDK Action from provenance', () => {
+  assert.ok(!policy.actions.some(action => action.identity === 'git-for-windows/setup-git-for-windows-sdk'))
 })
 
 test('records github-script v9 as an annotated tag peeled to the pinned commit', () => {
@@ -305,6 +327,10 @@ rejects('rejects an incomplete Action provenance set', () => {
   const altered = clone(policy)
   altered.actions.pop()
   validateGovernancePolicy(altered)
+})
+
+rejects('denies admission when no authoritative release lock exists', () => {
+  requireReleaseLock(policy)
 })
 
 test('verifies immutable release identity against offline API fixtures', async () => {
@@ -439,6 +465,150 @@ const createRepository = () => {
     }
   }
 }
+
+const createGovernanceRepository = (sourcePolicy = policy) => {
+  const repository = createRepository()
+  for (const [index, sourcePath] of sourcePolicy.governanceSources.entries()) {
+    const absolute = path.join(repository.directory, ...sourcePath.split('/'))
+    fs.mkdirSync(path.dirname(absolute), { recursive: true })
+    fs.writeFileSync(absolute, `protected governance source ${index}: ${sourcePath}\n`)
+  }
+  git(repository.directory, ['add', '--', ...sourcePolicy.governanceSources])
+  git(repository.directory, ['commit', '--quiet', '-m', 'Protected governance sources'])
+  repository.base = git(repository.directory, ['rev-parse', 'HEAD'])
+  return repository
+}
+
+const withGovernanceMutation = (mutate, sourcePolicy = policy) => {
+  const repository = createGovernanceRepository(sourcePolicy)
+  try {
+    mutate(repository)
+    git(repository.directory, ['commit', '--quiet', '-m', 'Candidate mutation'])
+    const head = git(repository.directory, ['rev-parse', 'HEAD'])
+    return validateTrustedSources(
+      createGitSource(repository.directory, repository.base),
+      createGitSource(repository.directory, head),
+      sourcePolicy
+    )
+  } finally {
+    fs.rmSync(repository.directory, { recursive: true, force: true })
+  }
+}
+
+test('accepts an unrelated candidate data change under protected-base sources', () => {
+  const manifest = withGovernanceMutation(({ directory }) => {
+    fs.writeFileSync(path.join(directory, 'candidate-data.txt'), 'data only\n')
+    git(directory, ['add', '--', 'candidate-data.txt'])
+  })
+  assert.strictEqual(manifest.length, REQUIRED_GOVERNANCE_SOURCES.length)
+})
+
+rejects('rejects deletion of a protected governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    git(directory, ['rm', '--quiet', '--', 'validate-arm64-governance.js'])
+  })
+})
+
+rejects('rejects addition of an unreviewed governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    const workflow = path.join(directory, '.github', 'workflows', 'unreviewed.yml')
+    fs.writeFileSync(workflow, 'name: unreviewed\n')
+    git(directory, ['add', '--', '.github/workflows/unreviewed.yml'])
+  })
+})
+
+rejects('rejects rename of a protected governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    git(directory, ['mv', 'validate-arm64-governance.js', 'renamed-validator.js'])
+  })
+})
+
+rejects('rejects a copy of a protected governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    fs.copyFileSync(
+      path.join(directory, 'validate-arm64-governance.js'),
+      path.join(directory, 'copied-validator.js')
+    )
+    git(directory, ['add', '--', 'copied-validator.js'])
+  })
+})
+
+rejects('rejects a mode change to a protected governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    git(directory, ['update-index', '--chmod=+x', '--', 'validate-arm64-governance.js'])
+  })
+})
+
+rejects('rejects a protected governance source changed into a symlink', () => {
+  withGovernanceMutation(({ directory }) => {
+    const oid = git(directory, ['hash-object', '-w', '--stdin'], 'validator-target\n')
+    git(directory, [
+      'update-index',
+      '--add',
+      '--cacheinfo',
+      `120000,${oid},validate-arm64-governance.js`
+    ])
+  })
+})
+
+rejects('rejects a case-alias rename of a protected governance source', () => {
+  withGovernanceMutation(({ directory }) => {
+    const oid = git(directory, ['rev-parse', 'HEAD:validate-arm64-governance.js'])
+    git(directory, ['rm', '--quiet', '--cached', '--', 'validate-arm64-governance.js'])
+    git(directory, [
+      'update-index',
+      '--add',
+      '--cacheinfo',
+      `100644,${oid},Validate-Arm64-Governance.js`
+    ])
+  })
+})
+
+rejects('rejects a normalization-changing governance source rename', () => {
+  withGovernanceMutation(({ directory }) => {
+    const oid = git(directory, ['rev-parse', 'HEAD:validate-arm64-governance.js'])
+    git(directory, ['rm', '--quiet', '--cached', '--', 'validate-arm64-governance.js'])
+    git(directory, [
+      'update-index',
+      '--add',
+      '--cacheinfo',
+      `100644,${oid},validate-arm64-governa\u0301nce.js`
+    ])
+  })
+})
+
+rejects('rejects coordinated validator and policy changes', () => {
+  withGovernanceMutation(({ directory }) => {
+    fs.writeFileSync(path.join(directory, 'validate-arm64-governance.js'), 'process.exit(0)\n')
+    fs.writeFileSync(
+      path.join(directory, '.github', 'arm64-governance.json'),
+      '{"selfApprovedDigest":"candidate-controlled"}\n'
+    )
+    git(directory, [
+      'add',
+      '--',
+      'validate-arm64-governance.js',
+      '.github/arm64-governance.json'
+    ])
+  })
+})
+
+rejects('protects release lock and digest evidence files as base sources', () => {
+  const lockedPolicy = clone(policy)
+  lockedPolicy.releaseLock = {
+    lockFile: '.github/arm64-release-lock.json',
+    evidenceFile: '.github/arm64-release-digest-evidence.json'
+  }
+  lockedPolicy.governanceSources = [
+    ...REQUIRED_GOVERNANCE_SOURCES,
+    lockedPolicy.releaseLock.lockFile,
+    lockedPolicy.releaseLock.evidenceFile
+  ].sort()
+  withGovernanceMutation(({ directory }) => {
+    fs.writeFileSync(path.join(directory, ...lockedPolicy.releaseLock.lockFile.split('/')), '{}\n')
+    git(directory, ['add', '--', lockedPolicy.releaseLock.lockFile])
+  }, lockedPolicy)
+})
 
 const session = policy.expectedCopilotSession
 
@@ -593,6 +763,54 @@ test('accepts absent candidate deny objects with complete trusted collector proo
   assert.match(result.digest, /^sha256:[0-9a-f]{64}$/)
 })
 
+test('enumerates all campaign refs through fixed pagination', async () => {
+  const api = createFixtureApi(clone(ancestryFixture.api))
+  const request = async apiPath => {
+    if (apiPath === '/repos/crutkas/build-extra/branches?per_page=100&page=1') {
+      return Array.from({ length: 100 }, (_, index) => ({
+        name: `unrelated-${index}`,
+        commit: { sha: '0'.repeat(40) }
+      }))
+    }
+    if (apiPath === '/repos/crutkas/build-extra/branches?per_page=100&page=2') {
+      return [{
+        name: 'crutkas-arm64-denied-campaign',
+        commit: { sha: 'b'.repeat(40) }
+      }]
+    }
+    return api(apiPath)
+  }
+  const result = await verifyDeniedAncestry(
+    syntheticAncestryPolicy(),
+    ancestryFixture.candidate.cleanCommits,
+    request
+  )
+  assert.strictEqual(result.collected.length, 1)
+})
+
+rejects('rejects an authoritatively enumerated denied tip omitted from policy', async () => {
+  const api = clone(ancestryFixture.api)
+  api['/repos/crutkas/build-extra/branches?per_page=100&page=1'].push({
+    name: 'crutkas-arm64-omitted-campaign',
+    commit: { sha: 'e'.repeat(40) }
+  })
+  await verifyDeniedAncestry(
+    syntheticAncestryPolicy(),
+    ancestryFixture.candidate.cleanCommits,
+    createFixtureApi(api)
+  )
+})
+
+rejects('rejects a denied tip with zero covered commits', async () => {
+  const syntheticPolicy = syntheticAncestryPolicy()
+  syntheticPolicy.deniedCampaignCommits[0].commitCount = 0
+  await verifyDeniedAncestry(
+    syntheticPolicy,
+    ancestryFixture.candidate.cleanCommits,
+    createFixtureApi(clone(ancestryFixture.api))
+  )
+})
+
 rejects('rejects absent trusted collector proof', async () => {
   const api = clone(ancestryFixture.api)
   delete api[
@@ -663,8 +881,7 @@ const main = async () => {
     try {
       await callback()
     } catch (error) {
-      error.message = `${name}: ${error.message}`
-      throw error
+      throw new Error(`${name}: ${error.message}`, { cause: error })
     }
   }
   process.stdout.write(`ok ${tests.length} ARM64 governance tests\n`)

@@ -41,12 +41,6 @@ const REQUIRED_ACTION_PROVENANCE = Object.freeze({
     source: ['lightweight-tag', 'refs/tags/v4.3.0', null],
     verification: [true, 'valid', 'verified']
   },
-  'git-for-windows/setup-git-for-windows-sdk': {
-    commit: '335917db02da4280d3d5e87915d7b86196677f9f',
-    tree: 'f616ede9f2e8d602cb182254ecffdac324ed6212',
-    source: ['branch', 'refs/heads/v2', null],
-    verification: [false, 'unsigned', 'unsigned-source-ref-review']
-  },
   'actions/github-script': {
     commit: '3a2844b7e9c422d3c10d287c895573f7108da1b3',
     tree: '23894d36d73527d5502aa7b2b9d53041f9e56f4e',
@@ -59,28 +53,69 @@ const APPROVED_ACTION_PINS = Object.freeze(Object.fromEntries(
   Object.entries(REQUIRED_ACTION_PROVENANCE).map(([identity, provenance]) => [identity, provenance.commit])
 ))
 
-const REQUIRED_TRUSTED_FILES = Object.freeze({
-  '.github/workflows/add-release-note.yml':
-    'sha256:f24ccfc2216c5392b15590b24125eb82db6a7c6777293376cc2004885f903351',
-  'add-release-note.js':
-    'sha256:d8bbcbaee1c951d3fec3c2fb81cea994016c323f3fca078a2ce74d9e98343428'
+const DENIED_ACTION_IDENTITIES = Object.freeze(new Set([
+  'git-for-windows/setup-git-for-windows-sdk'
+]))
+
+const REQUIRED_GOVERNANCE_SOURCES = Object.freeze([
+  '.github/arm64-denied-ancestry.json',
+  '.github/arm64-governance.json',
+  '.github/workflows/add-release-note.yml',
+  '.github/workflows/main.yml',
+  'add-release-note.js',
+  'tests/fixtures/arm64-ancestry-api.json',
+  'tests/fixtures/arm64-release-api.json',
+  'validate-arm64-governance.js',
+  'validate-arm64-governance.test.js'
+])
+
+const REQUIRED_DENIED_ENUMERATION = Object.freeze({
+  branchPattern: '^crutkas-(?:.*arm64.*|finalize-preview-validator)$',
+  pullRequestTitlePattern: '\\barm64\\b',
+  excludedBranches: ['crutkas-arm64-governance-pins'],
+  excludedPullRequests: [17],
+  pageSize: 100
 })
+
+const compareDeniedSources = (left, right) => {
+  const leftKind = left.startsWith('refs/heads/') ? 0 : 1
+  const rightKind = right.startsWith('refs/heads/') ? 0 : 1
+  if (leftKind !== rightKind) return leftKind - rightKind
+  return left < right ? -1 : left > right ? 1 : 0
+}
 
 const POWERSHELL_YAML = [
   "$ErrorActionPreference = 'Stop'",
   'Import-Module powershell-yaml -ErrorAction Stop',
   '$module = Get-Module powershell-yaml',
+  "if ($module.Version.ToString() -ne '0.4.12') { throw 'powershell-yaml 0.4.12 is required' }",
   '$text = [Console]::In.ReadToEnd()',
-  '$value = ConvertFrom-Yaml -Yaml $text -Ordered -UseMergingParser',
-  '$result = [ordered]@{ parser = "powershell-yaml@$($module.Version)"; document = $value }',
+  '$stream = & $module { param($yaml) ' +
+    '$documents = @(Get-YamlDocuments -Yaml $yaml -UseMergingParser); ' +
+    '$values = [System.Collections.Generic.List[object]]::new(); ' +
+    '$empty = [System.Collections.Generic.List[bool]]::new(); ' +
+    'foreach ($document in $documents) { ' +
+      '$isEmpty = $null -eq $document.RootNode; $empty.Add($isEmpty); ' +
+      'if ($isEmpty) { $values.Add($null) } ' +
+      'else { $values.Add((Convert-YamlDocumentToPSObject $document.RootNode -Ordered)) } ' +
+    '}; ' +
+    '[ordered]@{ documentCount = $documents.Count; emptyDocuments = @($empty); documents = @($values) } ' +
+  '} $text',
+  '$result = [ordered]@{ parser = "powershell-yaml@$($module.Version)"; stream = $stream }',
   '[Console]::Out.Write(($result | ConvertTo-Json -Depth 100 -Compress))'
 ].join('; ')
 
 const RUBY_YAML = [
   "require 'yaml'",
   "require 'json'",
-  'value = Psych.safe_load(STDIN.read, permitted_classes: [], permitted_symbols: [], aliases: true)',
-  "STDOUT.write(JSON.generate({ parser: \"ruby-psych@#{Psych::VERSION}\", document: value }))"
+  'text = STDIN.read',
+  'stream = Psych.parse_stream(text)',
+  'documents = stream.children',
+  'empty = documents.map { |document| document.root.nil? }',
+  'values = documents.length == 1 && !empty[0] ? ' +
+    '[Psych.safe_load(text, permitted_classes: [], permitted_symbols: [], aliases: true)] : []',
+  'STDOUT.write(JSON.generate({ parser: "ruby-psych@#{Psych::VERSION}", ' +
+    'stream: { documentCount: documents.length, emptyDocuments: empty, documents: values } }))'
 ].join('; ')
 
 const DEFAULT_YAML_PARSERS = Object.freeze([
@@ -391,6 +426,73 @@ const createGitHubApi = token => apiPath => new Promise((resolve, reject) => {
   request.end()
 })
 
+const enumerateDeniedCampaignSources = async (policy, request) => {
+  if (typeof request !== 'function') fail('authoritative campaign enumeration API request function is required')
+  const rules = policy.deniedCampaignEnumeration
+  if (!sameJson(rules, REQUIRED_DENIED_ENUMERATION)) {
+    fail('authoritative campaign enumeration rules are not the fixed reviewed rules')
+  }
+  const getAllPages = async endpoint => {
+    const values = []
+    for (let page = 1; ; page++) {
+      const apiPath = `${endpoint}${endpoint.includes('?') ? '&' : '?'}per_page=${rules.pageSize}&page=${page}`
+      const response = await request(apiPath)
+      if (!Array.isArray(response)) fail(`authoritative enumeration response for ${apiPath} must be an array`)
+      values.push(...response)
+      if (response.length < rules.pageSize) return values
+      if (page >= 100) fail(`authoritative enumeration for ${endpoint} exceeded 100 pages`)
+    }
+  }
+
+  const branchPattern = new RegExp(rules.branchPattern, 'i')
+  const titlePattern = new RegExp(rules.pullRequestTitlePattern, 'i')
+  const excludedBranches = new Set(rules.excludedBranches)
+  const excludedPullRequests = new Set(rules.excludedPullRequests)
+  const selected = []
+  const tips = new Set()
+  const branchNames = new Set()
+  const branches = await getAllPages(`/repos/${policy.repository}/branches`)
+  for (const [index, branch] of branches.entries()) {
+    if (
+      !isRecord(branch) ||
+      typeof branch.name !== 'string' ||
+      !isRecord(branch.commit)
+    ) {
+      fail(`authoritative branch enumeration entry ${index} is invalid`)
+    }
+    expectSha(branch.commit.sha, `authoritative branch enumeration entry ${index}.commit.sha`)
+    if (branchNames.has(branch.name)) fail(`authoritative branch enumeration repeats ${branch.name}`)
+    branchNames.add(branch.name)
+    if (!branchPattern.test(branch.name) || excludedBranches.has(branch.name)) continue
+    if (tips.has(branch.commit.sha)) fail(`authoritative campaign branches share denied tip ${branch.commit.sha}`)
+    selected.push({ source: `refs/heads/${branch.name}`, tip: branch.commit.sha })
+    tips.add(branch.commit.sha)
+  }
+
+  const pullNumbers = new Set()
+  const pulls = await getAllPages(`/repos/${policy.repository}/pulls?state=all`)
+  for (const [index, pull] of pulls.entries()) {
+    if (
+      !isRecord(pull) ||
+      !Number.isSafeInteger(pull.number) ||
+      pull.number < 1 ||
+      typeof pull.title !== 'string' ||
+      !isRecord(pull.head)
+    ) {
+      fail(`authoritative pull-request enumeration entry ${index} is invalid`)
+    }
+    expectSha(pull.head.sha, `authoritative pull-request enumeration entry ${index}.head.sha`)
+    if (pullNumbers.has(pull.number)) fail(`authoritative pull-request enumeration repeats PR ${pull.number}`)
+    pullNumbers.add(pull.number)
+    if (!titlePattern.test(pull.title) || excludedPullRequests.has(pull.number) || tips.has(pull.head.sha)) continue
+    selected.push({ source: `pull/${pull.number}/head`, tip: pull.head.sha })
+    tips.add(pull.head.sha)
+  }
+
+  selected.sort((left, right) => compareDeniedSources(left.source, right.source))
+  return selected
+}
+
 const verifyDeniedAncestry = async (policy, candidateCommits, request) => {
   validateGovernancePolicy(policy)
   if (!Array.isArray(candidateCommits) || candidateCommits.length === 0) {
@@ -403,6 +505,11 @@ const verifyDeniedAncestry = async (policy, candidateCommits, request) => {
     candidate.add(commit)
   })
   if (typeof request !== 'function') fail('authoritative ancestry API request function is required')
+  const enumerated = await enumerateDeniedCampaignSources(policy, request)
+  const declared = policy.deniedCampaignCommits.map(({ source, tip }) => ({ source, tip }))
+  if (!sameJson(declared, enumerated)) {
+    fail('denied campaign policy is incomplete or stale relative to authoritative branch/PR enumeration')
+  }
 
   const collected = []
   for (const entry of policy.deniedCampaignCommits) {
@@ -553,7 +660,9 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
       'bootstrap',
       'payloadPolicy',
       'ancestryManifest',
-      'trustedFiles',
+      'governanceSources',
+      'deniedCampaignEnumeration',
+      'deniedActions',
       'releaseLock',
       'actions',
       'deniedCampaignCommits'
@@ -599,24 +708,35 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
   if (typeof policy.ancestryManifest.digest !== 'string' || !DIGEST.test(policy.ancestryManifest.digest)) {
     fail(`${label}.ancestryManifest.digest must be a lowercase sha256 digest`)
   }
-  if (!Array.isArray(policy.trustedFiles) || policy.trustedFiles.length !== Object.keys(REQUIRED_TRUSTED_FILES).length) {
-    fail(`${label}.trustedFiles must contain the exact base-controlled non-campaign files`)
-  }
-  const trustedFiles = new Set()
-  policy.trustedFiles.forEach((entry, index) => {
-    const entryLabel = `${label}.trustedFiles[${index}]`
-    expectExactKeys(entry, ['path', 'digest'], entryLabel)
-    safeRelativePath(entry.path, `${entryLabel}.path`)
-    if (trustedFiles.has(entry.path)) fail(`${label}.trustedFiles contains duplicate ${entry.path}`)
-    trustedFiles.add(entry.path)
-    if (REQUIRED_TRUSTED_FILES[entry.path] !== entry.digest) {
-      fail(`${entryLabel} does not match the reviewed byte digest`)
-    }
-  })
   if (policy.releaseLock !== null) {
     expectExactKeys(policy.releaseLock, ['lockFile', 'evidenceFile'], `${label}.releaseLock`)
     safeRelativePath(policy.releaseLock.lockFile, `${label}.releaseLock.lockFile`)
     safeRelativePath(policy.releaseLock.evidenceFile, `${label}.releaseLock.evidenceFile`)
+  }
+  const requiredSources = [...REQUIRED_GOVERNANCE_SOURCES]
+  if (policy.releaseLock) requiredSources.push(policy.releaseLock.lockFile, policy.releaseLock.evidenceFile)
+  requiredSources.sort()
+  if (new Set(requiredSources).size !== requiredSources.length) {
+    fail(`${label}.releaseLock paths must be unique protected governance sources`)
+  }
+  if (
+    !Array.isArray(policy.governanceSources) ||
+    new Set(policy.governanceSources).size !== policy.governanceSources.length ||
+    !sameJson(policy.governanceSources, requiredSources)
+  ) {
+    fail(`${label}.governanceSources must be the exact sorted protected-base path manifest`)
+  }
+  policy.governanceSources.forEach((sourcePath, index) => {
+    safeRelativePath(sourcePath, `${label}.governanceSources[${index}]`)
+    if (sourcePath !== sourcePath.normalize('NFC') || !/^[\x20-\x7e]+$/.test(sourcePath)) {
+      fail(`${label}.governanceSources[${index}] must be normalized ASCII`)
+    }
+  })
+  if (!sameJson(policy.deniedCampaignEnumeration, REQUIRED_DENIED_ENUMERATION)) {
+    fail(`${label}.deniedCampaignEnumeration must match the fixed authoritative enumeration rules`)
+  }
+  if (!sameJson(policy.deniedActions, [...DENIED_ACTION_IDENTITIES])) {
+    fail(`${label}.deniedActions must list every structurally forbidden Action identity`)
   }
 
   if (!Array.isArray(policy.actions) || policy.actions.length !== Object.keys(REQUIRED_ACTION_PROVENANCE).length) {
@@ -661,6 +781,8 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
     fail(`${label}.deniedCampaignCommits must be non-empty`)
   }
   const denied = new Set()
+  const deniedSources = new Set()
+  let previousSource
   policy.deniedCampaignCommits.forEach((entry, index) => {
     const entryLabel = `${label}.deniedCampaignCommits[${index}]`
     expectExactKeys(entry, ['source', 'mergeBase', 'root', 'tip', 'commitCount'], entryLabel)
@@ -674,6 +796,12 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
     ) {
       fail(`${entryLabel}.source must identify an exact branch or pull-request ref`)
     }
+    if (deniedSources.has(entry.source)) fail(`${label}.deniedCampaignCommits contains duplicate source ${entry.source}`)
+    if (previousSource && compareDeniedSources(previousSource, entry.source) >= 0) {
+      fail(`${label}.deniedCampaignCommits must be ordered by source`)
+    }
+    deniedSources.add(entry.source)
+    previousSource = entry.source
     if (denied.has(entry.tip)) fail(`${label}.deniedCampaignCommits contains duplicate tip ${entry.tip}`)
     denied.add(entry.tip)
   })
@@ -699,8 +827,8 @@ const invokeYamlParser = (parser, contents) => {
   }
   try {
     const parsed = JSON.parse(result.stdout)
-    if (!isRecord(parsed) || typeof parsed.parser !== 'string' || !Object.hasOwn(parsed, 'document')) {
-      return { error: 'parser did not report its identity and semantic document' }
+    if (!isRecord(parsed) || typeof parsed.parser !== 'string' || !isRecord(parsed.stream)) {
+      return { error: 'parser did not report its identity and complete semantic stream' }
     }
     return parsed
   } catch (error) {
@@ -715,6 +843,9 @@ const parseYaml = (contents, label = 'YAML', parsers) => {
   if (/(?:^|[\r\n]\s*|:\s+|-\s+|[\[,{]\s*)!{1,2}[A-Za-z<]/m.test(contents)) {
     fail(`${label}: executable or custom YAML tags are not allowed`)
   }
+  if (/(?:^|\r?\n)\s*\.\.\.\s*(?:#.*)?(?:\r?\n|$)/m.test(contents)) {
+    fail(`${label}: explicit YAML document terminators are not allowed`)
+  }
   const candidates = parsers || (selectedYamlParser ? [selectedYamlParser] : DEFAULT_YAML_PARSERS)
   if (!Array.isArray(candidates) || candidates.length === 0) {
     fail(`${label}: no approved semantic YAML parser is available`)
@@ -723,8 +854,19 @@ const parseYaml = (contents, label = 'YAML', parsers) => {
   for (const parser of candidates) {
     const result = invokeYamlParser(parser, contents)
     if (!result.error) {
+      const { documentCount, emptyDocuments, documents } = result.stream
+      if (
+        documentCount !== 1 ||
+        !Array.isArray(emptyDocuments) ||
+        emptyDocuments.length !== 1 ||
+        emptyDocuments[0] !== false ||
+        !Array.isArray(documents) ||
+        documents.length !== 1
+      ) {
+        fail(`${label}: YAML must contain exactly one non-empty document`)
+      }
       if (!parsers) selectedYamlParser = parser
-      return result
+      return { document: documents[0], parser: result.parser }
     }
     failures.push(`${parser.name}: ${result.error}`)
   }
@@ -781,34 +923,120 @@ const createGitSource = (repository, revision) => {
     if (!line) return undefined
     const match = line.match(/^([0-9]{6}) ([a-z]+) ([0-9a-f]{40})\t/)
     if (!match) fail(`${normalized}: malformed Git tree entry`)
-    return { mode: match[1], type: match[2], normalized }
+    return { mode: match[1], type: match[2], oid: match[3], path: normalized }
   }
   return {
     label: `${repository}@${revision}`,
+    entry,
     exists (relative) {
       const item = entry(relative)
       if (!item) return false
-      if (item.mode === '120000') fail(`${item.normalized} must not be a symbolic link`)
+      if (item.mode === '120000') fail(`${item.path} must not be a symbolic link`)
       return item.type === 'blob'
     },
     read (relative) {
       const item = entry(relative)
       if (!item) fail(`${normalizeRelative(relative)} is missing`)
       if (item.mode === '120000' || item.type !== 'blob') {
-        fail(`${item.normalized} must be a regular Git blob`)
+        fail(`${item.path} must be a regular Git blob`)
       }
-      const size = Number(runGit(['cat-file', '-s', `${revision}:${item.normalized}`], repository).trim())
+      const size = Number(runGit(['cat-file', '-s', `${revision}:${item.path}`], repository).trim())
       if (!Number.isSafeInteger(size) || size > 2 * 1024 * 1024) {
-        fail(`${item.normalized} exceeds the 2 MiB inspection limit`)
+        fail(`${item.path} exceeds the 2 MiB inspection limit`)
       }
-      return runGit(['cat-file', 'blob', `${revision}:${item.normalized}`], repository)
+      return runGit(['cat-file', 'blob', `${revision}:${item.path}`], repository)
     },
     list (relative) {
       const normalized = safeRelativePath(normalizeRelative(relative), `candidate path '${relative}'`)
       const output = runGit(['ls-tree', '-r', '--name-only', revision, '--', `${normalized}/`], repository).trim()
       return output ? output.split('\n') : []
+    },
+    listAll () {
+      const output = runGit(['ls-tree', '-r', '-z', '--full-tree', revision], repository)
+      return output.split('\0').filter(Boolean).map((line, index) => {
+        const tab = line.indexOf('\t')
+        const match = tab > 0 && line.slice(0, tab).match(/^([0-9]{6}) ([a-z]+) ([0-9a-f]{40})$/)
+        if (!match) fail(`Git tree entry ${index} is malformed`)
+        return {
+          mode: match[1],
+          type: match[2],
+          oid: match[3],
+          path: line.slice(tab + 1)
+        }
+      })
     }
   }
+}
+
+const governanceNamespacePath = value => {
+  const normalized = value.normalize('NFC').toLowerCase()
+  return (
+    normalized === 'add-release-note.js' ||
+    normalized === 'validate-arm64-governance.js' ||
+    normalized === 'validate-arm64-governance.test.js' ||
+    normalized.startsWith('.github/arm64-') ||
+    normalized.startsWith('.github/workflows/') ||
+    normalized.startsWith('tests/fixtures/arm64-')
+  )
+}
+
+const validateTrustedSources = (trustedSource, candidateSource, policy) => {
+  validateGovernancePolicy(policy)
+  for (const source of [trustedSource, candidateSource]) {
+    if (typeof source.entry !== 'function' || typeof source.listAll !== 'function') {
+      fail(`${source.label || 'source'} must expose exact Git tree entries`)
+    }
+  }
+
+  const expectedPaths = [...policy.governanceSources].sort()
+  const expected = new Set(expectedPaths)
+  const trustedEntries = trustedSource.listAll()
+  const candidateEntries = candidateSource.listAll()
+  const trustedByPath = new Map(trustedEntries.map(entry => [entry.path, entry]))
+  const candidateByPath = new Map(candidateEntries.map(entry => [entry.path, entry]))
+  const trustedOids = new Map()
+
+  for (const sourcePath of expectedPaths) {
+    const trusted = trustedByPath.get(sourcePath)
+    if (!trusted || trusted.type !== 'blob' || trusted.mode === '120000') {
+      fail(`protected base governance source ${sourcePath} must be a regular Git blob`)
+    }
+    const candidate = candidateByPath.get(sourcePath)
+    if (!candidate) fail(`candidate deleted or renamed protected governance source ${sourcePath}`)
+    if (
+      candidate.type !== trusted.type ||
+      candidate.mode !== trusted.mode ||
+      candidate.oid !== trusted.oid
+    ) {
+      fail(
+        `candidate governance source ${sourcePath} differs from protected base ` +
+        `(mode ${candidate.mode}/${trusted.mode}, object ${candidate.oid}/${trusted.oid})`
+      )
+    }
+    if (!trustedOids.has(trusted.oid)) trustedOids.set(trusted.oid, [])
+    trustedOids.get(trusted.oid).push(sourcePath)
+  }
+
+  const canonicalExpected = new Map(expectedPaths.map(sourcePath => [
+    sourcePath.normalize('NFC').toLowerCase(),
+    sourcePath
+  ]))
+  for (const entry of candidateEntries) {
+    const canonical = entry.path.normalize('NFC').toLowerCase()
+    const canonicalSource = canonicalExpected.get(canonical)
+    if (canonicalSource && entry.path !== canonicalSource) {
+      fail(`candidate governance path ${entry.path} aliases protected path ${canonicalSource}`)
+    }
+    if (governanceNamespacePath(entry.path) && !expected.has(entry.path)) {
+      fail(`candidate added unreviewed governance path ${entry.path}`)
+    }
+    const copiedFrom = trustedOids.get(entry.oid)
+    if (copiedFrom && !expected.has(entry.path)) {
+      fail(`candidate copied protected governance source ${copiedFrom.join(', ')} to ${entry.path}`)
+    }
+  }
+
+  return expectedPaths.map(sourcePath => clone(trustedByPath.get(sourcePath)))
 }
 
 const fetchCandidateRepository = (repository, revision) => {
@@ -857,6 +1085,9 @@ const validateActionSpec = (spec, label) => {
   const match = spec.match(/^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?:\/[^@\s]+)?@([0-9a-f]{40})$/)
   if (!match) fail(`${label}: external Action '${spec}' must use a literal lowercase 40-hex commit`)
   const identity = match[1].toLowerCase()
+  if (DENIED_ACTION_IDENTITIES.has(identity)) {
+    fail(`${label}: ${identity} is forbidden because it resolves mutable SDK inputs dynamically`)
+  }
   const approved = APPROVED_ACTION_PINS[identity]
   if (!approved) fail(`${label}: unapproved external Action identity ${identity}`)
   if (match[2] !== approved) fail(`${label}: ${identity} must use approved commit ${approved}, not ${match[2]}`)
@@ -1102,20 +1333,10 @@ const validateWorkflowSet = (source, policy) => {
     }
   }
   const expectedWorkflows = [
-    '.github/workflows/main.yml',
-    ...policy.trustedFiles
-      .map(entry => entry.path)
-      .filter(file => file.startsWith('.github/workflows/'))
-  ].sort()
+    ...policy.governanceSources.filter(file => file.startsWith('.github/workflows/'))
+  ]
   if (!sameJson(files, expectedWorkflows)) {
     fail(`workflow set must be exactly ${expectedWorkflows.join(', ')}`)
-  }
-  for (const trustedFile of policy.trustedFiles) {
-    const contents = source.read(trustedFile.path)
-    const digest = `sha256:${crypto.createHash('sha256').update(contents).digest('hex')}`
-    if (digest !== trustedFile.digest) {
-      fail(`${trustedFile.path} byte digest ${digest} does not match trusted policy`)
-    }
   }
   if (!mainFound) fail('.github/workflows/main.yml is required')
   return { blockedFindings, inventory, parser }
@@ -1257,14 +1478,23 @@ const appendLockedOutput = locked => {
   }
 }
 
+const requireReleaseLock = policy => {
+  if (policy.releaseLock === null) {
+    fail('admission denied: releaseLock must bind a complete live-authoritative release and independent digest evidence')
+  }
+  return policy.releaseLock
+}
+
 const validateAdmission = async (trustedRoot, candidateRepository, base, head, options = {}) => {
-  const trustedSource = createFileSource(trustedRoot)
+  appendLockedOutput(false)
   const trustedHead = runGit(['rev-parse', 'HEAD'], trustedRoot).trim()
   if (trustedHead !== base) fail(`trusted checkout HEAD ${trustedHead} does not equal supplied base ${base}`)
+  const trustedSource = createGitSource(trustedRoot, base)
   const candidateRoot = fetchCandidateRepository(candidateRepository, head)
   try {
     const candidateSource = createGitSource(candidateRoot, head)
     const trustedPolicy = validateGovernancePolicy(loadJson(trustedSource, '.github/arm64-governance.json'))
+    const sourceManifest = validateTrustedSources(trustedSource, candidateSource, trustedPolicy)
     const candidatePolicy = validateGovernancePolicy(loadJson(candidateSource, '.github/arm64-governance.json'))
     if (!sameJson(candidatePolicy, trustedPolicy)) fail('candidate governance policy differs from the trusted base policy')
 
@@ -1290,15 +1520,12 @@ const validateAdmission = async (trustedRoot, candidateRepository, base, head, o
     }
     const ancestry = validateAncestryManifest(trustedPolicy, ancestryContents, topology.commits)
 
-    let locked = false
-    if (trustedPolicy.releaseLock !== null) {
-      const lock = loadJson(trustedSource, trustedPolicy.releaseLock.lockFile)
-      const evidence = loadJson(trustedSource, trustedPolicy.releaseLock.evidenceFile)
-      await verifyReleaseInput(lock, evidence, options.api || createGitHubApi())
-      locked = true
-    }
-    appendLockedOutput(locked)
-    return { ancestry, locked, topology, workflows }
+    const releaseLock = requireReleaseLock(trustedPolicy)
+    const lock = loadJson(trustedSource, releaseLock.lockFile)
+    const evidence = loadJson(trustedSource, releaseLock.evidenceFile)
+    await verifyReleaseInput(lock, evidence, options.api || createGitHubApi())
+    appendLockedOutput(true)
+    return { ancestry, locked: true, sourceManifest, topology, workflows }
   } finally {
     fs.rmSync(candidateRoot, { recursive: true, force: true })
   }
@@ -1437,13 +1664,16 @@ module.exports = {
   COPILOT_COAUTHOR,
   DEFAULT_YAML_PARSERS,
   REQUIRED_ACTION_PROVENANCE,
+  REQUIRED_GOVERNANCE_SOURCES,
   TRUSTED_ADMISSION_COMMAND,
   createFileSource,
   createFixtureApi,
   createGitSource,
   createMemorySource,
+  enumerateDeniedCampaignSources,
   inspectRun,
   parseYaml,
+  requireReleaseLock,
   validateActionSpec,
   validateAdmission,
   validateAncestryManifest,
@@ -1453,6 +1683,7 @@ module.exports = {
   validateLocalAction,
   validateOwnedCommitMessage,
   validateReleaseLock,
+  validateTrustedSources,
   validateWorkflowSet,
   verifyDeniedAncestry,
   verifyReleaseInput
