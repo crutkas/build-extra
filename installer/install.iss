@@ -2872,6 +2872,57 @@ begin
     end;
 end;
 
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+procedure CleanupARM64OpenSSHLegacyFiles;
+var
+    AppDir:String;
+begin
+    AppDir:=ExpandConstant('{app}');
+    if FileExists(AppDir+'\etc\ssh\moduli') and
+       not DeleteFile(AppDir+'\etc\ssh\moduli') then
+        LogError('Failed to remove the bundled OpenSSH moduli');
+    if FileExists(AppDir+'\etc\ssh\ssh_config') and
+       not DeleteFile(AppDir+'\etc\ssh\ssh_config') then
+        LogError('Failed to remove the incompatible bundled ssh_config');
+    if FileExists(AppDir+'\etc\ssh\sshd_config') and
+       not DeleteFile(AppDir+'\etc\ssh\sshd_config') then
+        LogError('Failed to remove the bundled sshd_config');
+    if FileExists(AppDir+'\usr\bin\ssh-copy-id') and
+       not DeleteFile(AppDir+'\usr\bin\ssh-copy-id') then
+        LogError('Failed to remove the bundled ssh-copy-id');
+    if FileExists(AppDir+'\usr\lib\ssh\ssh-keysign.exe') and
+       not DeleteFile(AppDir+'\usr\lib\ssh\ssh-keysign.exe') then
+        LogError('Failed to remove unsupported ssh-keysign.exe');
+    if FileExists(AppDir+'\usr\share\licenses\openssh\LICENCE') and
+       not DeleteFile(AppDir+'\usr\share\licenses\openssh\LICENCE') then
+        LogError('Failed to remove the bundled OpenSSH license');
+end;
+
+procedure SecureARM64OpenSSHConfig;
+var
+    ConfigPath,IcaclsPath:String;
+    ResultCode:Integer;
+begin
+    ConfigPath:=ExpandConstant('{app}\etc\ssh\ssh_config');
+    if not FileExists(ConfigPath) then
+        Exit;
+    IcaclsPath:=ExpandConstant('{sys}\icacls.exe');
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /inheritance:r','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then begin
+        LogError('Failed to remove inherited ARM64 OpenSSH config permissions');
+        Exit;
+    end;
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /remove:g "*S-1-5-11" "*S-1-5-32-545" "*S-1-1-0"','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then begin
+        LogError('Failed to remove writable ARM64 OpenSSH config permissions');
+        Exit;
+    end;
+    if (not Exec(IcaclsPath,'"'+ConfigPath+'" /grant:r "*S-1-5-11:R" "*S-1-5-18:F" "*S-1-5-32-544:F"','',SW_HIDE,ewWaitUntilTerminated,ResultCode)) or
+       (ResultCode<>0) then
+        LogError('Failed to grant ARM64 OpenSSH config permissions');
+end;
+#endif
+
 procedure HardlinkOrCopy(Target,Source:String);
 var
     LinkCreated:Boolean;
@@ -3140,6 +3191,9 @@ begin
             Log('Line {#__LINE__}: RmShutdown not supported.');
         end;
 
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+        CleanupARM64OpenSSHLegacyFiles();
+#endif
         CleanupWhenUpgrading();
 
         Exit;
@@ -3638,6 +3692,10 @@ begin
         else
             LogError('Line {#__LINE__}: Unable to run post-install scripts; no error, no output?');
     end;
+
+#ifdef REMOVE_ARM64_OPENSSH_LEGACY_FILES
+    SecureARM64OpenSSHConfig();
+#endif
 
     {
         Restart any processes that were shut down via the Restart Manager

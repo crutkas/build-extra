@@ -37,8 +37,18 @@ test 1 = "$GFW_ARM64_BUSYBOX_DEFER" ||
 ARCH=$ARCH "$thisdir/arm64-busybox/install.sh" ||
 die "Could not install native ARM64 BusyBox"
 
+this_script_dir="$(cd "$(dirname "$0")" && pwd -W)" ||
+die "Could not determine this script's dir"
+
+OPENSSH_PACKAGE=openssh
+
 SH_FOR_REBASE=dash
 PACKAGE_EXCLUDES="db info heimdal tcl git util-linux curl git-for-windows-keyring"
+if test aarch64 = "$ARCH"
+then
+	OPENSSH_PACKAGE=mingw-w64-clang-aarch64-win32-openssh-client
+	PACKAGE_EXCLUDES="$PACKAGE_EXCLUDES openssh"
+fi
 EXTRA_FILE_EXCLUDES=
 UTIL_PACKAGES="sed awk grep findutils coreutils"
 if test -n "$MINIMAL_GIT_WITH_BUSYBOX"
@@ -114,9 +124,6 @@ test ! -f "/$MSYSTEM_LOWER/bin/git.exe" || {
 	esac
 }
 
-this_script_dir="$(cd "$(dirname "$0")" && pwd -W)" ||
-die "Could not determine this script's dir"
-
 pacman_stderr="/tmp/pacman-stderr.$$.txt"
 trap "rm \"$pacman_stderr\"" EXIT
 
@@ -157,8 +164,8 @@ mingw-w64-$PACMAN_ARCH-zstd"
 	then
 		pacman -Q $package_list >"$PACKAGE_VERSIONS_FILE" 2>"$pacman_stderr"
 		res=$?
-		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2
-		test $res = 0
+		grep -v 'database file for .* does not exist' <"$pacman_stderr" >&2 ||
+		true
 	fi &&
 	pacman -Ql $package_list 2>"$pacman_stderr" |
 	grep -v '/$' |
@@ -186,7 +193,7 @@ LIBCURL_EXTRA=
 
 # Packages that have been added after Git SDK 1.0.0 was released...
 required=
-for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $LIBCURL_EXTRA \
+for req in mingw-w64-$PACMAN_ARCH-git-credential-manager $SH_FOR_REBASE $OPENSSH_PACKAGE $LIBCURL_EXTRA \
 	$(test -n "$MINIMAL_GIT" || echo \
 		mingw-w64-$PACMAN_ARCH-connect unzip docx2txt \
 		mingw-w64-$PACMAN_ARCH-antiword mingw-w64-$PACMAN_ARCH-odt2txt \
@@ -210,7 +217,8 @@ G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git-for-windows-addons ||
 G4W_PACKAGE=mingw-w64-$PACMAN_ARCH-git
 
 packages="$G4W_PACKAGE mingw-w64-$PACMAN_ARCH-git-credential-manager
-mingw-w64-$PACMAN_ARCH-git-extra openssh msys2-runtime $UTIL_PACKAGES $LIBCURL_EXTRA"
+mingw-w64-$PACMAN_ARCH-git-extra $OPENSSH_PACKAGE
+msys2-runtime $UTIL_PACKAGES $LIBCURL_EXTRA"
 if test -z "$MINIMAL_GIT"
 then
 	packages="$packages mingw-w64-$PACMAN_ARCH-git-doc-html ncurses mintty vim nano
@@ -402,13 +410,20 @@ else
 		grep -v \
 			-e '^/usr/bin/\(bunzip2\|bzcat\|bzip2\|bzip2recover\)\.exe$' \
 			-e '^/usr/bin/\(nettle-hash\|nettle-lfib-stream\|nettle-pbkdf2\|pkcs1-conv\|sexp-conv\)\.exe$' \
-			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$'
+			-e '^/usr/bin/\(p11-kit\|trust\)\.exe$' \
+			-e '^/usr/bin/msys-edit-0\.dll$'
 		cat <<-EOF
 		/clangarm64/bin/nettle-hash.exe
 		/clangarm64/bin/nettle-lfib-stream.exe
 		/clangarm64/bin/nettle-pbkdf2.exe
 		EOF
 	}
+fi |
+if test aarch64 = "$ARCH" && test -n "$MINIMAL_GIT"
+then
+	grep -v '^/usr/bin/msys-\(crypt-2\|crypto-3\)\.dll$'
+else
+	cat
 fi |
 LC_CTYPE=C.UTF-8 grep --perl-regexp -v -e '^/usr/(lib|share)/terminfo/(?!.*/(cygwin|dumb|ms-terminal|screen.*|xterm.*)$)' |
 sed 's/^\///' | sort | uniq

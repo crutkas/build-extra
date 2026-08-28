@@ -18,7 +18,14 @@ git -c http.sslbackend=openssl ls-remote https://github.com/dscho/images ||
 # `git.exe` versions cannot handle)
 case "$(git version)" in *2.40.*|*2.[123][0-9].*) true;; *) exit 123;; esac
 
-git ls-remote git@ssh.dev.azure.com:v3/git-for-windows/git/git main
+if test -n "$GIT_FOR_WINDOWS_AZURE_SSH_CHECK"
+then
+	pwsh.exe -NoProfile \
+		-File "$GIT_FOR_WINDOWS_AZURE_SSH_CHECK" \
+		-Root "$(cygpath -aw /)"
+else
+	git ls-remote git@ssh.dev.azure.com:v3/git-for-windows/git/git main
+fi
 
 die () {
 	echo "$*" >&2

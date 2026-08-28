@@ -12,6 +12,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: check ARM64 OpenSSH integration
+        shell: bash
+        run: ./t/check-arm64-openssh-integration.sh
       - name: determine packages to build
         id: set-matrix
         shell: bash
@@ -73,7 +76,10 @@ jobs:
             t/check-arm64-busybox-architecture.sh \
             t/check-arm64-busybox-distributions.ps1 \
             t/check-arm64-native-tools.sh \
-            t/check-arm64-native-tools.ps1)" ||
+            t/check-arm64-native-tools.ps1 \
+            t/check-arm64-openssh-integration.sh \
+            t/check-arm64-openssh-installer.ps1 \
+            t/check-arm64-openssh-package.ps1)" ||
           echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -114,6 +120,12 @@ jobs:
         with:
           name: ${{ steps.build.outputs.result }}
           path: ${{ steps.build.outputs.result }}
+      - name: measure ARM64 artifact downloads
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath "${{ steps.build.outputs.result }}" -File |
+            ForEach-Object { Write-Host "$($_.Name): $($_.Length) bytes" }
       - name: ensure that the Git worktree is still clean
         shell: bash
         run: |
@@ -168,6 +180,20 @@ jobs:
           cygpath -aw "$PWD/sdk-artifact/usr/bin" >>$GITHUB_PATH &&
           cygpath -aw "$PWD/sdk-artifact/${{ matrix.architecture.mingw-prefix }}/bin" >>$GITHUB_PATH &&
           echo "MSYSTEM=${{ matrix.architecture.msystem }}" >>$GITHUB_ENV
+      - name: download the verified ARM64 OpenSSH package
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: validate the Pacman-owned ARM64 OpenSSH package
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-openssh-package.ps1 `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1) `
+            -SdkRoot (Convert-Path sdk-artifact)
       - name: build ${{ matrix.directory }}/
         shell: bash
         id: build
@@ -208,6 +234,8 @@ jobs:
       - name: validate
         if: matrix.directory == 'installer'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -216,8 +244,13 @@ jobs:
           git.exe version --build-options >version &&
           cat version &&
           checklist=installer/run-checklist.sh &&
-          # cannot test SSH keys in read-only mode, skip test for now
-          sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
+          if test aarch64 != "${{ matrix.architecture.name }}"
+          then
+            # Keep the existing read-only fallback outside ARM64.
+            sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
+          else
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
+          fi &&
           sh -x $checklist
       - name: validate ARM64 BusyBox installer payload
         if: matrix.directory == 'installer' && matrix.architecture.name == 'aarch64'
@@ -228,16 +261,17 @@ jobs:
         shell: pwsh
         run: |
           $exePath = Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.7z.exe | %{$_.FullName}
+          $portableRoot = "$env:RUNNER_TEMP\portable-git"
           Get-ChildItem -Path "$exePath"
-          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o portable-git -y"
+          $installer = Start-Process -PassThru -Wait -FilePath "$exePath" -ArgumentList "-o $portableRoot -y"
           $exitCode = $installer.ExitCode
           if ($exitCode -ne 0) {
             Write-Host "::error::Extracting the Portable Git failed with exit code $exitCode!"
             exit 1
           }
-          Get-ChildItem -Path "portable-git"
-          "$PWD\portable-git\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
-          "$PWD\portable-git\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          Get-ChildItem -Path $portableRoot
+          "$portableRoot\usr\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
+          "$portableRoot\${{ matrix.architecture.mingw-prefix }}\bin" | Out-File -Encoding ascii -Append $env:GITHUB_PATH
       - name: validate
         if: matrix.directory == 'portable'
         shell: bash
@@ -250,36 +284,69 @@ jobs:
       - name: validate ARM64 BusyBox portable payload
         if: matrix.directory == 'portable' && matrix.architecture.name == 'aarch64'
         shell: pwsh
-        run: ./t/check-arm64-busybox.ps1 -Root (Convert-Path portable-git)
+        run: ./t/check-arm64-busybox.ps1 -Root "$env:RUNNER_TEMP\portable-git"
       - name: extract and validate ARM64 MinGit modes
         if: matrix.directory == 'mingit' && matrix.architecture.name == 'aarch64'
         shell: pwsh
         run: |
           $zip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/*.zip" |
            Select-Object -First 1
-          Expand-Archive -LiteralPath $zip.FullName -DestinationPath mingit
-          & ./mingit/cmd/git.exe version --build-options
+          $minGitRoot = "$env:RUNNER_TEMP\mingit-root"
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $minGitRoot
+          & "$minGitRoot/cmd/git.exe" version --build-options
           if ($LASTEXITCODE -ne 0) {
            throw "Standard MinGit validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root (Convert-Path mingit) `
+           -Root $minGitRoot `
            -AllowMissingReplacements
 
           $busyboxZip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/busybox/*.zip" |
            Select-Object -First 1
-          Expand-Archive -LiteralPath $busyboxZip.FullName -DestinationPath mingit-busybox
-          & ./mingit-busybox/cmd/git.exe version --build-options
+          $busyboxMinGitRoot = "$env:RUNNER_TEMP\mingit-busybox-root"
+          Expand-Archive -LiteralPath $busyboxZip.FullName -DestinationPath $busyboxMinGitRoot
+          & "$busyboxMinGitRoot/cmd/git.exe" version --build-options
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit Git validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root (Convert-Path mingit-busybox) `
+           -Root $busyboxMinGitRoot `
            -AllowMissingReplacements
-          & ./mingit-busybox/clangarm64/bin/ash.exe -c "uname -m"
+          & "$busyboxMinGitRoot/clangarm64/bin/ash.exe" -c "uname -m"
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit shell validation failed"
           }
+      - name: validate the ARM64 OpenSSH runtime
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $root = switch ("${{ matrix.directory }}") {
+            "installer" { "$env:ProgramFiles\Git" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
+            default { throw "Unexpected artifact: ${{ matrix.directory }}" }
+          }
+          $parameters = @{
+            Package = "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst"
+            Scanner = (Convert-Path ./pe-imports.ps1)
+            RuntimeRoot = $root
+          }
+          if ("${{ matrix.directory }}" -eq "mingit") {
+            ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
+            $parameters.RuntimeRoot = "$env:RUNNER_TEMP\mingit-busybox-root"
+            ./t/check-arm64-openssh-package.ps1 @parameters -MinGit
+          } else {
+            ./t/check-arm64-openssh-package.ps1 @parameters
+          }
+      - name: validate ARM64 installer lifecycle and external SSH
+        if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
+        shell: pwsh
+        run: |
+          $exePath = (Get-ChildItem -Path ${{ steps.build.outputs.result }}/*.exe | Select-Object -First 1).FullName
+          ./t/check-arm64-openssh-installer.ps1 `
+            -Installer $exePath `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1)
   sdk-artifacts:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true'
@@ -333,6 +400,14 @@ jobs:
         shell: bash
         run: |
           set -x &&
+          if test aarch64 = "${{ matrix.arch.name }}" &&
+            test build-installers = "${{ matrix.artifact }}"
+          then
+            fixture_server="$(cygpath -au "$RUNNER_TEMP/azure-ssh-server")" &&
+            git --git-dir=.sdk worktree add --detach "$fixture_server" HEAD &&
+            echo "AZURE_SSH_SERVER_ROOT=$(cygpath -aw "$fixture_server")" \
+              >>$GITHUB_ENV
+          fi &&
           case "${{ matrix.artifact }}" in
           full)
             git --git-dir=.sdk worktree add --detach sdk-artifact
@@ -345,6 +420,11 @@ jobs:
               ${{ matrix.artifact }}
             ;;
           esac &&
+          if test aarch64 = "${{ matrix.arch.name }}" &&
+            test full = "${{ matrix.artifact }}"
+          then
+            ./please.sh use-arm64-native-openssh --root=sdk-artifact
+          fi &&
           ls -la sdk-artifact/ &&
           version="$(sdk-artifact/${{ matrix.arch.mingw-prefix }}/bin/git.exe version)" &&
           echo "git-version=$version" >>$GITHUB_OUTPUT &&
@@ -353,6 +433,20 @@ jobs:
           cygpath -aw "$PWD/sdk-artifact/${{ matrix.arch.mingw-prefix }}/bin" >>$GITHUB_PATH &&
           echo "MSYSTEM=${{ matrix.arch.msystem }}" >>$GITHUB_ENV &&
           cat $GITHUB_PATH
+      - name: download the verified ARM64 OpenSSH package
+        if: matrix.arch.name == 'aarch64' && (matrix.artifact == 'build-installers' || matrix.artifact == 'full')
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: validate the Pacman-owned ARM64 OpenSSH package
+        if: matrix.arch.name == 'aarch64' && (matrix.artifact == 'build-installers' || matrix.artifact == 'full')
+        shell: pwsh
+        run: |
+          ./t/check-arm64-openssh-package.ps1 `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1) `
+            -SdkRoot (Convert-Path sdk-artifact)
       - name: build installer
         if: matrix.artifact == 'build-installers'
         shell: bash
@@ -362,6 +456,12 @@ jobs:
         with:
           name: installer-${{ matrix.arch.name }}
           path: installer-${{ matrix.arch.name }}
+      - name: measure ARM64 installer download
+        if: matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath installer-${{ matrix.arch.name }} -File |
+            ForEach-Object { Write-Host "$($_.Name): $($_.Length) bytes" }
       - name: run the installer
         if: matrix.artifact == 'build-installers'
         shell: pwsh
@@ -388,6 +488,8 @@ jobs:
       - name: validate
         if: matrix.artifact == 'build-installers'
         shell: bash
+        env:
+          ARM64_AZURE_SSH_PRIVATE_KEY: ${{ secrets.ARM64_AZURE_SSH_PRIVATE_KEY }}
         run: |
           set -x &&
           grep 'Installation process succeeded' installer.log &&
@@ -397,10 +499,31 @@ jobs:
           cat version &&
           grep "${{ steps.build-artifact.outputs.git-version }}" version &&
           checklist=installer/run-checklist.sh &&
-          # cannot test SSH keys in read-only mode, skip test for now
-          sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
+          if test aarch64 != "${{ matrix.arch.name }}"
+          then
+            # Keep the existing read-only fallback outside ARM64.
+            sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist
+          else
+            export GIT_FOR_WINDOWS_AZURE_SSH_CHECK="$(cygpath -aw t/check-arm64-azure-ssh.ps1)"
+          fi &&
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
+      - name: validate local Azure-like Git over SSH
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          ./t/check-arm64-azure-ssh-fixture.ps1 `
+            -ClientRoot "$env:ProgramFiles\Git" `
+            -ServerRoot "$env:AZURE_SSH_SERVER_ROOT"
+      - name: validate ARM64 installer lifecycle and external SSH
+        if: always() && matrix.arch.name == 'aarch64' && matrix.artifact == 'build-installers'
+        shell: pwsh
+        run: |
+          $exePath = (Get-ChildItem -Path installer-${{ matrix.arch.name }}/*.exe | Select-Object -First 1).FullName
+          ./t/check-arm64-openssh-installer.ps1 `
+            -Installer $exePath `
+            -Package "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner (Convert-Path ./pe-imports.ps1)
   check-for-missing-dlls:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true' || needs.determine-packages.outputs.check-for-missing-dlls == 'true'
@@ -439,16 +562,6 @@ jobs:
             --branch=${{ matrix.arch.sdk-branch || 'main' }} --filter=blob:none \
             https://github.com/git-for-windows/${{ matrix.arch.sdk-repo }} .sdk
       - name: build build-installers-${{ matrix.arch.name }} artifact
-        if: matrix.arch.name == 'aarch64'
-        shell: bash
-        run: |
-          GFW_ARM64_BUSYBOX=0 \
-          ./please.sh create-sdk-artifact \
-            --architecture=${{ matrix.arch.name }} \
-            --sdk=.sdk \
-            --out=sdk-artifact-before \
-            build-installers
-      - name: build build-installers-${{ matrix.arch.name }} artifact
         shell: bash
         run: |
           set -x &&
@@ -483,19 +596,6 @@ jobs:
           git show FETCH_HEAD:pe-imports.ps1 >pe-imports-pr1.ps1 &&
           echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *pe-imports-pr1.ps1' |
             sha256sum -c -
-      - name: compare ARM64 payload architectures
-        if: matrix.arch.name == 'aarch64'
-        shell: bash
-        run: |
-          ./t/check-arm64-busybox-architecture.sh \
-            --before=sdk-artifact-before \
-            --after=sdk-artifact \
-            --scanner=pe-imports-pr1.ps1
-      - uses: actions/upload-artifact@v7
-        if: matrix.arch.name == 'aarch64'
-        with:
-          name: arm64-busybox-architecture-report
-          path: arm64-busybox-architecture-report.txt
       - name: check ARM64 BusyBox compatibility
         if: matrix.arch.name == 'aarch64'
         shell: bash
@@ -515,7 +615,7 @@ jobs:
         if: matrix.arch.name == 'aarch64'
         shell: pwsh
         run: ./t/check-arm64-native-tools.ps1 -Root (Convert-Path sdk-artifact)
-  arm64-busybox-impact:
+  arm64-combined-impact:
     needs: determine-packages
     if: needs.determine-packages.outputs.check-for-missing-dlls == 'true'
     runs-on: windows-11-arm
@@ -523,17 +623,33 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: prepare exact base source and SDK
+      - name: prepare exact source stages and SDK
         shell: bash
         run: |
+          git fetch --no-tags origin \
+            refs/pull/1/head:refs/remotes/origin/pr-1-scanner \
+            refs/heads/crutkas-arm64-native-leaf-tools:refs/remotes/origin/crutkas-arm64-native-leaf-tools \
+            refs/heads/crutkas-arm64-busybox-packaging:refs/remotes/origin/crutkas-arm64-busybox-packaging &&
+          test 9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19 = \
+            "$(git rev-parse origin/pr-1-scanner)" &&
           test 39ffc22208aa99e287a9f433431fb9a56f443b62 = \
             "$(git rev-parse origin/crutkas-arm64-native-leaf-tools)" &&
+          test 50de8f12409d8cc8e16aef190629073db1a8606d = \
+            "$(git rev-parse origin/crutkas-arm64-busybox-packaging)" &&
+          git worktree add --detach release-source \
+            9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19 &&
           git worktree add --detach base-source \
             39ffc22208aa99e287a9f433431fb9a56f443b62 &&
+          git worktree add --detach busybox-source \
+            50de8f12409d8cc8e16aef190629073db1a8606d &&
+          echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *release-source/pe-imports.ps1' |
+            sha256sum -c - &&
+          echo 'ae1e311fd81258150c2300d02c58655f30b190a15bcbe3ea8bbaccc1ce8c1c9a *release-source/arm64-payload-architecture-v2.55.0.4.tsv' |
+            sha256sum -c - &&
           git clone --bare --depth=1 --single-branch --branch=main \
             --filter=blob:none \
             https://github.com/git-for-windows/git-sdk-arm64 .sdk
-      - name: stage base and integrated SDKs
+      - name: stage leaf, BusyBox, and combined SDKs
         shell: bash
         run: |
           ./base-source/please.sh create-sdk-artifact \
@@ -541,12 +657,65 @@ jobs:
             --sdk=.sdk \
             --out=sdk-base \
             build-installers &&
+          ./busybox-source/please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
+            --out=sdk-busybox \
+            build-installers &&
           ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
             --out=sdk-integrated \
             build-installers
-      - name: build base and integrated distributions
+      - name: scan exact payload architecture stages
+        shell: bash
+        run: |
+          ./t/check-arm64-busybox-architecture.sh \
+            --release-manifest=release-source/arm64-payload-architecture-v2.55.0.4.tsv \
+            --leaf-root=sdk-base \
+            --leaf-source=base-source \
+            --busybox-root=sdk-busybox \
+            --busybox-source=busybox-source \
+            --combined-root=sdk-integrated \
+            --combined-source=. \
+            --scanner=release-source/pe-imports.ps1
+      - name: download the verified ARM64 OpenSSH package
+        shell: pwsh
+        run: |
+          $url = "https://github.com/crutkas/build-extra/releases/download/win32-openssh-client-10.0.0.0-2-arm64/mingw-w64-clang-aarch64-win32-openssh-client-10.0.0.0-2-any.pkg.tar.zst"
+          curl.exe -fL --retry 3 -o "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" $url
+      - name: download exact released baseline products
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path impact/release | Out-Null
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name installer-aarch64 `
+            --dir impact/release
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name portable-artifacts-aarch64 `
+            --dir impact/release
+          gh run download 31733850037 `
+            --repo crutkas/build-extra `
+            --name mingit-artifacts-aarch64 `
+            --dir impact/release
+          $expected = @{
+            'Git-0-test-arm64.exe' = 63222622
+            'PortableGit-0-test-arm64.7z.exe' = 59212874
+            'MinGit-0-test-arm64.zip' = 37725713
+          }
+          foreach ($entry in $expected.GetEnumerator()) {
+            $actual = (Get-Item -LiteralPath (
+              Join-Path impact/release $entry.Key
+            )).Length
+            if ($actual -ne $entry.Value) {
+              throw "Unexpected released $($entry.Key) size: $actual"
+            }
+          }
+      - name: build leaf and combined distributions
         shell: bash
         run: |
           build_products () {
@@ -564,7 +733,6 @@ jobs:
                 --output='$output/mingit-busybox' 0-test
             "
           }
-
           root=$PWD &&
           build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
           build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
@@ -572,18 +740,24 @@ jobs:
         shell: pwsh
         run: |
           ./t/check-arm64-busybox-distributions.ps1 `
+            -ReleasedInstaller impact/release/Git-0-test-arm64.exe `
             -BaseInstaller impact/base/Git-0-test-arm64.exe `
             -IntegratedInstaller impact/integrated/Git-0-test-arm64.exe `
+            -ReleasedPortable impact/release/PortableGit-0-test-arm64.7z.exe `
             -BasePortable impact/base/PortableGit-0-test-arm64.7z.exe `
             -IntegratedPortable impact/integrated/PortableGit-0-test-arm64.7z.exe `
+            -ReleasedMinGit impact/release/MinGit-0-test-arm64.zip `
             -BaseMinGit impact/base/MinGit-0-test-arm64.zip `
             -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
             -BaseBusyBoxMinGit impact/base/mingit-busybox/MinGit-0-test-arm64.zip `
             -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
+            -OpenSshPackage "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
+            -Scanner release-source/pe-imports.ps1 `
             -OutputDirectory impact/measurements
       - uses: actions/upload-artifact@v7
         with:
-          name: arm64-busybox-distribution-impact
+          name: arm64-combined-payload-impact
           path: |
-            impact/measurements/arm64-busybox-distribution-impact.json
-            impact/measurements/arm64-busybox-distribution-impact.md
+            arm64-combined-architecture-report.txt
+            impact/measurements/arm64-combined-distribution-impact.json
+            impact/measurements/arm64-combined-distribution-impact.md
