@@ -1,0 +1,33 @@
+name: Bootstrap pinned Git for Windows ARM64 SDK
+description: Verify an admitted ARM64 SDK snapshot on a protected non-admin runner
+
+inputs:
+  matrix-discriminator:
+    description: Stable value unique to this matrix leg, or no-matrix outside a matrix
+    required: true
+
+outputs:
+  sdk-root:
+    description: Canonical path to the verified SDK worktree
+    value: ${{ steps.bootstrap.outputs.sdk-root }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify and materialize the pinned SDK
+      id: bootstrap
+      shell: pwsh
+      env:
+        GFW_SDK_MATRIX_DISCRIMINATOR: ${{ inputs.matrix-discriminator }}
+      run: |
+        & "$env:GITHUB_ACTION_PATH/bootstrap.ps1" `
+          -RunnerTemp "$env:RUNNER_TEMP" `
+          -RunId "$env:GITHUB_RUN_ID" `
+          -RunAttempt "$env:GITHUB_RUN_ATTEMPT" `
+          -Job "$env:GITHUB_JOB" `
+          -MatrixDiscriminator "$env:GFW_SDK_MATRIX_DISCRIMINATOR" `
+          -RunnerOs "$env:RUNNER_OS" `
+          -RunnerArch "$env:RUNNER_ARCH" `
+          -GitHubPath "$env:GITHUB_PATH" `
+          -GitHubEnv "$env:GITHUB_ENV" `
+          -GitHubOutput "$env:GITHUB_OUTPUT"

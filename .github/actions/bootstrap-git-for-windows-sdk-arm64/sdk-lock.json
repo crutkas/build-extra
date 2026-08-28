@@ -1,0 +1,42 @@
+{
+  "format": "git-for-windows-sdk-git-tree-lock-v1",
+  "repository": "git-for-windows/git-sdk-arm64",
+  "remote_url": "https://github.com/git-for-windows/git-sdk-arm64.git",
+  "commit": "f1e6b08892fc285dcb401433db359c3c61c0defd",
+  "tree": "6b92d3a604c63481bff454dcd3da40d0b6293082",
+  "parent": "bd683ba009eeed6d87334bda905e687a260c175a",
+  "commit_metadata": {
+    "author": "Git for Windows Build Agent <ci@git-for-windows.build> 1787836270 +0000",
+    "committer": "Git for Windows Build Agent <ci@git-for-windows.build> 1787836270 +0000",
+    "authored_at": "2026-08-27T13:11:10Z",
+    "committed_at": "2026-08-27T13:11:10Z",
+    "signature_status": "unsigned",
+    "subject": "Update 1 package"
+  },
+  "manifest": {
+    "canonicalization": "mode<TAB>type<TAB>object-id<TAB>size-or-dash<TAB>percent-encoded-UTF-8-path<LF> in recursive Git tree order; tree size is dash",
+    "sha256": "6d3407edcebcd4bec2b985e8a1dd5d16720cafd08d326a5b99fa4c76d97d7882",
+    "entry_count": 88249,
+    "blob_count": 83648,
+    "tree_count": 4601,
+    "total_blob_bytes": "3615514045"
+  },
+  "package_database": {
+    "scope": [
+      "var/lib/pacman/local",
+      "var/lib/pacman/sync"
+    ],
+    "canonicalization": "the complete-tree canonical records whose paths equal or descend from a listed scope",
+    "sha256": "ac954098803554fddcfa79bf66aeddd7ede4659ae645072493743a14f5bf8d89",
+    "entry_count": 1309,
+    "blob_count": 995,
+    "tree_count": 314,
+    "total_blob_bytes": "43600841"
+  },
+  "admission": {
+    "status": "pending-independent-review",
+    "approved_by": null,
+    "approved_at": null,
+    "evidence": null
+  }
+}
