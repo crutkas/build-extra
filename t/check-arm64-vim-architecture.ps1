@@ -93,12 +93,10 @@ if ($data.status -eq "unresolved") {
         $report.unresolved += "$assetLabel.assetId"
         $report.unresolved += "$assetLabel.url"
     }
-    foreach ($artifact in @("installer", "portable")) {
-        if ($null -ne $data.expected.distributionBytesDelta.$artifact) {
-            throw "Preview mode must not claim a measured $artifact byte delta"
-        }
-        $report.unresolved += "distributionBytesDelta.$artifact"
+    if ($null -ne $data.expected.distributionBytesDelta.portablePayload) {
+        throw "Preview mode must not claim a measured payload byte delta"
     }
+    $report.unresolved += "distributionBytesDelta.portablePayload"
 } elseif ($data.status -in @("measuring", "admitted")) {
     if (-not (Test-Path -LiteralPath $provenancePath -PathType Leaf)) {
         throw "$($report.mode) mode is missing the ARM64 Vim provenance manifest"
@@ -110,17 +108,12 @@ if ($data.status -eq "unresolved") {
     $distribution = Get-Content -Raw -LiteralPath $DistributionReport | ConvertFrom-Json
     Assert-Equal $report.mode $distribution.mode "The distribution impact mode does not match"
     if ($data.status -eq "admitted") {
-        foreach ($field in @("installer", "portable")) {
-            if ($null -eq $data.expected.distributionBytesDelta.$field) {
-                throw "Final mode is missing the measured $field byte delta"
-            }
+        if ($null -eq $data.expected.distributionBytesDelta.portablePayload) {
+            throw "Final mode is missing the measured payload byte delta"
         }
-        Assert-Equal ([int64]$data.expected.distributionBytesDelta.installer) `
-            ([int64]$distribution.observedProductBytesDelta.installer) `
-            "The installer byte delta was not verified"
-        Assert-Equal ([int64]$data.expected.distributionBytesDelta.portable) `
-            ([int64]$distribution.observedProductBytesDelta.portable) `
-            "The Portable Git byte delta was not verified"
+        Assert-Equal ([int64]$data.expected.distributionBytesDelta.portablePayload) `
+            ([int64]$distribution.observedProductBytesDelta.portablePayload) `
+            "The Portable Git payload byte delta was not verified"
     }
     Assert-Equal 0 ([int64]$distribution.observedProductBytesDelta.mingit) `
         "MinGit changed"
@@ -186,8 +179,9 @@ $report | ConvertTo-Json -Depth 10 | Set-Content -Encoding ascii -LiteralPath $j
 - Unexpected x64 delta: 0
 - Replacement PEs: 7
 - Retained MSYS script: usr/bin/vimtutor
-- Installer byte delta: $($data.expected.distributionBytesDelta.installer)
-- Portable byte delta: $($data.expected.distributionBytesDelta.portable)
+- Exact Portable payload byte delta: $($data.expected.distributionBytesDelta.portablePayload)
+- Compressed Installer delta bounds: $($data.expected.distributionBytesDelta.installerMinimum)..$($data.expected.distributionBytesDelta.installerMaximum)
+- Compressed Portable delta bounds: $($data.expected.distributionBytesDelta.portableMinimum)..$($data.expected.distributionBytesDelta.portableMaximum)
 - MinGit byte delta: 0
 - BusyBox MinGit byte delta: 0
 - Unresolved contracts: $($report.unresolved.Count)

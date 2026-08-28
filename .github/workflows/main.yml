@@ -794,6 +794,7 @@ jobs:
             -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
             -BaseBusyBoxMinGit impact/vim-base/mingit-busybox/MinGit-0-test-arm64.zip `
             -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
+            -SevenZip sdk-integrated/clangarm64/bin/7z.exe `
             -Output impact/measurements/arm64-vim-distribution-impact.json
       - name: check native ARM64 Vim payload contract
         shell: pwsh

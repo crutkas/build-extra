@@ -120,8 +120,11 @@ function New-AdmittedLock([string]$Directory) {
     $data.release.body.sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     $data.release.audit.status = "passed"
     $data.release.audit.evidence = "synthetic-test-only"
-    $data.expected.distributionBytesDelta.installer = 0
-    $data.expected.distributionBytesDelta.portable = 0
+    $data.expected.distributionBytesDelta.portablePayload = 0
+    $data.expected.distributionBytesDelta.installerMinimum = 0
+    $data.expected.distributionBytesDelta.installerMaximum = 0
+    $data.expected.distributionBytesDelta.portableMinimum = 0
+    $data.expected.distributionBytesDelta.portableMaximum = 0
     $id = 10
     foreach ($asset in $data.release.assets) {
         if ($asset.role -eq "evidence") {
@@ -214,6 +217,7 @@ try {
     New-Item -ItemType Directory -Force -Path $unresolvedRoot | Out-Null
     $unresolvedData = Get-Content -Raw -LiteralPath $sourceLock | ConvertFrom-Json
     $unresolvedData.status = "unresolved"
+    $unresolvedData.expected.distributionBytesDelta.portablePayload = $null
     foreach ($field in @(
         "repository", "releaseId", "tag", "tagObjectSha", "tagMessage",
         "peeledCommit", "url", "publishedAt"
@@ -239,8 +243,7 @@ try {
     } "public immutable release locator is unresolved"
     $admittedData = Get-Content -Raw -LiteralPath $sourceLock | ConvertFrom-Json
     $admittedData.status = "admitted"
-    $admittedData.expected.distributionBytesDelta.installer = 0
-    $admittedData.expected.distributionBytesDelta.portable = 0
+    $admittedData.expected.distributionBytesDelta.portablePayload = 0
     $admittedLock = Join-Path $trash "admitted.json"
     Save-Lock $admittedData $admittedLock
     $admittedProbe = Invoke-ProductionInstaller @(
@@ -253,8 +256,7 @@ try {
 
     $measuringData = Get-Content -Raw -LiteralPath $sourceLock | ConvertFrom-Json
     $measuringData.status = "measuring"
-    $measuringData.expected.distributionBytesDelta.installer = $null
-    $measuringData.expected.distributionBytesDelta.portable = $null
+    $measuringData.expected.distributionBytesDelta.portablePayload = $null
     $measuringLock = Join-Path $trash "measuring.json"
     Save-Lock $measuringData $measuringLock
     Assert-Fails {
@@ -445,8 +447,7 @@ try {
     $measurementRoot = Join-Path $case.Directory "measurement-root"
     $measurementData = $case.Lock | ConvertTo-Json -Depth 20 | ConvertFrom-Json
     $measurementData.status = "measuring"
-    $measurementData.expected.distributionBytesDelta.installer = $null
-    $measurementData.expected.distributionBytesDelta.portable = $null
+    $measurementData.expected.distributionBytesDelta.portablePayload = $null
     $measurementLock = Join-Path $case.Directory "measurement-lock.json"
     Save-Lock $measurementData $measurementLock
     Invoke-ProductionInstaller @(
@@ -474,6 +475,7 @@ try {
         -BasePortable $unchanged -IntegratedPortable $unchanged `
         -BaseMinGit $unchanged -IntegratedMinGit $unchanged `
         -BaseBusyBoxMinGit $unchanged -IntegratedBusyBoxMinGit $unchanged `
+        -BasePayloadBytes 9 -IntegratedPayloadBytes 9 `
         -Output $distributionReport
     if (-not $? -or
         (Get-Content -Raw -LiteralPath $distributionReport | ConvertFrom-Json).mode -ne "measurement") {
@@ -484,6 +486,7 @@ try {
         -BasePortable $unchanged -IntegratedPortable $unchanged `
         -BaseMinGit $unchanged -IntegratedMinGit $unchanged `
         -BaseBusyBoxMinGit $unchanged -IntegratedBusyBoxMinGit $unchanged `
+        -BasePayloadBytes 9 -IntegratedPayloadBytes 9 `
         -Output $distributionReport
     if (-not $? -or
         (Get-Content -Raw -LiteralPath $distributionReport | ConvertFrom-Json).mode -ne "final") {

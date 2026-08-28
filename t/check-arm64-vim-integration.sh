@@ -16,8 +16,9 @@ die "The exact Vim PE replacement inventory changed"
 grep -Fq '"status": "admitted"' "$root/arm64-vim/input-lock.json" &&
 grep -Fq '"releaseId": 377949409' "$root/arm64-vim/input-lock.json" &&
 grep -Fq '"assetId": 532524650' "$root/arm64-vim/input-lock.json" &&
-grep -Fq '"installer": 1680591' "$root/arm64-vim/input-lock.json" &&
-grep -Fq '"portable": 1086961' "$root/arm64-vim/input-lock.json" ||
+grep -Fq '"portablePayload": 9616712' "$root/arm64-vim/input-lock.json" &&
+grep -Fq '"installerMinimum": 1650000' "$root/arm64-vim/input-lock.json" &&
+grep -Fq '"portableMaximum": 1120000' "$root/arm64-vim/input-lock.json" ||
 die "The public Vim input is not fully admitted"
 
 test 2 = "$(grep -Fc 'arm64-vim/install.sh" \' "$root/please.sh")" &&

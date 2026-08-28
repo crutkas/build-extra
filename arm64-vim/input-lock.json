@@ -223,8 +223,11 @@
       "unexpectedX64": 0
     },
     "distributionBytesDelta": {
-      "installer": 1680591,
-      "portable": 1086961,
+      "portablePayload": 9616712,
+      "installerMinimum": 1650000,
+      "installerMaximum": 1710000,
+      "portableMinimum": 1050000,
+      "portableMaximum": 1120000,
       "mingit": 0,
       "busyboxMingit": 0
     }

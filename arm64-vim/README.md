@@ -25,5 +25,7 @@ This avoids making those output measurements depend on their own lock values.
 `-TestMode` is reserved for synthetic temporary fixtures in
 `t/check-arm64-vim-integration.ps1`; it must not be used with release bytes.
 
-The admitted lock records an installer delta of 1,680,591 bytes and a Portable
-Git delta of 1,086,961 bytes. MinGit and BusyBox MinGit remain unchanged.
+The admitted lock records an exact uncompressed Portable Git payload delta of
+9,616,712 bytes. Rebuilt compressed Installer and Portable Git sizes are checked
+against explicit narrow bounds because their compressors do not produce stable
+cross-run byte deltas. MinGit and BusyBox MinGit remain exactly unchanged.

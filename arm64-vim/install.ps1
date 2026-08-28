@@ -401,9 +401,15 @@ function Assert-Admitted($Data, [switch]$AllowUnmeasured) {
     Assert-Equal $Data.source.repository $Data.release.repository `
         "The release repository is not the source fork"
     if (-not $AllowUnmeasured -and
-        ($null -eq $Data.expected.distributionBytesDelta.installer -or
-        $null -eq $Data.expected.distributionBytesDelta.portable)) {
-        throw "ARM64 Vim admission is missing measured distribution byte deltas"
+        $null -eq $Data.expected.distributionBytesDelta.portablePayload) {
+        throw "ARM64 Vim admission is missing the measured payload byte delta"
+    }
+    foreach ($artifact in @("installer", "portable")) {
+        $minimum = [int64]$Data.expected.distributionBytesDelta."${artifact}Minimum"
+        $maximum = [int64]$Data.expected.distributionBytesDelta."${artifact}Maximum"
+        if ((-not $TestMode -and $minimum -le 0) -or $maximum -lt $minimum) {
+            throw "ARM64 Vim admission has invalid $artifact compressed-size bounds"
+        }
     }
     Assert-Equal 0 ([int64]$Data.expected.distributionBytesDelta.mingit) `
         "ARM64 Vim admission permits a MinGit byte delta"
