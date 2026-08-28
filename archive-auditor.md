@@ -409,6 +409,15 @@ cost is visible and comparable.
 | Provenance | Ownership partitions that are unordered, overlapping, or do not cover the containing stream exactly, and comparison across manifest schema versions |
 | Configuration | Limits of the wrong type or outside their bounded range, including huge integers, infinities, and `NaN`, reported identically from the API and the command line |
 
+The structured rejection codes published in this specification are
+intentionally a stable subset, not an exhaustive catalog of implementation
+codes. Most implementation codes remain unpublished by design. The general
+contract is one-sided: every published code must belong to the statically
+resolved production set, while a production code need not be published. The
+four SFX and envelope budget codes are stricter and remain an exact
+bidirectional contract between the implementation and the normative budget
+paragraph.
+
 `t/test_archive_auditor.py` creates all fixtures in repository-local test
 code. It commits no payload or package binaries. The suite covers valid
 records and each rejection class, including duplicate ZIP/TAR names with

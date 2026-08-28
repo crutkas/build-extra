@@ -57,6 +57,36 @@ EXPECTED_BUDGET_REJECTION_CODES = frozenset({
     "SFX_SIGNATURE_CANDIDATE_LIMIT",
     "SFX_SIGNATURE_OCCURRENCE_LIMIT",
 })
+EXPECTED_FORWARDING_SITE_COUNTS = {
+    ("_bounded_range", "reject", "code"): 1,
+    ("_reject_compressed_tail", "reject", "code"): 1,
+    ("checked_slice", "reject", "code"): 1,
+    ("classify_unix_file_type", "reject", "code"): 2,
+    ("reject", "AuditError", "code"): 1,
+    ("require_end", "reject", "code"): 1,
+    ("strict_decode", "reject", "code"): 1,
+}
+EXPECTED_CONDITIONAL_REJECTION_CODES = frozenset({
+    "AMBIGUOUS_ZIP_EOCD",
+    "INVALID_ZIP_EOCD",
+})
+RESOLVED_REJECTION_CODES = frozenset({
+    "AMBIGUOUS_ZIP_EOCD",
+    "CONCATENATED_BZIP2_STREAM",
+    "CONCATENATED_XZ_STREAM",
+    "CONCATENATED_ZSTD_FRAME",
+    "INVALID_GZIP_COMMENT",
+    "INVALID_GZIP_NAME",
+    "INVALID_PATH_ENCODING",
+    "INVALID_PAX_KEY",
+    "INVALID_PAX_VALUE",
+    "INVALID_ZIP_EOCD",
+    "OUT_OF_RANGE_RECORD",
+    "TRAILING_HEADER_PAYLOAD",
+    "UNSUPPORTED_7Z_MEMBER_TYPE",
+    "UNSUPPORTED_ZIP_MEMBER_TYPE",
+})
+CLASSIFIED_NON_CODE_LITERALS = frozenset({"NFC"})
 
 
 def raw_deflate(data):
@@ -2320,36 +2350,182 @@ class ArchiveAuditorTests(unittest.TestCase):
                     AUDITOR.crc32_range(data, start, end)
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
 
+    def extract_rejection_evidence(self, source):
+        pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
+        tree = ast.parse(source)
+        rejection_callees = frozenset({"reject", "AuditError"})
+        parents = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+
+        def containing_function(node):
+            while node in parents:
+                node = parents[node]
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    return node
+            return None
+
+        def static_strings(node):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return {node.value}
+            if isinstance(node, ast.IfExp):
+                body = static_strings(node.body)
+                orelse = static_strings(node.orelse)
+                if body is not None and orelse is not None:
+                    return body | orelse
+            return None
+
+        def static_codes(node):
+            values = static_strings(node)
+            if values is not None and all(pattern.fullmatch(value) for value in values):
+                return values
+            return None
+
+        direct_calls = []
+        non_name_calls = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name) and node.func.id in rejection_callees:
+                direct_calls.append(node)
+            elif isinstance(node.func, ast.Attribute) and node.func.attr in rejection_callees:
+                non_name_calls.append(node.lineno)
+
+        self.assertEqual(
+            [],
+            non_name_calls,
+            f"structured-error callees must be direct ast.Name nodes: {non_name_calls}",
+        )
+        self.assertEqual(
+            258,
+            len(direct_calls),
+            "physical direct structured-error call-site count drifted",
+        )
+
+        missing_arguments = [node.lineno for node in direct_calls if not node.args]
+        self.assertEqual(
+            [],
+            missing_arguments,
+            f"structured-error calls lack a code argument: {missing_arguments}",
+        )
+
+        static_sites = []
+        forwarding_sites = []
+        unextractable = []
+        declarative_forms = set()
+        static_raised = set()
+        for node in direct_calls:
+            first = node.args[0]
+            codes = static_codes(first)
+            if codes is not None:
+                static_sites.append(node)
+                static_raised.update(codes)
+                declarative_forms.add(ast.dump(first, include_attributes=False))
+            elif isinstance(first, ast.Name):
+                forwarding_sites.append(node)
+            else:
+                unextractable.append(
+                    (node.lineno, ast.dump(first, include_attributes=False))
+                )
+
+        self.assertEqual(
+            [],
+            unextractable,
+            f"unextractable structured-error code expressions: {unextractable}",
+        )
+        self.assertEqual(8, len(forwarding_sites), "forwarding site count drifted")
+        self.assertEqual(
+            158,
+            len(declarative_forms),
+            "unique declarative rejection-code form count drifted",
+        )
+        constant_raised = {
+            node.args[0].value
+            for node in static_sites
+            if isinstance(node.args[0], ast.Constant)
+        }
+
+        forwarding_counts = {}
+        for node in forwarding_sites:
+            owner = containing_function(node)
+            key = (
+                owner.name if owner is not None else "<module>",
+                node.func.id,
+                node.args[0].id,
+            )
+            forwarding_counts[key] = forwarding_counts.get(key, 0) + 1
+        self.assertEqual(
+            EXPECTED_FORWARDING_SITE_COUNTS,
+            forwarding_counts,
+            "forwarding structured-error sites must stay explicitly enumerated",
+        )
+
+        self.assertEqual(
+            len(direct_calls),
+            len(static_sites) + len(forwarding_sites),
+            "every physical structured-error call must resolve",
+        )
+        conditional_raised = static_raised - constant_raised
+        self.assertEqual(
+            EXPECTED_CONDITIONAL_REJECTION_CODES,
+            conditional_raised,
+            "conditional rejection-code extraction drifted",
+        )
+
+        literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and pattern.fullmatch(node.value)
+        }
+        expected_residue = RESOLVED_REJECTION_CODES | CLASSIFIED_NON_CODE_LITERALS
+        residue = literals - constant_raised
+        self.assertEqual(
+            expected_residue,
+            residue,
+            "every code-shaped literal outside direct constant raises must be classified",
+        )
+        self.assertFalse(
+            constant_raised & expected_residue,
+            "directly raised literals and the explicit residue must be disjoint",
+        )
+        self.assertFalse(
+            RESOLVED_REJECTION_CODES & CLASSIFIED_NON_CODE_LITERALS,
+            "resolved rejection codes and classified non-codes must be disjoint",
+        )
+        raised = constant_raised | RESOLVED_REJECTION_CODES
+        self.assertEqual(
+            literals,
+            raised | CLASSIFIED_NON_CODE_LITERALS,
+            "raised, resolved, and classified non-code literals must cover the outer bound",
+        )
+        return {
+            "literals": literals,
+            "raised": raised,
+            "constantRaised": constant_raised,
+            "resolved": RESOLVED_REJECTION_CODES,
+            "physicalCallSites": len(direct_calls),
+            "declarativeForms": len(declarative_forms),
+        }
+
     def assert_documented_rejection_contract(
         self,
         source,
         text,
         structural_identifiers=STRUCTURAL_IDENTIFIERS,
     ):
-        pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
-
-        literals = set()
-        raised = set()
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if pattern.fullmatch(node.value):
-                    literals.add(node.value)
-            if isinstance(node, ast.Call) and node.args:
-                callee = node.func.id if isinstance(node.func, ast.Name) else None
-                first = node.args[0]
-                if (
-                    callee in ("reject", "AuditError")
-                    and isinstance(first, ast.Constant)
-                    and isinstance(first.value, str)
-                ):
-                    raised.add(first.value)
+        evidence = self.extract_rejection_evidence(source)
+        literals = evidence["literals"]
+        raised = evidence["raised"]
 
         code_spans = re.findall(r"`([A-Z][A-Z0-9_]{2,})`", text)
         structural_identifiers = frozenset(structural_identifiers)
         documented = set(code_spans) - structural_identifiers
 
-        # Anti-tautology anchors: a silently empty extraction must fail loudly.
-        self.assertGreater(len(raised), 40, "AST extraction found too few raised codes")
+        # A silently empty documentation extraction must fail loudly.
         self.assertGreater(len(documented), 8, "documentation extraction found too few codes")
         overlap = structural_identifiers & raised
         self.assertFalse(
@@ -2382,6 +2558,20 @@ class ArchiveAuditorTests(unittest.TestCase):
             undocumentable,
             f"documentation advertises codes that production cannot raise: {undocumentable}",
         )
+        self.assertTrue(
+            documented < raised,
+            "documented rejection codes must remain a proper production subset",
+        )
+        self.assertGreater(
+            len(raised - documented),
+            len(documented),
+            "most production rejection codes must remain intentionally unpublished",
+        )
+        self.assertIn(
+            "intentionally a stable subset, not an exhaustive catalog",
+            text,
+            "the specification must state the one-sided rejection-code contract",
+        )
 
         budget = re.compile(r"^(?:SFX_|ENVELOPE_).*_LIMIT$")
         marker = "Exhausting a budget is a deliberate, stable rejection"
@@ -2403,6 +2593,7 @@ class ArchiveAuditorTests(unittest.TestCase):
         )
         self.assertNotIn("SFX_PREFIX_LIMIT", literals)
         self.assertNotIn("SFX_PREFIX_LIMIT", documented)
+        return evidence
 
     def test_documented_rejection_codes_match_production(self):
         """The normative documented rejection contract must track production."""
@@ -2412,10 +2603,93 @@ class ArchiveAuditorTests(unittest.TestCase):
         text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
         self.assert_documented_rejection_contract(source, text)
 
+    def test_nonliteral_rejection_codes_are_classified_and_representative_codes_raise(self):
+        source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
+        evidence = self.extract_rejection_evidence(source)
+        raised = evidence["raised"]
+
+        late_eocd = bytearray(22)
+        late_eocd[:4] = b"PK\x05\x06"
+        early_eocd = bytearray(late_eocd)
+        struct.pack_into("<H", early_eocd, 20, len(late_eocd))
+
+        def raw_pax_record(key, value):
+            body = key + b"=" + value + b"\n"
+            length = len(body) + 2
+            while True:
+                record = str(length).encode("ascii") + b" " + body
+                if len(record) == length:
+                    return record
+                length = len(record)
+
+        runtime_cases = (
+            (
+                lambda: AUDITOR.ArchiveAuditor().audit_bytes(
+                    make_zip([{"name": "file"}]) + b"x",
+                    "missing-eocd.zip",
+                ),
+                "INVALID_ZIP_EOCD",
+            ),
+            (
+                lambda: AUDITOR.ArchiveAuditor().audit_bytes(
+                    bytes(early_eocd + late_eocd),
+                    "ambiguous-eocd.zip",
+                ),
+                "AMBIGUOUS_ZIP_EOCD",
+            ),
+            (
+                lambda: AUDITOR.crc32_range(b"abcdef", 0, 99),
+                "OUT_OF_RANGE_RECORD",
+            ),
+            (
+                lambda: AUDITOR.checked_slice(b"abc", 0, 99),
+                "OUT_OF_RANGE_RECORD",
+            ),
+            (
+                lambda: AUDITOR.strict_decode(b"\xff\xfe", "utf-8"),
+                "INVALID_PATH_ENCODING",
+            ),
+            (
+                lambda: AUDITOR.strict_decode(
+                    b"\xff",
+                    "ascii",
+                    "INVALID_GZIP_NAME",
+                ),
+                "INVALID_GZIP_NAME",
+            ),
+            (
+                lambda: AUDITOR.strict_decode(
+                    b"\xff",
+                    "ascii",
+                    "INVALID_GZIP_COMMENT",
+                ),
+                "INVALID_GZIP_COMMENT",
+            ),
+            (
+                lambda: AUDITOR.BinaryReader(b"\x01\x02\x03").require_end(),
+                "TRAILING_HEADER_PAYLOAD",
+            ),
+            (
+                lambda: AUDITOR.parse_pax(raw_pax_record(b"\xff", b"value")),
+                "INVALID_PAX_KEY",
+            ),
+            (
+                lambda: AUDITOR.parse_pax(raw_pax_record(b"comment", b"\xff")),
+                "INVALID_PAX_VALUE",
+            ),
+        )
+        for operation, expected in runtime_cases:
+            with self.subTest(code=expected):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    operation()
+                self.assertEqual(expected, context.exception.code)
+                self.assertIn(expected, raised)
+
     def test_documented_rejection_contract_mutation_controls(self):
         """Dormant strings, exclusions, and budget drift cannot bless documentation."""
         source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
         text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
+        baseline_evidence = self.extract_rejection_evidence(source)
 
         def replace_once(value, old, new):
             self.assertEqual(1, value.count(old), f"mutation anchor drifted: {old!r}")
@@ -2460,7 +2734,7 @@ class ArchiveAuditorTests(unittest.TestCase):
             "documented dormant literal",
             source + '\n_DORMANT_CODE = "DORMANT_REJECTION_CODE"\n',
             text + "\n`DORMANT_REJECTION_CODE`\n",
-            "DORMANT_REJECTION_CODE",
+            "outside direct constant raises",
         )
 
         renamed_source = replace_once(
@@ -2473,7 +2747,19 @@ class ArchiveAuditorTests(unittest.TestCase):
             "renamed raise with dormant old code",
             renamed_source,
             text,
-            "UNCLASSIFIED_PE_OVERLAY",
+            "outside direct constant raises",
+        )
+        renamed_conditional = replace_once(
+            source,
+            '"AMBIGUOUS_ZIP_EOCD" if candidates else "INVALID_ZIP_EOCD"',
+            '"RENAMED_ZIP_EOCD" if candidates else "INVALID_ZIP_EOCD"',
+        )
+        renamed_conditional += '\n_DORMANT_OLD_CODE = "AMBIGUOUS_ZIP_EOCD"\n'
+        must_fail(
+            "renamed conditional raise with dormant old code",
+            renamed_conditional,
+            text,
+            "conditional rejection-code extraction drifted",
         )
 
         must_fail(
@@ -2490,6 +2776,14 @@ class ArchiveAuditorTests(unittest.TestCase):
             "cannot suppress raised codes",
             STRUCTURAL_IDENTIFIERS | {"UNCLASSIFIED_PE_OVERLAY"},
         )
+        for code in sorted(RESOLVED_REJECTION_CODES):
+            must_fail(
+                f"newly resolved structural exclusion {code}",
+                source,
+                text,
+                "cannot suppress raised codes",
+                STRUCTURAL_IDENTIFIERS | {code},
+            )
 
         no_raised_source = source.replace("reject(", "mutated_reject(")
         no_raised_source = no_raised_source.replace("AuditError(", "MutatedAuditError(")
@@ -2497,7 +2791,7 @@ class ArchiveAuditorTests(unittest.TestCase):
             "empty raised extraction",
             no_raised_source,
             text,
-            "AST extraction found too few raised codes",
+            "physical direct structured-error call-site count",
         )
         must_fail(
             "empty documented extraction",
@@ -2505,9 +2799,74 @@ class ArchiveAuditorTests(unittest.TestCase):
             text.replace("`", ""),
             "documentation extraction found too few codes",
         )
+        must_fail(
+            "missing one-sided contract statement",
+            source,
+            text.replace(
+                "intentionally a stable subset, not an exhaustive catalog",
+                "a selected catalog",
+            ),
+            "specification must state the one-sided rejection-code contract",
+        )
+        all_raised = baseline_evidence["raised"]
+        exhaustive_text = text + "\n" + " ".join(
+            f"`{code}`" for code in sorted(all_raised)
+        )
+        must_fail(
+            "exhaustive general contract",
+            source,
+            exhaustive_text,
+            "proper production subset",
+        )
 
+        direct_code = '"DUPLICATE_PHYSICAL_NAME"'
+        for label, expression in (
+            ("format call", '"{}".format("DUPLICATE_PHYSICAL_NAME")'),
+            ("lookup", '{"code": "DUPLICATE_PHYSICAL_NAME"}["code"]'),
+            ("concatenation", '"DUPLICATE_" + "PHYSICAL_NAME"'),
+            ("f-string", 'f"DUPLICATE_PHYSICAL_NAME"'),
+        ):
+            must_fail(
+                f"unextractable direct {label}",
+                replace_once(source, direct_code, expression),
+                text,
+                "unextractable structured-error code expressions",
+            )
+
+        must_fail(
+            "unclassified forwarding literal",
+            replace_once(
+                source,
+                'strict_decode(entry["nameRaw"], encoding)',
+                'strict_decode(entry["nameRaw"], encoding, "NEW_FORWARD_CODE")',
+            ),
+            text,
+            "outside direct constant raises",
+        )
+        must_fail(
+            "unclassified table-bound literal",
+            replace_once(
+                source,
+                '"CONCATENATED_BZIP2_STREAM"',
+                '"NEW_TABLE_BOUND_CODE"',
+            ),
+            text,
+            "outside direct constant raises",
+        )
+        must_fail(
+            "attribute rejection callee",
+            replace_once(
+                source,
+                'reject(\n                "DUPLICATE_PHYSICAL_NAME"',
+                'self.reject(\n                "DUPLICATE_PHYSICAL_NAME"',
+            ),
+            text,
+            "structured-error callees must be direct ast.Name nodes",
+        )
+
+        addition_victim = '"DUPLICATE_PHYSICAL_NAME"'
         for added in ("SFX_ADDED_LIMIT", "ENVELOPE_ADDED_LIMIT"):
-            added_source = source + f'\ndef _added_budget():\n    reject("{added}", "mutation")\n'
+            added_source = replace_once(source, addition_victim, f'"{added}"')
             added_text = replace_once(
                 text,
                 "`ENVELOPE_WORK_LIMIT`). A candidate",
@@ -2521,11 +2880,17 @@ class ArchiveAuditorTests(unittest.TestCase):
             )
 
         for code in sorted(EXPECTED_BUDGET_REJECTION_CODES):
-            removed_source = source.replace(f'"{code}"', '"INVALID_LIMIT"')
+            removed = f"RETIRED_{code}"
+            removed_source = source.replace(f'"{code}"', f'"{removed}"')
             self.assertNotEqual(source, removed_source)
-            removed_source += f'\n_DORMANT_OLD_BUDGET = "{code}"\n'
             removed_text = text.replace(f"`{code}`", code)
             self.assertNotEqual(text, removed_text)
+            must_fail(
+                f"removed budget with dormant literal {code}",
+                removed_source + f'\n_DORMANT_OLD_BUDGET = "{code}"\n',
+                removed_text,
+                "outside direct constant raises",
+            )
             must_fail(
                 f"removed budget {code}",
                 removed_source,
@@ -2537,7 +2902,6 @@ class ArchiveAuditorTests(unittest.TestCase):
             renamed = f"{prefix}_RENAMED_LIMIT"
             budget_source = source.replace(f'"{code}"', f'"{renamed}"')
             self.assertNotEqual(source, budget_source)
-            budget_source += f'\n_DORMANT_OLD_BUDGET = "{code}"\n'
             budget_text = text.replace(f"`{code}`", f"`{renamed}`")
             self.assertNotEqual(text, budget_text)
             must_fail(
