@@ -1,3 +1,5 @@
+param([switch]$SkipMutationChecks)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -311,6 +313,7 @@ function Assert-RunnerPlatformFacts {
 $script:passed = 0
 $script:failed = 0
 $script:skipped = 0
+$script:adsCapabilitySupported = $false
 
 function Assert-Equal {
 	param(
@@ -1770,6 +1773,7 @@ try {
 		Skip-Test 'alternate data stream is rejected' `
 			$alternateStreamCapability.Reason
 	} else {
+		$script:adsCapabilitySupported = $true
 		Invoke-Test 'alternate data stream is rejected' {
 			$worktree = New-MaterializedFixture 'alternate-stream'
 			$file = Join-Path $worktree 'bin\tool.exe'
@@ -2785,4 +2789,9 @@ try {
 Write-Host "$script:passed passed, $script:failed failed, $script:skipped skipped"
 if ($script:failed -ne 0) {
 	throw "$script:failed adversarial SDK bootstrap tests failed"
+}
+# The nested mutation has its own exact accounting and does not alter the
+# registered source-control totals above.
+if (-not $SkipMutationChecks -and $script:adsCapabilitySupported) {
+	& (Join-Path $PSScriptRoot 'run-ads-mutant.ps1')
 }
