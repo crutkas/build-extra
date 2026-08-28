@@ -94,18 +94,14 @@ class AuditError(Exception):
         return result
 
 
-def reject(code, message, **details):
-    raise AuditError(code, message, **details)
-
-
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def _bounded_range(data, start, end, code="OUT_OF_RANGE_RECORD"):
+def _bounded_range(data, start, end):
     if start < 0 or end < start or end > len(data):
-        reject(
-            code,
+        raise AuditError(
+            "OUT_OF_RANGE_RECORD",
             "Archive record extends outside its containing byte stream",
             offset=start,
             length=end - start,
@@ -141,13 +137,17 @@ def sha256_range(data, start, end):
 
 def checked_slice(data, offset, length, code="OUT_OF_RANGE_RECORD"):
     if offset < 0 or length < 0 or offset + length > len(data):
-        reject(
-            code,
-            "Archive record extends outside its containing byte stream",
-            offset=offset,
-            length=length,
-            containerLength=len(data),
-        )
+        details = {
+            "offset": offset,
+            "length": length,
+            "containerLength": len(data),
+        }
+        message = "Archive record extends outside its containing byte stream"
+        if code == "OUT_OF_RANGE_RECORD":
+            raise AuditError("OUT_OF_RANGE_RECORD", message, **details)
+        if code == "INVALID_PAX_RECORD":
+            raise AuditError("INVALID_PAX_RECORD", message, **details)
+        raise ValueError(f"Unsupported checked_slice rejection code: {code!r}")
     return data[offset:offset + length]
 
 
@@ -166,7 +166,7 @@ def u64(data, offset):
 def validate_archive_text(text, surface="archive text"):
     for char in text:
         if unicodedata.category(char) == "Cc":
-            reject(
+            raise AuditError(
                 "CONTROL_CHARACTER",
                 "Archive text contains a Unicode control character",
                 surface=surface,
@@ -179,7 +179,21 @@ def strict_decode(raw, encoding, code="INVALID_PATH_ENCODING", surface="archive 
     try:
         text = raw.decode(encoding, errors="strict")
     except UnicodeError as exc:
-        reject(code, "Archive text is not valid in its declared encoding", encoding=encoding, reason=str(exc))
+        message = "Archive text is not valid in its declared encoding"
+        details = {"encoding": encoding, "reason": str(exc)}
+        if code == "INVALID_PATH_ENCODING":
+            raise AuditError("INVALID_PATH_ENCODING", message, **details)
+        if code == "INVALID_GZIP_NAME":
+            raise AuditError("INVALID_GZIP_NAME", message, **details)
+        if code == "INVALID_GZIP_COMMENT":
+            raise AuditError("INVALID_GZIP_COMMENT", message, **details)
+        if code == "INVALID_7Z_NAME":
+            raise AuditError("INVALID_7Z_NAME", message, **details)
+        if code == "INVALID_PAX_KEY":
+            raise AuditError("INVALID_PAX_KEY", message, **details)
+        if code == "INVALID_PAX_VALUE":
+            raise AuditError("INVALID_PAX_VALUE", message, **details)
+        raise ValueError(f"Unsupported strict_decode rejection code: {code!r}")
     return validate_archive_text(text, surface)
 
 
@@ -189,7 +203,7 @@ def terminated_field(raw, encoding="utf-8"):
         value = raw
     else:
         if any(raw[nul + 1:]):
-            reject("AMBIGUOUS_HEADER_ENCODING", "A NUL-terminated header field has nonzero trailing bytes")
+            raise AuditError("AMBIGUOUS_HEADER_ENCODING", "A NUL-terminated header field has nonzero trailing bytes")
         value = raw[:nul]
     return value, strict_decode(value, encoding)
 
@@ -208,18 +222,18 @@ def raw_path(raw, text, encoding, source="header", **extra):
 def normalize_path(text, is_directory, max_length):
     validate_archive_text(text, "member name")
     if text != unicodedata.normalize("NFC", text):
-        reject("AMBIGUOUS_PATH_NORMALIZATION", "Archive path is not Unicode NFC", path=text)
+        raise AuditError("AMBIGUOUS_PATH_NORMALIZATION", "Archive path is not Unicode NFC", path=text)
     if "\\" in text:
-        reject("UNSAFE_PATH", "Archive path uses a Windows path separator", path=text)
+        raise AuditError("UNSAFE_PATH", "Archive path uses a Windows path separator", path=text)
     if text.startswith("/") or text.startswith("//") or re.match(r"^[A-Za-z]:", text):
-        reject("ABSOLUTE_PATH", "Archive path is absolute", path=text)
+        raise AuditError("ABSOLUTE_PATH", "Archive path is absolute", path=text)
 
     had_trailing_slash = text.endswith("/")
     candidate = text[:-1] if had_trailing_slash else text
     if not candidate:
-        reject("UNSAFE_PATH", "Archive member has an empty path")
+        raise AuditError("UNSAFE_PATH", "Archive member has an empty path")
     if len(candidate.encode("utf-8")) > max_length:
-        reject(
+        raise AuditError(
             "PATH_LENGTH_LIMIT",
             "Archive path exceeds the configured byte limit",
             path=candidate,
@@ -229,46 +243,46 @@ def normalize_path(text, is_directory, max_length):
     components = candidate.split("/")
     for component in components:
         if component in ("", "."):
-            reject("AMBIGUOUS_PATH", "Archive path contains an empty or dot component", path=text)
+            raise AuditError("AMBIGUOUS_PATH", "Archive path contains an empty or dot component", path=text)
         if component == "..":
-            reject("TRAVERSAL_PATH", "Archive path contains a parent traversal", path=text)
+            raise AuditError("TRAVERSAL_PATH", "Archive path contains a parent traversal", path=text)
         if component.endswith((" ", ".")):
-            reject("UNSAFE_WINDOWS_PATH", "Archive path component has a trailing space or dot", path=text)
+            raise AuditError("UNSAFE_WINDOWS_PATH", "Archive path component has a trailing space or dot", path=text)
         if any(char in '<>:"|?*' for char in component):
-            reject("UNSAFE_WINDOWS_PATH", "Archive path contains a Windows-reserved character", path=text)
+            raise AuditError("UNSAFE_WINDOWS_PATH", "Archive path contains a Windows-reserved character", path=text)
         if WINDOWS_RESERVED.match(component):
-            reject("UNSAFE_WINDOWS_PATH", "Archive path uses a Windows-reserved name", path=text)
+            raise AuditError("UNSAFE_WINDOWS_PATH", "Archive path uses a Windows-reserved name", path=text)
 
     if had_trailing_slash and not is_directory:
-        reject("AMBIGUOUS_MEMBER_TYPE", "Only directory members may have a trailing slash", path=text)
+        raise AuditError("AMBIGUOUS_MEMBER_TYPE", "Only directory members may have a trailing slash", path=text)
     return "/".join(components)
 
 
 def normalize_link_target(member_path, target, max_length, root_relative=False):
     validate_archive_text(target, "link target")
     if target != unicodedata.normalize("NFC", target):
-        reject("AMBIGUOUS_LINK_TARGET", "Link target is not Unicode NFC", path=member_path, target=target)
+        raise AuditError("AMBIGUOUS_LINK_TARGET", "Link target is not Unicode NFC", path=member_path, target=target)
     if "\\" in target or target.startswith("/") or target.startswith("//") or re.match(r"^[A-Za-z]:", target):
-        reject("UNSAFE_LINK_TARGET", "Link target is absolute or uses a Windows separator", path=member_path, target=target)
+        raise AuditError("UNSAFE_LINK_TARGET", "Link target is absolute or uses a Windows separator", path=member_path, target=target)
     if len(target.encode("utf-8")) > max_length:
-        reject("PATH_LENGTH_LIMIT", "Link target exceeds the configured byte limit", path=member_path, target=target)
+        raise AuditError("PATH_LENGTH_LIMIT", "Link target exceeds the configured byte limit", path=member_path, target=target)
 
     base = [] if root_relative else member_path.split("/")[:-1]
     for component in target.split("/"):
         if component in ("", "."):
             if component == "":
-                reject("AMBIGUOUS_LINK_TARGET", "Link target contains an empty component", path=member_path, target=target)
+                raise AuditError("AMBIGUOUS_LINK_TARGET", "Link target contains an empty component", path=member_path, target=target)
             continue
         if component == "..":
             if not base:
-                reject("UNSAFE_LINK_TARGET", "Link target escapes the archive root", path=member_path, target=target)
+                raise AuditError("UNSAFE_LINK_TARGET", "Link target escapes the archive root", path=member_path, target=target)
             base.pop()
             continue
         if component.endswith((" ", ".")) or any(char in '<>:"|?*' for char in component) or WINDOWS_RESERVED.match(component):
-            reject("UNSAFE_LINK_TARGET", "Link target is unsafe on Windows", path=member_path, target=target)
+            raise AuditError("UNSAFE_LINK_TARGET", "Link target is unsafe on Windows", path=member_path, target=target)
         base.append(component)
     if not base:
-        reject("UNSAFE_LINK_TARGET", "Link target resolves to the archive root", path=member_path, target=target)
+        raise AuditError("UNSAFE_LINK_TARGET", "Link target resolves to the archive root", path=member_path, target=target)
     return "/".join(base)
 
 
@@ -283,22 +297,20 @@ def classify_unix_file_type(mode, code, surface, path):
     file_type = mode & S_IFMT
     name = UNIX_FILE_TYPES.get(file_type)
     if name is None:
-        reject(
-            code,
-            f"{surface} declares an unknown Unix file type",
-            path=path,
-            unixMode=f"{mode:06o}",
-            unixFileType=f"{file_type:06o}",
-        )
-    if file_type in UNIX_SPECIAL_FILE_TYPES or file_type == S_IFLNK:
-        reject(
-            code,
-            f"{surface} declares an unsupported Unix file type",
-            path=path,
-            unixMode=f"{mode:06o}",
-            unixFileType=name,
-        )
-    return file_type, name
+        message = f"{surface} declares an unknown Unix file type"
+        type_name = f"{file_type:06o}"
+    elif file_type in UNIX_SPECIAL_FILE_TYPES or file_type == S_IFLNK:
+        message = f"{surface} declares an unsupported Unix file type"
+        type_name = name
+    else:
+        return file_type, name
+
+    details = {"path": path, "unixMode": f"{mode:06o}", "unixFileType": type_name}
+    if code == "UNSUPPORTED_ZIP_MEMBER_TYPE":
+        raise AuditError("UNSUPPORTED_ZIP_MEMBER_TYPE", message, **details)
+    if code == "UNSUPPORTED_7Z_MEMBER_TYPE":
+        raise AuditError("UNSUPPORTED_7Z_MEMBER_TYPE", message, **details)
+    raise ValueError(f"Unsupported Unix file type rejection code: {code!r}")
 
 
 def physical_partition(data, ranges, owner):
@@ -314,7 +326,7 @@ def physical_partition(data, ranges, owner):
     cursor = 0
     for role, start, end in ranges:
         if start != cursor or end < start or end > len(data):
-            reject(
+            raise AuditError(
                 "PROVENANCE_PARTITION_INVALID",
                 "Physical provenance partitions are not an ordered exact cover",
                 owner=owner,
@@ -332,7 +344,7 @@ def physical_partition(data, ranges, owner):
         })
         cursor = end
     if cursor != len(data):
-        reject(
+        raise AuditError(
             "PROVENANCE_PARTITION_INVALID",
             "Physical provenance partitions do not cover the containing stream",
             owner=owner,
@@ -355,21 +367,21 @@ def validate_limit(name, value, minimum, maximum, allow_fraction=False):
     exact and finite.
     """
     if isinstance(value, bool):
-        reject("INVALID_LIMIT", f"{name} must not be a boolean", limit=name)
+        raise AuditError("INVALID_LIMIT", f"{name} must not be a boolean", limit=name)
     if isinstance(value, int):
         pass
     elif allow_fraction and isinstance(value, float):
         if not math.isfinite(value):
-            reject("INVALID_LIMIT", f"{name} must be a finite number", limit=name)
+            raise AuditError("INVALID_LIMIT", f"{name} must be a finite number", limit=name)
     else:
-        reject(
+        raise AuditError(
             "INVALID_LIMIT",
             f"{name} must be {'a finite number' if allow_fraction else 'an integer'}",
             limit=name,
             valueType=type(value).__name__,
         )
     if value < minimum or value > maximum:
-        reject(
+        raise AuditError(
             "INVALID_LIMIT",
             f"{name} is outside the supported range",
             limit=name,
@@ -391,7 +403,7 @@ class PathRegistry:
 
     def add(self, raw_name, logical_name, ordinal):
         if raw_name in self.raw:
-            reject(
+            raise AuditError(
                 "DUPLICATE_PHYSICAL_NAME",
                 "Two physical archive members carry the same raw name",
                 firstOrdinal=self.raw[raw_name],
@@ -400,7 +412,7 @@ class PathRegistry:
             )
         key = logical_name.casefold()
         if key in self.logical:
-            reject(
+            raise AuditError(
                 "DUPLICATE_LOGICAL_NAME",
                 "Two archive members resolve to the same Windows path",
                 firstOrdinal=self.logical[key],
@@ -468,9 +480,9 @@ class AuditState:
     def charge_overlay_scan(self, length, offset):
         """Charge a signature search span before the search runs."""
         if length < 0:
-            reject("INVALID_LENGTH", "Overlay scan span is negative", offset=offset)
+            raise AuditError("INVALID_LENGTH", "Overlay scan span is negative", offset=offset)
         if self.overlay_scan_bytes + length > self.limits.max_sfx_overlay_scan_bytes:
-            reject(
+            raise AuditError(
                 "SFX_OVERLAY_SCAN_LIMIT",
                 "MZ/PE overlay scanning exceeds the configured scan allowance",
                 offset=offset,
@@ -483,7 +495,7 @@ class AuditState:
     def charge_signature_occurrence(self, offset):
         self.signature_occurrences += 1
         if self.signature_occurrences > self.limits.max_sfx_signature_occurrences:
-            reject(
+            raise AuditError(
                 "SFX_SIGNATURE_OCCURRENCE_LIMIT",
                 "MZ/PE input contains more 7z signature occurrences than the configured ceiling",
                 offset=offset,
@@ -494,7 +506,7 @@ class AuditState:
     def charge_signature_candidate(self, offset):
         self.signature_candidates += 1
         if self.signature_candidates > self.limits.max_sfx_signature_candidates:
-            reject(
+            raise AuditError(
                 "SFX_SIGNATURE_CANDIDATE_LIMIT",
                 "MZ/PE input contains more overlay 7z signature candidates than the configured ceiling",
                 offset=offset,
@@ -504,9 +516,9 @@ class AuditState:
 
     def charge_envelope_work(self, length, offset):
         if length < 0:
-            reject("INVALID_LENGTH", "7z next header declares a negative length", offset=offset)
+            raise AuditError("INVALID_LENGTH", "7z next header declares a negative length", offset=offset)
         if self.envelope_work + length > self.limits.max_envelope_work_bytes:
-            reject(
+            raise AuditError(
                 "ENVELOPE_WORK_LIMIT",
                 "7z envelope validation exceeds the configured next-header work budget",
                 offset=offset,
@@ -519,7 +531,7 @@ class AuditState:
     def add_member(self, archive_count):
         archive_count += 1
         if archive_count > self.limits.max_members_per_archive:
-            reject(
+            raise AuditError(
                 "MEMBERS_PER_ARCHIVE_LIMIT",
                 "Archive exceeds the configured member count",
                 count=archive_count,
@@ -527,7 +539,7 @@ class AuditState:
             )
         self.total_members += 1
         if self.total_members > self.limits.max_members_total:
-            reject(
+            raise AuditError(
                 "GLOBAL_MEMBER_LIMIT",
                 "Recursive audit exceeds the configured global member count",
                 count=self.total_members,
@@ -537,9 +549,9 @@ class AuditState:
 
     def check_expansion(self, expanded, stored, owner):
         if expanded < 0 or stored < 0:
-            reject("INVALID_LENGTH", "Archive record declares a negative length", owner=owner)
+            raise AuditError("INVALID_LENGTH", "Archive record declares a negative length", owner=owner)
         if expanded and expanded * self.ratio_denominator > max(1, stored) * self.ratio_numerator:
-            reject(
+            raise AuditError(
                 "COMPRESSION_RATIO_LIMIT",
                 "Archive record exceeds the configured compression ratio",
                 owner=owner,
@@ -548,7 +560,7 @@ class AuditState:
                 limit=self.limits.max_compression_ratio,
             )
         if self.total_expanded + expanded > self.limits.max_total_expanded_bytes:
-            reject(
+            raise AuditError(
                 "TOTAL_EXPANDED_BYTES_LIMIT",
                 "Recursive audit exceeds the configured expanded-byte budget",
                 total=self.total_expanded + expanded,
@@ -638,7 +650,13 @@ class BinaryReader:
 
     def require_end(self, code="TRAILING_HEADER_PAYLOAD"):
         if self.remaining():
-            reject(code, "Structured archive header has undeclared trailing bytes", offset=self.absolute(), length=self.remaining())
+            message = "Structured archive header has undeclared trailing bytes"
+            details = {"offset": self.absolute(), "length": self.remaining()}
+            if code == "TRAILING_HEADER_PAYLOAD":
+                raise AuditError("TRAILING_HEADER_PAYLOAD", message, **details)
+            if code == "NONCANONICAL_7Z_PROPERTY":
+                raise AuditError("NONCANONICAL_7Z_PROPERTY", message, **details)
+            raise ValueError(f"Unsupported trailing-header rejection code: {code!r}")
 
 
 def read_bit_vector(reader, count, strict=True):
@@ -655,7 +673,7 @@ def read_bit_vector(reader, count, strict=True):
     if strict and mask:
         padding = current & (2 * mask - 1)
         if padding:
-            reject(
+            raise AuditError(
                 "NONCANONICAL_7Z_BIT_VECTOR",
                 "7z bit vector has nonzero padding bits",
                 count=count,
@@ -687,7 +705,7 @@ class ArchiveAuditor:
         for name, value in integer_limits.items():
             validate_limit(name, value, 1, MAX_LIMIT_VALUE)
         if self.limits.max_sfx_prefix_bytes < 88:
-            reject(
+            raise AuditError(
                 "INVALID_LIMIT",
                 "maxSfxPrefixBytes must leave room for a bounded PE header",
                 limit="maxSfxPrefixBytes",
@@ -700,7 +718,7 @@ class ArchiveAuditor:
             allow_fraction=True,
         )
         if self.limits.max_compression_ratio <= 0:
-            reject(
+            raise AuditError(
                 "INVALID_LIMIT",
                 "maxCompressionRatio must be greater than zero",
                 limit="maxCompressionRatio",
@@ -709,7 +727,7 @@ class ArchiveAuditor:
     def audit_path(self, path):
         size = os.path.getsize(path)
         if size > self.limits.max_total_expanded_bytes:
-            reject(
+            raise AuditError(
                 "TOTAL_EXPANDED_BYTES_LIMIT",
                 "Input archive alone exceeds the configured byte budget",
                 length=size,
@@ -718,7 +736,7 @@ class ArchiveAuditor:
         with open(path, "rb") as handle:
             data = handle.read()
         if len(data) > self.limits.max_total_expanded_bytes:
-            reject(
+            raise AuditError(
                 "TOTAL_EXPANDED_BYTES_LIMIT",
                 "Input archive changed while being read and exceeds the configured byte budget",
                 length=len(data),
@@ -739,7 +757,7 @@ class ArchiveAuditor:
 
     def audit_bytes(self, data, name="archive"):
         if len(data) > self.limits.max_total_expanded_bytes:
-            reject(
+            raise AuditError(
                 "TOTAL_EXPANDED_BYTES_LIMIT",
                 "Input archive alone exceeds the configured byte budget",
                 length=len(data),
@@ -760,7 +778,7 @@ class ArchiveAuditor:
 
     def _audit_bytes(self, data, name, parent, depth, chain, detection=None):
         if depth > self.limits.max_depth:
-            reject(
+            raise AuditError(
                 "RECURSION_DEPTH_LIMIT",
                 "Nested archive exceeds the configured recursion depth",
                 depth=depth,
@@ -769,7 +787,7 @@ class ArchiveAuditor:
             )
         identity = "sha256:" + sha256(data)
         if identity in chain:
-            reject("ARCHIVE_CYCLE", "Nested archive repeats an ancestor byte identity", identity=identity)
+            raise AuditError("ARCHIVE_CYCLE", "Nested archive repeats an ancestor byte identity", identity=identity)
 
         if detection is None:
             detection = detect_format(
@@ -780,7 +798,7 @@ class ArchiveAuditor:
         archive_format = detection.archive_format
         signature_offset = detection.signature_offset
         if not archive_format:
-            reject("UNRECOGNIZED_ARCHIVE", "Input is not a supported archive format")
+            raise AuditError("UNRECOGNIZED_ARCHIVE", "Input is not a supported archive format")
 
         node = {
             "identity": identity,
@@ -802,7 +820,7 @@ class ArchiveAuditor:
         elif archive_format == "7z":
             self._parse_7z(data, node, detection)
         else:
-            reject("UNSUPPORTED_ARCHIVE_FORMAT", "Archive format is recognized but unsupported", format=archive_format)
+            raise AuditError("UNSUPPORTED_ARCHIVE_FORMAT", "Archive format is recognized but unsupported", format=archive_format)
 
         self._attach_nested(node, depth, chain + [identity])
         return node
@@ -848,7 +866,7 @@ class ArchiveAuditor:
         for member in members:
             target = member["linkTarget"]
             if target is not None and target not in by_path:
-                reject(
+                raise AuditError(
                     "UNDECLARED_LINK_TARGET",
                     "Link target is not a declared archive member",
                     path=member["logicalPath"],
@@ -869,7 +887,7 @@ class ArchiveAuditor:
             chain_positions = {}
             while path in graph and path not in visited:
                 if path in chain_positions:
-                    reject("LINK_CYCLE", "Archive links form a cycle", path=path)
+                    raise AuditError("LINK_CYCLE", "Archive links form a cycle", path=path)
                 chain_positions[path] = len(chain)
                 chain.append(path)
                 path = graph[path]
@@ -889,37 +907,36 @@ class ArchiveAuditor:
                     candidates.append(cursor)
             cursor += 1
         if len(candidates) != 1:
-            reject(
-                "AMBIGUOUS_ZIP_EOCD" if candidates else "INVALID_ZIP_EOCD",
-                "ZIP must contain exactly one terminal end-of-central-directory record",
-                candidates=len(candidates),
-            )
+            message = "ZIP must contain exactly one terminal end-of-central-directory record"
+            if candidates:
+                raise AuditError("AMBIGUOUS_ZIP_EOCD", message, candidates=len(candidates))
+            raise AuditError("INVALID_ZIP_EOCD", message, candidates=0)
         eocd = candidates[0]
         disk, central_disk, disk_entries, total_entries = struct.unpack_from("<4H", data, eocd + 4)
         central_size, central_offset = struct.unpack_from("<2I", data, eocd + 12)
         comment_length = u16(data, eocd + 20)
         if any((disk, central_disk)) or disk_entries != total_entries:
-            reject("UNSUPPORTED_MULTIVOLUME_ZIP", "Multi-volume ZIP archives are unsupported")
+            raise AuditError("UNSUPPORTED_MULTIVOLUME_ZIP", "Multi-volume ZIP archives are unsupported")
         if total_entries == 0xffff or central_size == 0xffffffff or central_offset == 0xffffffff:
-            reject("UNSUPPORTED_ZIP64", "ZIP64 archives are unsupported")
+            raise AuditError("UNSUPPORTED_ZIP64", "ZIP64 archives are unsupported")
         if total_entries > self.limits.max_members_per_archive:
-            reject(
+            raise AuditError(
                 "MEMBERS_PER_ARCHIVE_LIMIT",
                 "ZIP entry count exceeds the configured member limit",
                 count=total_entries,
                 limit=self.limits.max_members_per_archive,
             )
         if self.state.total_members + total_entries > self.limits.max_members_total:
-            reject(
+            raise AuditError(
                 "GLOBAL_MEMBER_LIMIT",
                 "ZIP entry count exceeds the remaining global member limit",
                 count=self.state.total_members + total_entries,
                 limit=self.limits.max_members_total,
             )
         if comment_length:
-            reject("UNSUPPORTED_ZIP_COMMENT", "ZIP archive comments are rejected as ambiguous metadata")
+            raise AuditError("UNSUPPORTED_ZIP_COMMENT", "ZIP archive comments are rejected as ambiguous metadata")
         if central_offset + central_size != eocd:
-            reject(
+            raise AuditError(
                 "UNDECLARED_ZIP_PAYLOAD",
                 "ZIP central directory does not end exactly at EOCD",
                 centralOffset=central_offset,
@@ -932,7 +949,7 @@ class ArchiveAuditor:
         central_end = central_offset + central_size
         for central_ordinal in range(total_entries):
             if checked_slice(data, cursor, 4) != b"PK\x01\x02":
-                reject("INVALID_ZIP_CENTRAL_HEADER", "ZIP central-directory signature is invalid", offset=cursor)
+                raise AuditError("INVALID_ZIP_CENTRAL_HEADER", "ZIP central-directory signature is invalid", offset=cursor)
             fixed_header = checked_slice(data, cursor, 46)
             fields = struct.unpack_from("<6H3I5H2I", fixed_header, 4)
             (
@@ -980,7 +997,7 @@ class ArchiveAuditor:
             })
             cursor += length
         if cursor != central_end:
-            reject(
+            raise AuditError(
                 "CENTRAL_DIRECTORY_LENGTH_MISMATCH",
                 "ZIP central-directory size does not match its physical records",
                 declaredEnd=central_end,
@@ -989,12 +1006,12 @@ class ArchiveAuditor:
 
         local_offsets = [entry["localOffset"] for entry in entries]
         if len(set(local_offsets)) != len(local_offsets):
-            reject("OVERLAPPING_ZIP_RECORDS", "Multiple central entries point at the same local record")
+            raise AuditError("OVERLAPPING_ZIP_RECORDS", "Multiple central entries point at the same local record")
         entries.sort(key=lambda entry: entry["localOffset"])
         if entries and entries[0]["localOffset"] != 0:
-            reject("UNDECLARED_ZIP_PREFIX", "ZIP has undeclared bytes before its first local record")
+            raise AuditError("UNDECLARED_ZIP_PREFIX", "ZIP has undeclared bytes before its first local record")
         if not entries and central_offset != 0:
-            reject("UNDECLARED_ZIP_PREFIX", "Empty ZIP has undeclared bytes before its central directory")
+            raise AuditError("UNDECLARED_ZIP_PREFIX", "Empty ZIP has undeclared bytes before its central directory")
 
         registry = PathRegistry()
         members = []
@@ -1003,14 +1020,14 @@ class ArchiveAuditor:
         for ordinal, entry in enumerate(entries):
             offset = entry["localOffset"]
             if offset != expected_offset:
-                reject(
+                raise AuditError(
                     "OVERLAPPING_OR_GAPPED_ZIP_RECORDS",
                     "ZIP local records are overlapping or separated by undeclared bytes",
                     expectedOffset=expected_offset,
                     actualOffset=offset,
                 )
             if checked_slice(data, offset, 4) != b"PK\x03\x04":
-                reject("INVALID_ZIP_LOCAL_HEADER", "ZIP local-header signature is invalid", offset=offset)
+                raise AuditError("INVALID_ZIP_LOCAL_HEADER", "ZIP local-header signature is invalid", offset=offset)
             (
                 version_needed,
                 flags,
@@ -1036,16 +1053,16 @@ class ArchiveAuditor:
                 or mod_time != entry["modTime"]
                 or mod_date != entry["modDate"]
             ):
-                reject("ZIP_HEADER_DISAGREEMENT", "ZIP local and central headers disagree", offset=offset)
+                raise AuditError("ZIP_HEADER_DISAGREEMENT", "ZIP local and central headers disagree", offset=offset)
             descriptor = bool(flags & 0x0008)
             if not descriptor and (
                 local_crc != entry["crc"]
                 or local_compressed != entry["compressedSize"]
                 or local_expanded != entry["expandedSize"]
             ):
-                reject("ZIP_HEADER_DISAGREEMENT", "ZIP local sizes or checksum disagree with central metadata", offset=offset)
+                raise AuditError("ZIP_HEADER_DISAGREEMENT", "ZIP local sizes or checksum disagree with central metadata", offset=offset)
             if descriptor and any((local_crc, local_compressed, local_expanded)):
-                reject("AMBIGUOUS_ZIP_DESCRIPTOR", "Streaming ZIP local sizes must be zero", offset=offset)
+                raise AuditError("AMBIGUOUS_ZIP_DESCRIPTOR", "Streaming ZIP local sizes must be zero", offset=offset)
 
             data_offset = offset + header_length
             encoding = "utf-8" if flags & 0x0800 else "cp437"
@@ -1054,7 +1071,7 @@ class ArchiveAuditor:
             dos_attributes = entry["externalAttributes"] & 0xffff
             creator_system = (entry["versionMade"] >> 8) & 0xff
             if dos_attributes & 0x0400:
-                reject("UNSAFE_REPARSE_POINT", "ZIP member carries the Windows reparse-point attribute", path=text)
+                raise AuditError("UNSAFE_REPARSE_POINT", "ZIP member carries the Windows reparse-point attribute", path=text)
             declares_unix_mode = creator_system in ZIP_UNIX_CREATOR_SYSTEMS
             if declares_unix_mode:
                 file_type, unix_type_name = classify_unix_file_type(
@@ -1067,7 +1084,7 @@ class ArchiveAuditor:
                 file_type, unix_type_name = 0, "unspecified"
             is_directory = text.endswith("/") or file_type == S_IFDIR or bool(dos_attributes & 0x10)
             if file_type == S_IFREG and is_directory:
-                reject(
+                raise AuditError(
                     "AMBIGUOUS_MEMBER_TYPE",
                     "ZIP member declares a regular Unix mode but is structurally a directory",
                     path=text,
@@ -1081,7 +1098,7 @@ class ArchiveAuditor:
             compressed = checked_slice(data, data_offset, entry["compressedSize"])
             expanded = self._inflate_zip(compressed, method, entry["expandedSize"], entry["nameRaw"])
             if zlib.crc32(expanded) & 0xffffffff != entry["crc"]:
-                reject("ZIP_CRC_MISMATCH", "ZIP member checksum is invalid", ordinal=ordinal)
+                raise AuditError("ZIP_CRC_MISMATCH", "ZIP member checksum is invalid", ordinal=ordinal)
             descriptor_length = 0
             end = data_offset + entry["compressedSize"]
             if descriptor:
@@ -1092,13 +1109,13 @@ class ArchiveAuditor:
                     descriptor_length = 12
                     values = struct.unpack_from("<3I", checked_slice(data, end, 12))
                 if values != (entry["crc"], entry["compressedSize"], entry["expandedSize"]):
-                    reject("ZIP_DESCRIPTOR_MISMATCH", "ZIP data descriptor disagrees with central metadata", offset=end)
+                    raise AuditError("ZIP_DESCRIPTOR_MISMATCH", "ZIP data descriptor disagrees with central metadata", offset=end)
                 end += descriptor_length
             expected_offset = end
 
             content = expanded
             if is_directory and expanded:
-                reject("DIRECTORY_WITH_DATA", "ZIP directory carries file data", path=logical)
+                raise AuditError("DIRECTORY_WITH_DATA", "ZIP directory carries file data", path=logical)
 
             self.state.charge_expansion(len(expanded), len(compressed), f"zip:{logical}")
             archive_count = self.state.add_member(archive_count)
@@ -1134,7 +1151,7 @@ class ArchiveAuditor:
                 link_target,
             ))
         if expected_offset != central_offset:
-            reject(
+            raise AuditError(
                 "UNDECLARED_ZIP_PAYLOAD",
                 "ZIP local record area does not end at its central directory",
                 localEnd=expected_offset,
@@ -1154,59 +1171,59 @@ class ArchiveAuditor:
         cursor = 0
         while cursor < len(extra):
             if cursor + 4 > len(extra):
-                reject("INVALID_ZIP_EXTRA_FIELD", "ZIP extra-field header is truncated")
+                raise AuditError("INVALID_ZIP_EXTRA_FIELD", "ZIP extra-field header is truncated")
             field_id, length = struct.unpack_from("<2H", extra, cursor)
             cursor += 4
             checked_slice(extra, cursor, length)
             if field_id == 0x0001:
-                reject("UNSUPPORTED_ZIP64", "ZIP64 extra fields are unsupported")
+                raise AuditError("UNSUPPORTED_ZIP64", "ZIP64 extra fields are unsupported")
             if field_id in (0x7075, 0x6375):
-                reject("AMBIGUOUS_ZIP_ENCODING", "Unicode ZIP shadow-name extra fields are rejected")
+                raise AuditError("AMBIGUOUS_ZIP_ENCODING", "Unicode ZIP shadow-name extra fields are rejected")
             if field_id == 0x9901:
-                reject("UNSUPPORTED_ZIP_ENCRYPTION", "AES-encrypted ZIP entries are unsupported")
+                raise AuditError("UNSUPPORTED_ZIP_ENCRYPTION", "AES-encrypted ZIP entries are unsupported")
             ids.append(f"{field_id:04x}")
             cursor += length
         return ids
 
     def _validate_zip_entry(self, flags, method, version_needed, extra, comment, start_disk):
         if flags & 0x0001 or flags & 0x0040 or flags & 0x2000:
-            reject("UNSUPPORTED_ZIP_ENCRYPTION", "Encrypted ZIP entries are unsupported")
+            raise AuditError("UNSUPPORTED_ZIP_ENCRYPTION", "Encrypted ZIP entries are unsupported")
         allowed = 0x0808
         if method == 8:
             allowed |= 0x0006
         if flags & ~allowed:
-            reject("UNSUPPORTED_ZIP_FLAGS", "ZIP entry uses unsupported general-purpose flags", flags=f"{flags:04x}")
+            raise AuditError("UNSUPPORTED_ZIP_FLAGS", "ZIP entry uses unsupported general-purpose flags", flags=f"{flags:04x}")
         if method not in (0, 8):
-            reject("UNSUPPORTED_ZIP_COMPRESSION", "ZIP compression method is unsupported", method=method)
+            raise AuditError("UNSUPPORTED_ZIP_COMPRESSION", "ZIP compression method is unsupported", method=method)
         if version_needed > 63:
-            reject("UNSUPPORTED_ZIP_VERSION", "ZIP entry requires an unsupported extractor version", version=version_needed)
+            raise AuditError("UNSUPPORTED_ZIP_VERSION", "ZIP entry requires an unsupported extractor version", version=version_needed)
         if start_disk:
-            reject("UNSUPPORTED_MULTIVOLUME_ZIP", "ZIP entry starts on another volume")
+            raise AuditError("UNSUPPORTED_MULTIVOLUME_ZIP", "ZIP entry starts on another volume")
         if comment:
-            reject("UNSUPPORTED_ZIP_COMMENT", "ZIP per-entry comments are rejected as ambiguous metadata")
+            raise AuditError("UNSUPPORTED_ZIP_COMMENT", "ZIP per-entry comments are rejected as ambiguous metadata")
         self._zip_extra_ids(extra)
 
     def _inflate_zip(self, compressed, method, expected_size, name):
         self.state.check_expansion(expected_size, len(compressed), f"zip:{name.hex()}")
         if method == 0:
             if len(compressed) != expected_size:
-                reject("ZIP_LENGTH_MISMATCH", "Stored ZIP member length disagrees with expanded length", rawPathHex=name.hex())
+                raise AuditError("ZIP_LENGTH_MISMATCH", "Stored ZIP member length disagrees with expanded length", rawPathHex=name.hex())
             return compressed
         maximum = min(expected_size, self.state.remaining_expansion()) + 1
         try:
             decoder = zlib.decompressobj(-15)
             expanded = decoder.decompress(compressed, maximum)
         except zlib.error as exc:
-            reject("INVALID_ZIP_DEFLATE", "ZIP deflate stream is invalid", reason=str(exc))
+            raise AuditError("INVALID_ZIP_DEFLATE", "ZIP deflate stream is invalid", reason=str(exc))
         if len(expanded) != expected_size:
-            reject(
+            raise AuditError(
                 "ZIP_LENGTH_MISMATCH",
                 "ZIP expanded length disagrees with central metadata",
                 expected=expected_size,
                 actual=len(expanded),
             )
         if not decoder.eof or decoder.unused_data or decoder.unconsumed_tail:
-            reject("TRAILING_COMPRESSED_PAYLOAD", "ZIP deflate stream has trailing or unconsumed bytes")
+            raise AuditError("TRAILING_COMPRESSED_PAYLOAD", "ZIP deflate stream has trailing or unconsumed bytes")
         return expanded
 
     def _parse_tar(self, data, node):
@@ -1226,12 +1243,12 @@ class ArchiveAuditor:
             header = checked_slice(data, cursor, 512)
             if not any(header):
                 if cursor + 1024 > len(data) or any(checked_slice(data, cursor + 512, 512)):
-                    reject("INVALID_TAR_TERMINATOR", "TAR must end with at least two zero blocks", offset=cursor)
+                    raise AuditError("INVALID_TAR_TERMINATOR", "TAR must end with at least two zero blocks", offset=cursor)
                 zero_start = cursor
                 if any(data[cursor:]):
-                    reject("TRAILING_TAR_PAYLOAD", "TAR has nonzero bytes after its terminator", offset=cursor)
+                    raise AuditError("TRAILING_TAR_PAYLOAD", "TAR has nonzero bytes after its terminator", offset=cursor)
                 if (len(data) - cursor) % 512:
-                    reject("TRAILING_TAR_PAYLOAD", "TAR trailing zero padding is not block-aligned", offset=cursor)
+                    raise AuditError("TRAILING_TAR_PAYLOAD", "TAR trailing zero padding is not block-aligned", offset=cursor)
                 break
 
             validate_tar_flavor(header, cursor)
@@ -1242,7 +1259,7 @@ class ArchiveAuditor:
             unsigned_checksum = sum(checksum_header)
             signed_checksum = sum(byte if byte < 128 else byte - 256 for byte in checksum_header)
             if stored_checksum not in (unsigned_checksum, signed_checksum):
-                reject(
+                raise AuditError(
                     "TAR_CHECKSUM_MISMATCH",
                     "TAR header checksum is invalid",
                     offset=cursor,
@@ -1259,7 +1276,7 @@ class ArchiveAuditor:
             header_size = parse_tar_number(header[124:136], "size")
             metadata_type = typeflag in (b"x", b"g", b"L", b"K")
             if metadata_type and pending_pax is not None:
-                reject(
+                raise AuditError(
                     "AMBIGUOUS_TAR_METADATA",
                     "A local PAX header cannot describe another metadata record",
                     offset=cursor,
@@ -1277,7 +1294,7 @@ class ArchiveAuditor:
             padded = (effective_size + 511) & ~511
             padding = checked_slice(data, data_offset + effective_size, padded - effective_size)
             if any(padding):
-                reject("NONZERO_TAR_PADDING", "TAR member data padding contains nonzero bytes", offset=data_offset + effective_size)
+                raise AuditError("NONZERO_TAR_PADDING", "TAR member data padding contains nonzero bytes", offset=data_offset + effective_size)
             next_offset = data_offset + padded
 
             if metadata_type:
@@ -1310,10 +1327,10 @@ class ArchiveAuditor:
                     parsed = parse_pax(content)
                     if typeflag == b"g":
                         if pending_pax is not None:
-                            reject("AMBIGUOUS_TAR_METADATA", "Global PAX header appears while local metadata is pending")
+                            raise AuditError("AMBIGUOUS_TAR_METADATA", "Global PAX header appears while local metadata is pending")
                         structural = sorted(set(parsed) & {"path", "linkpath", "size"})
                         if structural:
-                            reject(
+                            raise AuditError(
                                 "UNSUPPORTED_TAR_EXTENSION",
                                 "Global PAX header contains a structural key",
                                 keys=structural,
@@ -1321,20 +1338,20 @@ class ArchiveAuditor:
                         global_pax.update(parsed)
                     else:
                         if pending_pax is not None:
-                            reject("AMBIGUOUS_TAR_METADATA", "Multiple local PAX headers precede one member")
+                            raise AuditError("AMBIGUOUS_TAR_METADATA", "Multiple local PAX headers precede one member")
                         pending_pax = parsed
                 else:
                     value = content[:-1] if content.endswith(b"\0") else content
                     if b"\0" in value:
-                        reject("AMBIGUOUS_HEADER_ENCODING", "GNU TAR long-name record contains an embedded NUL")
+                        raise AuditError("AMBIGUOUS_HEADER_ENCODING", "GNU TAR long-name record contains an embedded NUL")
                     text = strict_decode(value, "utf-8")
                     if typeflag == b"L":
                         if pending_long_name is not None:
-                            reject("AMBIGUOUS_TAR_METADATA", "Multiple GNU long-name records precede one member")
+                            raise AuditError("AMBIGUOUS_TAR_METADATA", "Multiple GNU long-name records precede one member")
                         pending_long_name = (value, text)
                     else:
                         if pending_long_link is not None:
-                            reject("AMBIGUOUS_TAR_METADATA", "Multiple GNU long-link records precede one member")
+                            raise AuditError("AMBIGUOUS_TAR_METADATA", "Multiple GNU long-link records precede one member")
                         pending_long_link = (value, text)
                 cursor = next_offset
                 ordinal += 1
@@ -1344,9 +1361,9 @@ class ArchiveAuditor:
             if pending_pax:
                 pax.update(pending_pax)
             if pending_long_name and "path" in pax:
-                reject("AMBIGUOUS_TAR_METADATA", "GNU long name and PAX path both override one member")
+                raise AuditError("AMBIGUOUS_TAR_METADATA", "GNU long name and PAX path both override one member")
             if pending_long_link and "linkpath" in pax:
-                reject("AMBIGUOUS_TAR_METADATA", "GNU long link and PAX linkpath both override one member")
+                raise AuditError("AMBIGUOUS_TAR_METADATA", "GNU long link and PAX linkpath both override one member")
 
             effective_name_bytes = header_name_bytes
             effective_name_text = header_name_text
@@ -1379,7 +1396,7 @@ class ArchiveAuditor:
                 member_type = "hardlink"
                 is_directory = False
             else:
-                reject(
+                raise AuditError(
                     "UNSUPPORTED_TAR_MEMBER_TYPE",
                     "TAR member type is unsupported",
                     offset=cursor,
@@ -1389,7 +1406,7 @@ class ArchiveAuditor:
             registry.add(effective_name_bytes, logical, ordinal)
             link_target = None
             if member_type in ("directory", "symlink", "hardlink") and effective_size:
-                reject("LINK_OR_DIRECTORY_WITH_DATA", "TAR link or directory carries file data", path=logical)
+                raise AuditError("LINK_OR_DIRECTORY_WITH_DATA", "TAR link or directory carries file data", path=logical)
             if member_type == "symlink":
                 link_target = normalize_link_target(logical, link_text, self.limits.max_path_length)
             elif member_type == "hardlink":
@@ -1401,7 +1418,7 @@ class ArchiveAuditor:
                 )
                 prior = prior_by_path.get(link_target)
                 if prior is None or prior["type"] not in ("file", "hardlink"):
-                    reject(
+                    raise AuditError(
                         "UNSAFE_HARDLINK_TARGET",
                         "TAR hardlink must target a preceding regular file",
                         path=logical,
@@ -1455,9 +1472,9 @@ class ArchiveAuditor:
             ordinal += 1
 
         if zero_start is None:
-            reject("MISSING_TAR_TERMINATOR", "TAR has no terminal zero blocks")
+            raise AuditError("MISSING_TAR_TERMINATOR", "TAR has no terminal zero blocks")
         if any((pending_pax, pending_long_name, pending_long_link)):
-            reject("ORPHAN_TAR_METADATA", "TAR ends with metadata that does not describe a member")
+            raise AuditError("ORPHAN_TAR_METADATA", "TAR ends with metadata that does not describe a member")
         self._check_links(members)
         node["members"] = members
         node["ownerDisposition"] = {
@@ -1477,7 +1494,7 @@ class ArchiveAuditor:
             ) = self._decode_gzip(data)
         elif archive_format == "bzip2":
             if len(data) < 4 or data[:3] != b"BZh" or data[3:4] not in b"123456789":
-                reject("INVALID_BZIP2_HEADER", "bzip2 stream header is invalid")
+                raise AuditError("INVALID_BZIP2_HEADER", "bzip2 stream header is invalid")
             expanded, consumed = self._bounded_decompress(bz2.BZ2Decompressor(), data, "bzip2")
             if consumed != len(data):
                 self._reject_compressed_tail("bzip2", data[consumed:], consumed)
@@ -1488,12 +1505,12 @@ class ArchiveAuditor:
             embedded_name_raw = None
         elif archive_format == "xz":
             if not data.startswith(XZ_SIGNATURE):
-                reject("INVALID_XZ_HEADER", "xz stream header is invalid")
+                raise AuditError("INVALID_XZ_HEADER", "xz stream header is invalid")
             expanded, consumed = self._bounded_decompress(lzma.LZMADecompressor(format=lzma.FORMAT_XZ), data, "xz")
             if consumed != len(data):
                 self._reject_compressed_tail("xz", data[consumed:], consumed)
             if len(data) < 24:
-                reject("INVALID_XZ_STREAM", "xz stream is too short")
+                raise AuditError("INVALID_XZ_STREAM", "xz stream is too short")
             data_offset = 12
             stored_length = len(data) - 24
             owner = {
@@ -1505,7 +1522,7 @@ class ArchiveAuditor:
             embedded_name_raw = None
         else:
             if zstd is None:
-                reject("UNSUPPORTED_ZSTD_RUNTIME", "Python runtime does not provide compression.zstd")
+                raise AuditError("UNSUPPORTED_ZSTD_RUNTIME", "Python runtime does not provide compression.zstd")
             data_offset, zstd_owner = parse_zstd_header(data)
             expanded, consumed = self._bounded_decompress(zstd.ZstdDecompressor(), data, "zstd")
             if consumed != len(data):
@@ -1519,7 +1536,7 @@ class ArchiveAuditor:
         path_source = "synthetic-wrapper-payload"
         if embedded_name is not None:
             if "/" in embedded_name or "\\" in embedded_name:
-                reject(
+                raise AuditError(
                     "UNSAFE_PATH",
                     "gzip original-name field contains a directory component",
                     embeddedName=embedded_name,
@@ -1552,19 +1569,33 @@ class ArchiveAuditor:
         node["ownerDisposition"] = owner
 
     def _reject_compressed_tail(self, archive_format, tail, offset):
-        signatures = {
-            "bzip2": (b"BZh", "CONCATENATED_BZIP2_STREAM", "bzip2 stream"),
-            "xz": (XZ_SIGNATURE, "CONCATENATED_XZ_STREAM", "xz stream"),
-            "zstd": (ZSTD_SIGNATURE, "CONCATENATED_ZSTD_FRAME", "zstd frame"),
-        }
-        signature, code, description = signatures[archive_format]
-        if tail.startswith(signature):
-            reject(
-                code,
-                f"Only one {description} is accepted",
-                offset=offset,
-            )
-        reject(
+        if archive_format == "bzip2":
+            description = "bzip2 stream"
+            if tail.startswith(b"BZh"):
+                raise AuditError(
+                    "CONCATENATED_BZIP2_STREAM",
+                    f"Only one {description} is accepted",
+                    offset=offset,
+                )
+        elif archive_format == "xz":
+            description = "xz stream"
+            if tail.startswith(XZ_SIGNATURE):
+                raise AuditError(
+                    "CONCATENATED_XZ_STREAM",
+                    f"Only one {description} is accepted",
+                    offset=offset,
+                )
+        elif archive_format == "zstd":
+            description = "zstd frame"
+            if tail.startswith(ZSTD_SIGNATURE):
+                raise AuditError(
+                    "CONCATENATED_ZSTD_FRAME",
+                    f"Only one {description} is accepted",
+                    offset=offset,
+                )
+        else:
+            raise ValueError(f"Unsupported compressed archive format: {archive_format!r}")
+        raise AuditError(
             "TRAILING_COMPRESSED_PAYLOAD",
             f"{description} has trailing bytes",
             offset=offset,
@@ -1577,16 +1608,16 @@ class ArchiveAuditor:
         try:
             expanded = decoder.decompress(data, max_length=maximum)
         except (OSError, EOFError, lzma.LZMAError, zstd.ZstdError if zstd else OSError) as exc:
-            reject("INVALID_COMPRESSED_STREAM", "Compressed stream is invalid", compression=owner, reason=str(exc))
+            raise AuditError("INVALID_COMPRESSED_STREAM", "Compressed stream is invalid", compression=owner, reason=str(exc))
         if len(expanded) > remaining:
-            reject(
+            raise AuditError(
                 "TOTAL_EXPANDED_BYTES_LIMIT",
                 "Compressed stream exceeds the configured expanded-byte budget",
                 compression=owner,
                 limit=self.limits.max_total_expanded_bytes,
             )
         if len(expanded) > ratio_ceiling:
-            reject(
+            raise AuditError(
                 "COMPRESSION_RATIO_LIMIT",
                 "Compressed stream exceeds the configured compression ratio",
                 compression=owner,
@@ -1595,16 +1626,16 @@ class ArchiveAuditor:
                 limit=self.limits.max_compression_ratio,
             )
         if not decoder.eof:
-            reject("INVALID_COMPRESSED_STREAM", "Compressed stream is truncated", compression=owner)
+            raise AuditError("INVALID_COMPRESSED_STREAM", "Compressed stream is truncated", compression=owner)
         unused = decoder.unused_data
         return expanded, len(data) - len(unused)
 
     def _decode_gzip(self, data):
         if len(data) < 18 or data[:2] != b"\x1f\x8b" or data[2] != 8:
-            reject("INVALID_GZIP_HEADER", "gzip header is invalid")
+            raise AuditError("INVALID_GZIP_HEADER", "gzip header is invalid")
         flags = data[3]
         if flags & 0xe0:
-            reject("INVALID_GZIP_FLAGS", "gzip reserved header flags are set", flags=f"{flags:02x}")
+            raise AuditError("INVALID_GZIP_FLAGS", "gzip reserved header flags are set", flags=f"{flags:02x}")
         cursor = 10
         if flags & 0x04:
             extra_length = u16(data, cursor)
@@ -1616,7 +1647,7 @@ class ArchiveAuditor:
         if flags & 0x08:
             end = data.find(b"\0", cursor)
             if end < 0:
-                reject("INVALID_GZIP_HEADER", "gzip original-name field is unterminated")
+                raise AuditError("INVALID_GZIP_HEADER", "gzip original-name field is unterminated")
             embedded_name_raw = data[cursor:end]
             embedded_name = strict_decode(
                 embedded_name_raw,
@@ -1629,7 +1660,7 @@ class ArchiveAuditor:
         if flags & 0x10:
             end = data.find(b"\0", cursor)
             if end < 0:
-                reject("INVALID_GZIP_HEADER", "gzip comment field is unterminated")
+                raise AuditError("INVALID_GZIP_HEADER", "gzip comment field is unterminated")
             comment_raw = data[cursor:end]
             strict_decode(comment_raw, "latin-1", "INVALID_GZIP_COMMENT", "gzip comment")
             cursor = end + 1
@@ -1637,7 +1668,7 @@ class ArchiveAuditor:
             expected_header_crc = u16(data, cursor)
             actual_header_crc = zlib.crc32(data[:cursor]) & 0xffff
             if expected_header_crc != actual_header_crc:
-                reject("GZIP_HEADER_CRC_MISMATCH", "gzip header checksum is invalid")
+                raise AuditError("GZIP_HEADER_CRC_MISMATCH", "gzip header checksum is invalid")
             cursor += 2
 
         decoder = zlib.decompressobj(-15)
@@ -1647,11 +1678,11 @@ class ArchiveAuditor:
         try:
             expanded = decoder.decompress(data[cursor:], maximum)
         except zlib.error as exc:
-            reject("INVALID_GZIP_DEFLATE", "gzip deflate stream is invalid", reason=str(exc))
+            raise AuditError("INVALID_GZIP_DEFLATE", "gzip deflate stream is invalid", reason=str(exc))
         if len(expanded) > remaining:
-            reject("TOTAL_EXPANDED_BYTES_LIMIT", "gzip stream exceeds the configured expanded-byte budget")
+            raise AuditError("TOTAL_EXPANDED_BYTES_LIMIT", "gzip stream exceeds the configured expanded-byte budget")
         if len(expanded) > ratio_ceiling:
-            reject(
+            raise AuditError(
                 "COMPRESSION_RATIO_LIMIT",
                 "gzip stream exceeds the configured compression ratio",
                 storedLength=max(1, len(data) - cursor - 8),
@@ -1659,28 +1690,28 @@ class ArchiveAuditor:
                 limit=self.limits.max_compression_ratio,
             )
         if not decoder.eof:
-            reject("INVALID_GZIP_DEFLATE", "gzip deflate stream is truncated")
+            raise AuditError("INVALID_GZIP_DEFLATE", "gzip deflate stream is truncated")
         consumed_deflate = len(data[cursor:]) - len(decoder.unused_data)
         footer_offset = cursor + consumed_deflate
         footer = checked_slice(data, footer_offset, 8)
         if footer_offset + 8 != len(data):
             tail_offset = footer_offset + 8
             if data[tail_offset:].startswith(b"\x1f\x8b"):
-                reject(
+                raise AuditError(
                     "CONCATENATED_GZIP_MEMBER",
                     "Only one gzip member is accepted",
                     offset=tail_offset,
                 )
-            reject(
+            raise AuditError(
                 "TRAILING_COMPRESSED_PAYLOAD",
                 "gzip stream has trailing bytes",
                 offset=tail_offset,
             )
         expected_crc, expected_size = struct.unpack("<2I", footer)
         if zlib.crc32(expanded) & 0xffffffff != expected_crc:
-            reject("GZIP_CRC_MISMATCH", "gzip payload checksum is invalid")
+            raise AuditError("GZIP_CRC_MISMATCH", "gzip payload checksum is invalid")
         if len(expanded) & 0xffffffff != expected_size:
-            reject("GZIP_LENGTH_MISMATCH", "gzip payload length is invalid", expected=expected_size, actual=len(expanded))
+            raise AuditError("GZIP_LENGTH_MISMATCH", "gzip payload length is invalid", expected=expected_size, actual=len(expanded))
         return (
             expanded,
             cursor,
@@ -1727,11 +1758,11 @@ class ArchiveAuditor:
                 decoded, ranges = self._seven_decode_streams(data, signature_offset, encoded_streams, "encoded-header")
                 physical_ranges.extend(ranges)
                 if len(decoded) != 1:
-                    reject("UNSUPPORTED_7Z_ENCODED_HEADER", "Encoded 7z header must contain exactly one substream")
+                    raise AuditError("UNSUPPORTED_7Z_ENCODED_HEADER", "Encoded 7z header must contain exactly one substream")
                 decoded_header = decoded[0]["content"]
                 main_reader = BinaryReader(decoded_header)
                 if main_reader.byte() != 0x01:
-                    reject("INVALID_7Z_HEADER", "Decoded 7z header does not begin with kHeader")
+                    raise AuditError("INVALID_7Z_HEADER", "Decoded 7z header does not begin with kHeader")
                 streams, files = self._seven_parse_header(main_reader)
                 main_reader.require_end()
                 shared_header_offset = ranges[0]["offset"]
@@ -1744,14 +1775,14 @@ class ArchiveAuditor:
                 shared_header_length = next_size
                 header_disposition = "plain-shared"
             else:
-                reject("INVALID_7Z_HEADER", "7z next header has an unsupported top-level identifier", nid=nid)
+                raise AuditError("INVALID_7Z_HEADER", "7z next header has an unsupported top-level identifier", nid=nid)
 
         names = files["names"]
         empty_streams = files.get("emptyStreams", [False] * len(names))
         empty_files = files.get("emptyFiles", [False] * sum(empty_streams))
         anti = files.get("anti", [False] * sum(empty_streams))
         if any(anti):
-            reject("UNSUPPORTED_7Z_ANTI_ITEM", "7z anti-items are unsupported")
+            raise AuditError("UNSUPPORTED_7Z_ANTI_ITEM", "7z anti-items are unsupported")
 
         # Bounded structural phase: every member type is decided and every
         # contradiction rejected before a single stream is decoded, allocated,
@@ -1802,7 +1833,7 @@ class ArchiveAuditor:
                 try:
                     stream = next(stream_iter)
                 except StopIteration:
-                    reject("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has fewer data streams than files")
+                    raise AuditError("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has fewer data streams than files")
             logical = normalize_path(name_text, is_directory, self.limits.max_path_length)
             registry.add(name_raw, logical, ordinal)
             content = stream["content"]
@@ -1846,7 +1877,7 @@ class ArchiveAuditor:
             ))
         try:
             next(stream_iter)
-            reject("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has more data streams than files")
+            raise AuditError("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has more data streams than files")
         except StopIteration:
             pass
 
@@ -1892,7 +1923,7 @@ class ArchiveAuditor:
         """
         attributes = files.get("attributes", [None] * len(names))
         if len(attributes) != len(names):
-            reject(
+            raise AuditError(
                 "SEVEN_ZIP_PROPERTY_COUNT_MISMATCH",
                 "7z attribute vector length does not match the file count",
                 attributeCount=len(attributes),
@@ -1900,7 +1931,7 @@ class ArchiveAuditor:
             )
         expected_empty = sum(1 for value in empty_streams if value)
         if len(empty_files) < expected_empty:
-            reject(
+            raise AuditError(
                 "SEVEN_ZIP_PROPERTY_COUNT_MISMATCH",
                 "7z EmptyFile vector is shorter than the declared empty-stream count",
                 emptyFileCount=len(empty_files),
@@ -1913,7 +1944,7 @@ class ArchiveAuditor:
             declared = attributes[ordinal]
             windows_attributes = declared or 0
             if windows_attributes & 0x0400:
-                reject(
+                raise AuditError(
                     "UNSAFE_REPARSE_POINT",
                     "7z member carries the Windows reparse-point attribute",
                     path=name_text,
@@ -1929,7 +1960,7 @@ class ArchiveAuditor:
                 )
             else:
                 if unix_mode:
-                    reject(
+                    raise AuditError(
                         "AMBIGUOUS_MEMBER_TYPE",
                         "7z member carries Unix mode bits without the Unix extension attribute",
                         path=name_text,
@@ -1948,7 +1979,7 @@ class ArchiveAuditor:
             windows_directory = bool(windows_attributes & 0x10)
 
             def contradiction(message, **details):
-                reject(
+                raise AuditError(
                     "INCONSISTENT_7Z_MEMBER_TYPE",
                     message,
                     path=name_text,
@@ -1991,20 +2022,20 @@ class ArchiveAuditor:
             if nid == 0x00:
                 break
             if nid in seen:
-                reject("DUPLICATE_7Z_HEADER_SECTION", "7z header section is repeated", nid=nid)
+                raise AuditError("DUPLICATE_7Z_HEADER_SECTION", "7z header section is repeated", nid=nid)
             seen.add(nid)
             if nid == 0x02:
                 self._seven_archive_properties(reader)
             elif nid == 0x03:
-                reject("UNSUPPORTED_7Z_ADDITIONAL_STREAMS", "7z additional streams are unsupported")
+                raise AuditError("UNSUPPORTED_7Z_ADDITIONAL_STREAMS", "7z additional streams are unsupported")
             elif nid == 0x04:
                 streams = self._seven_parse_streams(reader)
             elif nid == 0x05:
                 files = self._seven_parse_files(reader)
             else:
-                reject("UNSUPPORTED_7Z_HEADER_SECTION", "7z header section is unsupported", nid=nid)
+                raise AuditError("UNSUPPORTED_7Z_HEADER_SECTION", "7z header section is unsupported", nid=nid)
         if files is None:
-            reject("MISSING_7Z_FILES_INFO", "7z header does not declare its files")
+            raise AuditError("MISSING_7Z_FILES_INFO", "7z header does not declare its files")
         return streams, files
 
     def _seven_archive_properties(self, reader):
@@ -2015,7 +2046,7 @@ class ArchiveAuditor:
             size = reader.uint64()
             payload = reader.read(size)
             if prop != 0x19 or any(payload):
-                reject("UNSUPPORTED_7Z_ARCHIVE_PROPERTY", "7z archive property is unsupported", property=prop)
+                raise AuditError("UNSUPPORTED_7Z_ARCHIVE_PROPERTY", "7z archive property is unsupported", property=prop)
 
     def _seven_parse_streams(self, reader):
         pack = None
@@ -2027,22 +2058,22 @@ class ArchiveAuditor:
                 break
             if nid == 0x06:
                 if pack is not None:
-                    reject("DUPLICATE_7Z_STREAM_SECTION", "7z PackInfo section is repeated")
+                    raise AuditError("DUPLICATE_7Z_STREAM_SECTION", "7z PackInfo section is repeated")
                 pack = self._seven_pack_info(reader)
             elif nid == 0x07:
                 if folders is not None:
-                    reject("DUPLICATE_7Z_STREAM_SECTION", "7z UnPackInfo section is repeated")
+                    raise AuditError("DUPLICATE_7Z_STREAM_SECTION", "7z UnPackInfo section is repeated")
                 folders = self._seven_unpack_info(reader)
             elif nid == 0x08:
                 if folders is None:
-                    reject("INVALID_7Z_STREAM_ORDER", "7z SubStreamsInfo precedes UnPackInfo")
+                    raise AuditError("INVALID_7Z_STREAM_ORDER", "7z SubStreamsInfo precedes UnPackInfo")
                 if substreams is not None:
-                    reject("DUPLICATE_7Z_STREAM_SECTION", "7z SubStreamsInfo section is repeated")
+                    raise AuditError("DUPLICATE_7Z_STREAM_SECTION", "7z SubStreamsInfo section is repeated")
                 substreams = self._seven_substreams_info(reader, folders)
             else:
-                reject("UNSUPPORTED_7Z_STREAM_SECTION", "7z stream section is unsupported", nid=nid)
+                raise AuditError("UNSUPPORTED_7Z_STREAM_SECTION", "7z stream section is unsupported", nid=nid)
         if pack is None or folders is None:
-            reject("INCOMPLETE_7Z_STREAMS_INFO", "7z streams info lacks PackInfo or UnPackInfo")
+            raise AuditError("INCOMPLETE_7Z_STREAMS_INFO", "7z streams info lacks PackInfo or UnPackInfo")
         if substreams is None:
             substreams = self._seven_default_substreams(folders)
         return {"pack": pack, "folders": folders, "substreams": substreams}
@@ -2051,7 +2082,7 @@ class ArchiveAuditor:
         pack_pos = reader.uint64()
         count = reader.uint64()
         if count > self.limits.max_members_per_archive:
-            reject("MEMBERS_PER_ARCHIVE_LIMIT", "7z pack-stream count exceeds the configured limit", count=count)
+            raise AuditError("MEMBERS_PER_ARCHIVE_LIMIT", "7z pack-stream count exceeds the configured limit", count=count)
         sizes = None
         crcs = [None] * count
         while True:
@@ -2060,27 +2091,27 @@ class ArchiveAuditor:
                 break
             if nid == 0x09:
                 if sizes is not None:
-                    reject("DUPLICATE_7Z_PROPERTY", "7z pack sizes are repeated")
+                    raise AuditError("DUPLICATE_7Z_PROPERTY", "7z pack sizes are repeated")
                 sizes = [reader.uint64() for _ in range(count)]
             elif nid == 0x0a:
                 crcs = self._seven_digests(reader, count)
             else:
-                reject("UNSUPPORTED_7Z_PACK_PROPERTY", "7z PackInfo property is unsupported", nid=nid)
+                raise AuditError("UNSUPPORTED_7Z_PACK_PROPERTY", "7z PackInfo property is unsupported", nid=nid)
         if sizes is None:
-            reject("MISSING_7Z_PACK_SIZES", "7z PackInfo omits packed sizes")
+            raise AuditError("MISSING_7Z_PACK_SIZES", "7z PackInfo omits packed sizes")
         return {"position": pack_pos, "sizes": sizes, "crcs": crcs}
 
     def _seven_unpack_info(self, reader):
         if reader.byte() != 0x0b:
-            reject("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo omits Folder records")
+            raise AuditError("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo omits Folder records")
         count = reader.uint64()
         if count > self.limits.max_members_per_archive:
-            reject("MEMBERS_PER_ARCHIVE_LIMIT", "7z folder count exceeds the configured limit", count=count)
+            raise AuditError("MEMBERS_PER_ARCHIVE_LIMIT", "7z folder count exceeds the configured limit", count=count)
         if reader.byte() != 0:
-            reject("UNSUPPORTED_7Z_EXTERNAL_PROPERTY", "Externally stored 7z folders are unsupported")
+            raise AuditError("UNSUPPORTED_7Z_EXTERNAL_PROPERTY", "Externally stored 7z folders are unsupported")
         folders = [self._seven_folder(reader) for _ in range(count)]
         if reader.byte() != 0x0c:
-            reject("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo omits coder output sizes")
+            raise AuditError("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo omits coder output sizes")
         for folder in folders:
             folder["unpackSizes"] = [reader.uint64() for _ in range(folder["totalOut"])]
         nid = reader.byte()
@@ -2090,29 +2121,29 @@ class ArchiveAuditor:
                 folder["crc"] = digest
             nid = reader.byte()
         if nid != 0:
-            reject("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo has an unsupported trailing property", nid=nid)
+            raise AuditError("INVALID_7Z_UNPACK_INFO", "7z UnPackInfo has an unsupported trailing property", nid=nid)
         return folders
 
     def _seven_folder(self, reader):
         count = reader.uint64()
         if count == 0 or count > 64:
-            reject("UNSUPPORTED_7Z_CODER_GRAPH", "7z folder coder count is unsupported", count=count)
+            raise AuditError("UNSUPPORTED_7Z_CODER_GRAPH", "7z folder coder count is unsupported", count=count)
         coders = []
         total_in = 0
         total_out = 0
         for _ in range(count):
             flags = reader.byte()
             if flags & 0xc0:
-                reject("UNSUPPORTED_7Z_CODER_FLAGS", "7z coder uses reserved or alternative-method flags", flags=flags)
+                raise AuditError("UNSUPPORTED_7Z_CODER_FLAGS", "7z coder uses reserved or alternative-method flags", flags=flags)
             method_size = flags & 0x0f
             if not method_size:
-                reject("INVALID_7Z_CODER", "7z coder has an empty method identifier")
+                raise AuditError("INVALID_7Z_CODER", "7z coder has an empty method identifier")
             method = reader.read(method_size)
             if flags & 0x10:
                 num_in = reader.uint64()
                 num_out = reader.uint64()
                 if not 1 <= num_in <= 64 or not 1 <= num_out <= 64:
-                    reject(
+                    raise AuditError(
                         "UNSUPPORTED_7Z_CODER_GRAPH",
                         "7z complex coder stream counts must be between 1 and 64",
                         inputStreams=num_in,
@@ -2125,7 +2156,7 @@ class ArchiveAuditor:
             total_in += num_in
             total_out += num_out
             if total_in > 64 or total_out > 64:
-                reject(
+                raise AuditError(
                     "UNSUPPORTED_7Z_CODER_GRAPH",
                     "7z folder stream graph exceeds the supported bound",
                     inputStreams=total_in,
@@ -2135,7 +2166,7 @@ class ArchiveAuditor:
         binds = [(reader.uint64(), reader.uint64()) for _ in range(bind_count)]
         packed_count = total_in - bind_count
         if not 1 <= packed_count <= 64:
-            reject(
+            raise AuditError(
                 "UNSUPPORTED_7Z_CODER_GRAPH",
                 "7z folder has an invalid packed-stream count",
                 packedStreams=packed_count,
@@ -2161,7 +2192,7 @@ class ArchiveAuditor:
                 any(count > self.limits.max_members_per_archive for count in counts)
                 or sum(counts) > self.limits.max_members_per_archive
             ):
-                reject(
+                raise AuditError(
                     "MEMBERS_PER_ARCHIVE_LIMIT",
                     "7z substream count exceeds the configured member limit",
                     count=sum(counts),
@@ -2179,7 +2210,7 @@ class ArchiveAuditor:
                 if count:
                     final_size = folder["unpackSizes"][-1] - subtotal
                     if final_size < 0:
-                        reject("INVALID_7Z_SUBSTREAM_SIZE", "7z substream sizes exceed the folder output")
+                        raise AuditError("INVALID_7Z_SUBSTREAM_SIZE", "7z substream sizes exceed the folder output")
                     sizes.append(final_size)
             nid = reader.byte()
         if sizes is None:
@@ -2188,7 +2219,7 @@ class ArchiveAuditor:
                 if count == 1:
                     sizes.append(folder["unpackSizes"][-1])
                 elif count:
-                    reject("MISSING_7Z_SUBSTREAM_SIZES", "Solid 7z folder omits substream sizes")
+                    raise AuditError("MISSING_7Z_SUBSTREAM_SIZES", "Solid 7z folder omits substream sizes")
         digest_slots = sum(
             count if count != 1 or folder["crc"] is None else 0
             for folder, count in zip(folders, counts)
@@ -2197,7 +2228,7 @@ class ArchiveAuditor:
             digests = self._seven_digests(reader, digest_slots)
             nid = reader.byte()
         if nid != 0:
-            reject("INVALID_7Z_SUBSTREAM_INFO", "7z SubStreamsInfo has an unsupported trailing property", nid=nid)
+            raise AuditError("INVALID_7Z_SUBSTREAM_INFO", "7z SubStreamsInfo has an unsupported trailing property", nid=nid)
         if digests is None:
             digests = [None] * digest_slots
 
@@ -2244,7 +2275,7 @@ class ArchiveAuditor:
             packed = checked_slice(archive, cursor, size)
             expected_crc = pack["crcs"][index]
             if expected_crc is not None and zlib.crc32(packed) & 0xffffffff != expected_crc:
-                reject("SEVEN_ZIP_PACK_CRC_MISMATCH", "7z packed-stream checksum is invalid", stream=index)
+                raise AuditError("SEVEN_ZIP_PACK_CRC_MISMATCH", "7z packed-stream checksum is invalid", stream=index)
             pack_offsets.append((cursor, size))
             cursor += size
 
@@ -2261,13 +2292,13 @@ class ArchiveAuditor:
                 or folder["binds"]
                 or len(folder["packedIndices"]) != 1
             ):
-                reject(
+                raise AuditError(
                     "UNSUPPORTED_7Z_CODER_GRAPH",
                     "Only one-coder, one-input, one-output 7z folders are supported",
                     folder=folder_index,
                 )
             if pack_index >= len(pack_offsets):
-                reject("SEVEN_ZIP_PACK_STREAM_MISMATCH", "7z folder has no corresponding packed stream")
+                raise AuditError("SEVEN_ZIP_PACK_STREAM_MISMATCH", "7z folder has no corresponding packed stream")
             offset, length = pack_offsets[pack_index]
             packed = checked_slice(archive, offset, length)
             expected_size = folder["unpackSizes"][0]
@@ -2278,14 +2309,14 @@ class ArchiveAuditor:
                 expected_size,
             )
             if folder["crc"] is not None and zlib.crc32(expanded) & 0xffffffff != folder["crc"]:
-                reject("SEVEN_ZIP_FOLDER_CRC_MISMATCH", "7z folder checksum is invalid", folder=folder_index)
+                raise AuditError("SEVEN_ZIP_FOLDER_CRC_MISMATCH", "7z folder checksum is invalid", folder=folder_index)
             self.state.charge_expansion(len(expanded), len(packed), f"7z:{owner}:{folder_index}")
             folder_outputs.append(expanded)
             folder_coders.append(coder_disposition)
             ranges.append({"offset": offset, "length": length, "owner": f"{owner}-folder-{folder_index}"})
             pack_index += 1
         if pack_index != len(pack_offsets):
-            reject("SEVEN_ZIP_PACK_STREAM_MISMATCH", "7z has undeclared packed streams")
+            raise AuditError("SEVEN_ZIP_PACK_STREAM_MISMATCH", "7z has undeclared packed streams")
 
         decoded = []
         folder_substreams = {}
@@ -2298,7 +2329,7 @@ class ArchiveAuditor:
             for item in substreams:
                 content = checked_slice(output, expanded_offset, item["size"])
                 if item["crc"] is not None and zlib.crc32(content) & 0xffffffff != item["crc"]:
-                    reject(
+                    raise AuditError(
                         "SEVEN_ZIP_SUBSTREAM_CRC_MISMATCH",
                         "7z substream checksum is invalid",
                         folder=folder_index,
@@ -2318,7 +2349,7 @@ class ArchiveAuditor:
                 })
                 expanded_offset += item["size"]
             if expanded_offset != len(output):
-                reject("SEVEN_ZIP_SUBSTREAM_SIZE_MISMATCH", "7z substreams do not consume their folder output")
+                raise AuditError("SEVEN_ZIP_SUBSTREAM_SIZE_MISMATCH", "7z substreams do not consume their folder output")
         return decoded, ranges
 
     def _seven_decode_coder(self, coder, packed, expected_size):
@@ -2326,7 +2357,7 @@ class ArchiveAuditor:
         properties = coder["properties"]
         if method == b"\x00":
             if properties or len(packed) != expected_size:
-                reject("INVALID_7Z_COPY_STREAM", "7z Copy coder metadata or length is invalid")
+                raise AuditError("INVALID_7Z_COPY_STREAM", "7z Copy coder metadata or length is invalid")
             return packed, {
                 "coderMethod": method.hex(),
                 "coderProperties": properties.hex(),
@@ -2335,17 +2366,17 @@ class ArchiveAuditor:
             }
         if method == b"\x03\x01\x01":
             if len(properties) != 5:
-                reject("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA coder properties are invalid")
+                raise AuditError("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA coder properties are invalid")
             first = properties[0]
             if first >= 9 * 5 * 5:
-                reject("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA lc/lp/pb property is invalid")
+                raise AuditError("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA lc/lp/pb property is invalid")
             lc = first % 9
             remainder = first // 9
             lp = remainder % 5
             pb = remainder // 5
             declared_dictionary = struct.unpack_from("<I", properties, 1)[0]
             if declared_dictionary < 4096:
-                reject("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA dictionary is smaller than 4096 bytes")
+                raise AuditError("INVALID_7Z_LZMA_PROPERTIES", "7z LZMA dictionary is smaller than 4096 bytes")
             effective_dictionary = min(declared_dictionary, max(4096, expected_size))
             filters = [{
                 "id": lzma.FILTER_LZMA1,
@@ -2356,20 +2387,20 @@ class ArchiveAuditor:
             }]
         elif method == b"\x21":
             if len(properties) != 1 or properties[0] > 40:
-                reject("INVALID_7Z_LZMA2_PROPERTIES", "7z LZMA2 coder properties are invalid")
+                raise AuditError("INVALID_7Z_LZMA2_PROPERTIES", "7z LZMA2 coder properties are invalid")
             prop = properties[0]
             declared_dictionary = 0xffffffff if prop == 40 else (2 | (prop & 1)) << (prop // 2 + 11)
             effective_dictionary = min(declared_dictionary, max(4096, expected_size))
             filters = [{"id": lzma.FILTER_LZMA2, "dict_size": effective_dictionary}]
         else:
-            reject("UNSUPPORTED_7Z_COMPRESSION", "7z coder method is unsupported", method=method.hex())
+            raise AuditError("UNSUPPORTED_7Z_COMPRESSION", "7z coder method is unsupported", method=method.hex())
         try:
             decoder = lzma.LZMADecompressor(format=lzma.FORMAT_RAW, filters=filters)
             expanded = decoder.decompress(packed, max_length=min(expected_size, self.state.remaining_expansion()) + 1)
         except (lzma.LZMAError, ValueError) as exc:
-            reject("INVALID_7Z_COMPRESSED_STREAM", "7z compressed stream is invalid", reason=str(exc))
+            raise AuditError("INVALID_7Z_COMPRESSED_STREAM", "7z compressed stream is invalid", reason=str(exc))
         if len(expanded) != expected_size or not decoder.eof or decoder.unused_data:
-            reject(
+            raise AuditError(
                 "SEVEN_ZIP_LENGTH_MISMATCH",
                 "7z coder output length is invalid",
                 expected=expected_size,
@@ -2385,9 +2416,9 @@ class ArchiveAuditor:
     def _seven_parse_files(self, reader):
         count = reader.uint64()
         if count > self.limits.max_members_per_archive:
-            reject("MEMBERS_PER_ARCHIVE_LIMIT", "7z file count exceeds the configured limit", count=count)
+            raise AuditError("MEMBERS_PER_ARCHIVE_LIMIT", "7z file count exceeds the configured limit", count=count)
         if self.state.total_members + count > self.limits.max_members_total:
-            reject(
+            raise AuditError(
                 "GLOBAL_MEMBER_LIMIT",
                 "7z file count exceeds the remaining global member limit",
                 count=self.state.total_members + count,
@@ -2399,12 +2430,12 @@ class ArchiveAuditor:
             if nid == 0:
                 break
             if nid in properties:
-                reject("DUPLICATE_7Z_FILE_PROPERTY", "7z FilesInfo property is repeated", nid=nid)
+                raise AuditError("DUPLICATE_7Z_FILE_PROPERTY", "7z FilesInfo property is repeated", nid=nid)
             size = reader.uint64()
             properties[nid] = reader.read(size)
 
         if 0x11 not in properties:
-            reject("MISSING_7Z_NAMES", "7z FilesInfo omits member names")
+            raise AuditError("MISSING_7Z_NAMES", "7z FilesInfo omits member names")
         result = {"names": self._seven_names(properties.pop(0x11), count)}
         if 0x0e in properties:
             result["emptyStreams"] = self._seven_exact_bits(properties.pop(0x0e), count)
@@ -2419,24 +2450,24 @@ class ArchiveAuditor:
         if 0x15 in properties:
             result["attributes"] = self._seven_optional_values(properties.pop(0x15), count, 4)
         if 0x18 in properties:
-            reject("UNSUPPORTED_7Z_START_POSITIONS", "7z start-position file properties are unsupported")
+            raise AuditError("UNSUPPORTED_7Z_START_POSITIONS", "7z start-position file properties are unsupported")
         if 0x16 in properties:
-            reject("UNSUPPORTED_7Z_COMMENTS", "7z comments are rejected as ambiguous metadata")
+            raise AuditError("UNSUPPORTED_7Z_COMMENTS", "7z comments are rejected as ambiguous metadata")
         if 0x19 in properties:
             dummy = properties.pop(0x19)
             if any(dummy):
-                reject("INVALID_7Z_DUMMY_PROPERTY", "7z dummy property contains nonzero bytes")
+                raise AuditError("INVALID_7Z_DUMMY_PROPERTY", "7z dummy property contains nonzero bytes")
         if properties:
-            reject("UNSUPPORTED_7Z_FILE_PROPERTY", "7z FilesInfo property is unsupported", nid=min(properties))
+            raise AuditError("UNSUPPORTED_7Z_FILE_PROPERTY", "7z FilesInfo property is unsupported", nid=min(properties))
         return result
 
     def _seven_names(self, payload, count):
         reader = BinaryReader(payload)
         if reader.byte() != 0:
-            reject("UNSUPPORTED_7Z_EXTERNAL_PROPERTY", "Externally stored 7z names are unsupported")
+            raise AuditError("UNSUPPORTED_7Z_EXTERNAL_PROPERTY", "Externally stored 7z names are unsupported")
         raw = reader.read(reader.remaining())
         if len(raw) % 2:
-            reject("INVALID_7Z_NAME", "7z UTF-16 name data has odd length")
+            raise AuditError("INVALID_7Z_NAME", "7z UTF-16 name data has odd length")
         names = []
         cursor = 0
         for _ in range(count):
@@ -2444,28 +2475,28 @@ class ArchiveAuditor:
             while end + 1 < len(raw) and raw[end:end + 2] != b"\0\0":
                 end += 2
             if end + 1 >= len(raw):
-                reject("INVALID_7Z_NAME", "7z name is not NUL-terminated")
+                raise AuditError("INVALID_7Z_NAME", "7z name is not NUL-terminated")
             value = raw[cursor:end]
             names.append((value, strict_decode(value, "utf-16-le", "INVALID_7Z_NAME")))
             cursor = end + 2
         if cursor != len(raw):
-            reject("TRAILING_7Z_NAME_DATA", "7z name property has undeclared trailing bytes")
+            raise AuditError("TRAILING_7Z_NAME_DATA", "7z name property has undeclared trailing bytes")
         return names
 
     def _seven_exact_bits(self, payload, count):
         reader = BinaryReader(payload)
         result = read_bit_vector(reader, count)
         if reader.remaining():
-            reject("TRAILING_7Z_BIT_VECTOR", "7z bit vector has undeclared trailing bytes")
+            raise AuditError("TRAILING_7Z_BIT_VECTOR", "7z bit vector has undeclared trailing bytes")
         if count % 8 and payload and payload[-1] & ((1 << (8 - count % 8)) - 1):
-            reject("NONZERO_7Z_BIT_PADDING", "7z bit vector has nonzero padding bits")
+            raise AuditError("NONZERO_7Z_BIT_PADDING", "7z bit vector has nonzero padding bits")
         return result
 
     def _seven_optional_values(self, payload, count, width):
         reader = BinaryReader(payload)
         all_defined = reader.byte()
         if all_defined not in (0, 1):
-            reject(
+            raise AuditError(
                 "NONCANONICAL_7Z_PROPERTY",
                 "7z optional-value vector has a noncanonical allDefined marker",
                 allDefined=all_defined,
@@ -2473,7 +2504,7 @@ class ArchiveAuditor:
         defined = [True] * count if all_defined else read_bit_vector(reader, count)
         external = reader.byte()
         if external != 0:
-            reject(
+            raise AuditError(
                 "UNSUPPORTED_7Z_EXTERNAL_PROPERTY",
                 "Externally stored 7z file properties are unsupported",
                 external=external,
@@ -2489,7 +2520,7 @@ class ArchiveAuditor:
         cursor = start
         for item in ranges:
             if item["offset"] != cursor:
-                reject(
+                raise AuditError(
                     "OVERLAPPING_OR_GAPPED_RECORDS",
                     "Archive physical records overlap or leave undeclared payload",
                     owner=owner,
@@ -2498,7 +2529,7 @@ class ArchiveAuditor:
                 )
             cursor += item["length"]
         if cursor != end:
-            reject(
+            raise AuditError(
                 "UNDECLARED_ARCHIVE_PAYLOAD",
                 "Archive physical records do not cover the containing stream",
                 owner=owner,
@@ -2516,7 +2547,7 @@ def validate_tar_flavor(header, offset):
         return "ustar"
     if magic == b"ustar " and version == b" \0":
         return "gnu"
-    reject(
+    raise AuditError(
         "INVALID_TAR_FORMAT",
         "TAR header is not strict v7, ustar, or GNU ustar",
         offset=offset,
@@ -2527,7 +2558,7 @@ def validate_tar_flavor(header, offset):
 
 def parse_tar_number(raw, field):
     if not raw:
-        reject("INVALID_TAR_NUMBER", "TAR numeric field is empty", field=field)
+        raise AuditError("INVALID_TAR_NUMBER", "TAR numeric field is empty", field=field)
     if raw[0] & 0x80:
         value = int.from_bytes(bytes([raw[0] & 0x7f]) + raw[1:], "big", signed=False)
         return value
@@ -2535,16 +2566,16 @@ def parse_tar_number(raw, field):
     if not stripped:
         return 0
     if any(byte not in b"01234567" for byte in stripped):
-        reject("INVALID_TAR_NUMBER", "TAR numeric field is not octal", field=field, valueHex=raw.hex())
+        raise AuditError("INVALID_TAR_NUMBER", "TAR numeric field is not octal", field=field, valueHex=raw.hex())
     return int(stripped, 8)
 
 
 def parse_decimal(text, field):
     if not re.fullmatch(r"[0-9]{1,20}", text):
-        reject("INVALID_TAR_NUMBER", "PAX numeric value is not an unsigned decimal", field=field, value=text)
+        raise AuditError("INVALID_TAR_NUMBER", "PAX numeric value is not an unsigned decimal", field=field, value=text)
     value = int(text, 10)
     if value > 0xffffffffffffffff:
-        reject("INVALID_TAR_NUMBER", "PAX numeric value exceeds uint64", field=field, value=text)
+        raise AuditError("INVALID_TAR_NUMBER", "PAX numeric value exceeds uint64", field=field, value=text)
     return value
 
 
@@ -2554,34 +2585,34 @@ def parse_pax(data):
     while cursor < len(data):
         space = data.find(b" ", cursor)
         if space < 0:
-            reject("INVALID_PAX_RECORD", "PAX record has no length delimiter", offset=cursor)
+            raise AuditError("INVALID_PAX_RECORD", "PAX record has no length delimiter", offset=cursor)
         length_raw = data[cursor:space]
         if (
             not length_raw.isdigit()
             or length_raw.startswith(b"0")
             or len(length_raw) > 20
         ):
-            reject("INVALID_PAX_RECORD", "PAX record length is invalid", offset=cursor)
+            raise AuditError("INVALID_PAX_RECORD", "PAX record length is invalid", offset=cursor)
         length = int(length_raw)
         record = checked_slice(data, cursor, length, "INVALID_PAX_RECORD")
         if not record.endswith(b"\n") or space >= cursor + length:
-            reject("INVALID_PAX_RECORD", "PAX record boundary is invalid", offset=cursor)
+            raise AuditError("INVALID_PAX_RECORD", "PAX record boundary is invalid", offset=cursor)
         body = record[space - cursor + 1:-1]
         equals = body.find(b"=")
         if equals <= 0:
-            reject("INVALID_PAX_RECORD", "PAX record lacks a key/value separator", offset=cursor)
+            raise AuditError("INVALID_PAX_RECORD", "PAX record lacks a key/value separator", offset=cursor)
         key = strict_decode(body[:equals], "ascii", "INVALID_PAX_KEY")
         value = strict_decode(body[equals + 1:], "utf-8", "INVALID_PAX_VALUE")
         if key in result:
-            reject("DUPLICATE_PAX_KEY", "PAX metadata key is repeated", key=key)
+            raise AuditError("DUPLICATE_PAX_KEY", "PAX metadata key is repeated", key=key)
         if key.startswith("GNU.sparse") or key.startswith("SCHILY.xattr"):
-            reject("UNSUPPORTED_TAR_EXTENSION", "Sparse or extended-attribute TAR metadata is unsupported", key=key)
+            raise AuditError("UNSUPPORTED_TAR_EXTENSION", "Sparse or extended-attribute TAR metadata is unsupported", key=key)
         allowed = {
             "path", "linkpath", "size", "uid", "gid", "uname", "gname",
             "mode", "mtime", "atime", "ctime", "comment",
         }
         if key not in allowed:
-            reject("UNSUPPORTED_TAR_EXTENSION", "PAX metadata key is unsupported", key=key)
+            raise AuditError("UNSUPPORTED_TAR_EXTENSION", "PAX metadata key is unsupported", key=key)
         result[key] = value
         cursor += length
     return result
@@ -2650,10 +2681,10 @@ def is_structural_tar(data, member_limit):
 
 def parse_zstd_header(data):
     if len(data) < 6 or not data.startswith(ZSTD_SIGNATURE):
-        reject("INVALID_ZSTD_HEADER", "zstd frame header is invalid")
+        raise AuditError("INVALID_ZSTD_HEADER", "zstd frame header is invalid")
     descriptor = data[4]
     if descriptor & 0x18:
-        reject("INVALID_ZSTD_HEADER", "zstd frame descriptor has a reserved bit set")
+        raise AuditError("INVALID_ZSTD_HEADER", "zstd frame descriptor has a reserved bit set")
     size_flag = descriptor >> 6
     single_segment = bool(descriptor & 0x20)
     checksum = bool(descriptor & 0x04)
@@ -2674,7 +2705,7 @@ def parse_zstd_header(data):
             frame_content_size += 256
         cursor += content_size_width
     if dictionary_id:
-        reject("UNSUPPORTED_ZSTD_DICTIONARY", "Dictionary-compressed zstd frames are unsupported", dictionaryId=dictionary_id)
+        raise AuditError("UNSUPPORTED_ZSTD_DICTIONARY", "Dictionary-compressed zstd frames are unsupported", dictionaryId=dictionary_id)
     return cursor, {
         "frameDescriptor": f"{descriptor:02x}",
         "singleSegment": single_segment,
@@ -2705,14 +2736,14 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
     if archive_end is None:
         archive_end = len(data)
     if signature_offset < 0 or signature_offset > archive_end:
-        reject(
+        raise AuditError(
             "SEVEN_ZIP_SIGNATURE_OUT_OF_RANGE",
             "7z signature offset is outside the containing byte stream",
             offset=signature_offset,
             containerLength=archive_end,
         )
     if archive_end - signature_offset < 32:
-        reject(
+        raise AuditError(
             "TRUNCATED_7Z_START_HEADER",
             "7z start header is shorter than 32 bytes",
             offset=signature_offset,
@@ -2720,12 +2751,12 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
         )
     signature = data[signature_offset:signature_offset + 32]
     if signature[:6] != SEVEN_ZIP_SIGNATURE:
-        reject("INVALID_7Z_SIGNATURE", "7z signature is invalid", offset=signature_offset)
+        raise AuditError("INVALID_7Z_SIGNATURE", "7z signature is invalid", offset=signature_offset)
     major, minor = signature[6], signature[7]
     if major != 0 or minor > 4:
-        reject("UNSUPPORTED_7Z_VERSION", "7z archive version is unsupported", major=major, minor=minor)
+        raise AuditError("UNSUPPORTED_7Z_VERSION", "7z archive version is unsupported", major=major, minor=minor)
     if zlib.crc32(signature[12:32]) & 0xffffffff != struct.unpack_from("<I", signature, 8)[0]:
-        reject(
+        raise AuditError(
             "SEVEN_ZIP_START_HEADER_CRC_MISMATCH",
             "7z start-header checksum is invalid",
             offset=signature_offset,
@@ -2734,7 +2765,7 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
     next_offset, next_size, next_crc = struct.unpack_from("<QQI", signature, 12)
     payload_start = signature_offset + 32
     if next_offset > archive_end - payload_start:
-        reject(
+        raise AuditError(
             "SEVEN_ZIP_NEXT_HEADER_OUT_OF_RANGE",
             "7z next-header offset is outside the containing byte stream",
             nextHeaderOffset=next_offset,
@@ -2742,7 +2773,7 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
         )
     next_start = payload_start + next_offset
     if next_size > archive_end - next_start:
-        reject(
+        raise AuditError(
             "SEVEN_ZIP_NEXT_HEADER_OUT_OF_RANGE",
             "7z next header extends outside the containing byte stream",
             nextHeaderOffset=next_offset,
@@ -2751,14 +2782,14 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
         )
     next_end = next_start + next_size
     if next_end != archive_end:
-        reject(
+        raise AuditError(
             "TRAILING_7Z_PAYLOAD",
             "7z next header does not end at the archive boundary",
             nextHeaderEnd=next_end,
             archiveLength=archive_end,
         )
     if next_size == 0 and next_offset != 0:
-        reject(
+        raise AuditError(
             "UNDECLARED_7Z_EMPTY_PAYLOAD",
             "A 7z archive with no next header cannot declare preceding payload bytes",
             payloadLength=next_offset,
@@ -2778,7 +2809,7 @@ def verify_seven_zip_next_header(data, envelope):
     """Expensive phase: the caller must charge the work budget first."""
     next_end = envelope.next_start + envelope.next_size
     if crc32_range(data, envelope.next_start, next_end) != envelope.next_crc:
-        reject(
+        raise AuditError(
             "SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH",
             "7z next-header checksum is invalid",
             offset=envelope.signature_offset,
@@ -2858,7 +2889,7 @@ class PeLayout:
 
 
 def malformed_pe(message, **details):
-    reject("MALFORMED_SFX_PE_PREFIX", message, **details)
+    raise AuditError("MALFORMED_SFX_PE_PREFIX", message, **details)
 
 
 def parse_win_certificate_table(data, start, length, limits):
@@ -2873,7 +2904,7 @@ def parse_win_certificate_table(data, start, length, limits):
     position = start
     while position < end:
         if end - position < WIN_CERTIFICATE_HEADER_LENGTH:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE entry header is truncated by the declared table",
                 offset=position,
@@ -2883,14 +2914,14 @@ def parse_win_certificate_table(data, start, length, limits):
         revision = u16(data, position + 4)
         certificate_type = u16(data, position + 6)
         if entry_length < WIN_CERTIFICATE_HEADER_LENGTH:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE dwLength is smaller than its own header",
                 offset=position,
                 declaredLength=entry_length,
             )
         if entry_length > end - position:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE entry extends past the declared certificate table",
                 offset=position,
@@ -2898,14 +2929,14 @@ def parse_win_certificate_table(data, start, length, limits):
                 availableLength=end - position,
             )
         if revision not in WIN_CERTIFICATE_REVISIONS:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE entry declares an unsupported revision",
                 offset=position,
                 revision=f"{revision:04x}",
             )
         if certificate_type not in WIN_CERTIFICATE_TYPES:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE entry declares an unsupported certificate type",
                 offset=position,
@@ -2917,7 +2948,7 @@ def parse_win_certificate_table(data, start, length, limits):
             * WIN_CERTIFICATE_ALIGNMENT
         )
         if padded_length > end - position:
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE alignment padding extends past the declared certificate table",
                 offset=position,
@@ -2926,7 +2957,7 @@ def parse_win_certificate_table(data, start, length, limits):
                 availableLength=end - position,
             )
         if any(checked_slice(data, position + entry_length, padded_length - entry_length)):
-            reject(
+            raise AuditError(
                 "MALFORMED_PE_CERTIFICATE",
                 "WIN_CERTIFICATE alignment padding is nonzero",
                 offset=position + entry_length,
@@ -2934,7 +2965,7 @@ def parse_win_certificate_table(data, start, length, limits):
             )
         entries.append(CertificateEntry(position, entry_length, revision, certificate_type))
         if len(entries) > limits.max_certificate_entries:
-            reject(
+            raise AuditError(
                 "CERTIFICATE_ENTRY_LIMIT",
                 "PE certificate table declares more entries than the configured ceiling",
                 count=len(entries),
@@ -2942,14 +2973,14 @@ def parse_win_certificate_table(data, start, length, limits):
             )
         position += padded_length
     if position != end:
-        reject(
+        raise AuditError(
             "MALFORMED_PE_CERTIFICATE",
             "WIN_CERTIFICATE entries do not consume the declared certificate table exactly",
             declaredEnd=position,
             certificateTableEnd=end,
         )
     if not entries:
-        reject(
+        raise AuditError(
             "MALFORMED_PE_CERTIFICATE",
             "PE declares a certificate table that contains no WIN_CERTIFICATE entry",
             offset=start,
@@ -3152,7 +3183,7 @@ def describe_unclassified_overlay(data, layout, limits, nested):
     image_scan_end = min(layout.image_end, allowance + len(SEVEN_ZIP_SIGNATURE))
     inside_image = data.find(SEVEN_ZIP_SIGNATURE, 0, image_scan_end)
     if inside_image >= 0:
-        reject(
+        raise AuditError(
             "SFX_SIGNATURE_OVERLAPS_PE_IMAGE",
             "Embedded 7z signature overlaps PE headers or section data",
             signatureOffset=inside_image,
@@ -3169,7 +3200,7 @@ def describe_unclassified_overlay(data, layout, limits, nested):
             certificate_scan_end,
         )
         if inside_certificate >= 0:
-            reject(
+            raise AuditError(
                 "SFX_SIGNATURE_INSIDE_CERTIFICATE",
                 "Embedded 7z signature lies inside the declared PE certificate table",
                 signatureOffset=inside_certificate,
@@ -3177,14 +3208,14 @@ def describe_unclassified_overlay(data, layout, limits, nested):
                 certificateLength=layout.certificate_length,
             )
     if layout.overlay_end > layout.overlay_start:
-        reject(
+        raise AuditError(
             "UNCLASSIFIED_PE_OVERLAY",
             "MZ/PE input carries overlay bytes that are not a 7z archive",
             overlayStart=layout.overlay_start,
             overlayLength=layout.overlay_end - layout.overlay_start,
             nested=nested,
         )
-    reject(
+    raise AuditError(
         "MISSING_7Z_SFX_SIGNATURE",
         "MZ/PE input contains no embedded 7z signature",
         nested=nested,
@@ -3253,7 +3284,7 @@ def detect_sfx_7z(data, state, nested=False):
             if valid_envelope is None:
                 valid_envelope = envelope
         if len(valid_candidates) == 2:
-            reject(
+            raise AuditError(
                 "AMBIGUOUS_7Z_SIGNATURE",
                 "SFX contains multiple valid 7z signature envelopes",
                 firstOffset=valid_candidates[0],
@@ -3266,7 +3297,7 @@ def detect_sfx_7z(data, state, nested=False):
         # unclassified and no hidden suffix can exist.
         return Detection("7z", valid_candidates[0], layout, valid_envelope)
     if not fully_scanned:
-        reject(
+        raise AuditError(
             "SFX_OVERLAY_SCAN_LIMIT",
             "MZ/PE overlay extends past the configured scan allowance with no 7z archive found",
             overlayStart=overlay_start,
@@ -3343,7 +3374,7 @@ def compare_manifests(left, right):
     for side, manifest in (("a", left), ("b", right)):
         schema = manifest.get("schema") if isinstance(manifest, dict) else None
         if schema != SCHEMA:
-            reject(
+            raise AuditError(
                 "UNSUPPORTED_MANIFEST_SCHEMA",
                 "Manifest schema is not the schema this auditor emits",
                 side=side,

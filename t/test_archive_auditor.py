@@ -57,20 +57,8 @@ EXPECTED_BUDGET_REJECTION_CODES = frozenset({
     "SFX_SIGNATURE_CANDIDATE_LIMIT",
     "SFX_SIGNATURE_OCCURRENCE_LIMIT",
 })
-EXPECTED_FORWARDING_SITE_COUNTS = {
-    ("_bounded_range", "reject", "code"): 1,
-    ("_reject_compressed_tail", "reject", "code"): 1,
-    ("checked_slice", "reject", "code"): 1,
-    ("classify_unix_file_type", "reject", "code"): 2,
-    ("reject", "AuditError", "code"): 1,
-    ("require_end", "reject", "code"): 1,
-    ("strict_decode", "reject", "code"): 1,
-}
-EXPECTED_CONDITIONAL_REJECTION_CODES = frozenset({
-    "AMBIGUOUS_ZIP_EOCD",
-    "INVALID_ZIP_EOCD",
-})
-RESOLVED_REJECTION_CODES = frozenset({
+EXPECTED_STATIC_DIAGNOSTIC_CALLS = 267
+FORMERLY_DYNAMIC_REJECTION_CODES = frozenset({
     "AMBIGUOUS_ZIP_EOCD",
     "CONCATENATED_BZIP2_STREAM",
     "CONCATENATED_XZ_STREAM",
@@ -2350,15 +2338,105 @@ class ArchiveAuditorTests(unittest.TestCase):
                     AUDITOR.crc32_range(data, start, end)
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
 
-    def extract_rejection_evidence(self, source):
+    def extract_static_diagnostic_codes(self, source):
         pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
         tree = ast.parse(source)
-        rejection_callees = frozenset({"reject", "AuditError"})
         parents = {
             child: parent
             for parent in ast.walk(tree)
             for child in ast.iter_child_nodes(parent)
         }
+
+        stores = {}
+        other_bindings = set()
+        attribute_mutations = set()
+        subscript_mutations = set()
+        namespace_reflection = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                stores.setdefault(node.id, []).append(node)
+            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del):
+                other_bindings.add(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                other_bindings.add(node.name)
+            elif isinstance(node, ast.arg):
+                other_bindings.add(node.arg)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                other_bindings.update(
+                    alias.asname or alias.name.split(".", 1)[0]
+                    for alias in node.names
+                )
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                other_bindings.add(node.name)
+            elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
+                other_bindings.add(node.name)
+            elif isinstance(node, ast.MatchMapping) and node.rest:
+                other_bindings.add(node.rest)
+            elif (
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+            ):
+                attribute_mutations.add(node.attr)
+            elif (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                subscript_mutations.add(node.slice.value)
+            for parameter in getattr(node, "type_params", ()):
+                name = getattr(parameter, "name", None)
+                if name:
+                    other_bindings.add(name)
+            if (
+                (
+                    isinstance(node, ast.Name)
+                    and isinstance(node.ctx, ast.Load)
+                    and node.id
+                    in {
+                        "delattr",
+                        "eval",
+                        "exec",
+                        "globals",
+                        "locals",
+                        "setattr",
+                        "vars",
+                    }
+                )
+                or (
+                    isinstance(node, ast.Attribute)
+                    and node.attr
+                    in {
+                        "__dict__",
+                        "delattr",
+                        "eval",
+                        "exec",
+                        "globals",
+                        "locals",
+                        "setattr",
+                        "vars",
+                    }
+                )
+            ):
+                namespace_reflection = True
+
+        module_literals = {}
+        for statement in tree.body:
+            if isinstance(statement, ast.Assign):
+                targets = statement.targets
+                value = statement.value
+            elif isinstance(statement, ast.AnnAssign):
+                targets = [statement.target]
+                value = statement.value
+            else:
+                continue
+            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    module_literals.setdefault(target.id, []).append(
+                        (target, value.value)
+                    )
 
         def containing_function(node):
             while node in parents:
@@ -2367,113 +2445,171 @@ class ArchiveAuditorTests(unittest.TestCase):
                     return node
             return None
 
-        def static_strings(node):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                return {node.value}
-            if isinstance(node, ast.IfExp):
-                body = static_strings(node.body)
-                orelse = static_strings(node.orelse)
-                if body is not None and orelse is not None:
-                    return body | orelse
-            return None
-
-        def static_codes(node):
-            values = static_strings(node)
-            if values is not None and all(pattern.fullmatch(value) for value in values):
-                return values
-            return None
+        def module_literal(name, node):
+            owner = node
+            while owner in parents:
+                owner = parents[owner]
+                if isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    declared_global = any(
+                        isinstance(candidate, ast.Global)
+                        and name in candidate.names
+                        and containing_function(candidate) is owner
+                        for candidate in ast.walk(owner)
+                    )
+                    if not declared_global:
+                        return None
+                    break
+                if isinstance(
+                    owner,
+                    (
+                        ast.Lambda,
+                        ast.ClassDef,
+                        ast.ListComp,
+                        ast.SetComp,
+                        ast.DictComp,
+                        ast.GeneratorExp,
+                    ),
+                ):
+                    return None
+            bindings = module_literals.get(name, [])
+            name_stores = stores.get(name, [])
+            if (
+                len(bindings) != 1
+                or len(name_stores) != 1
+                or name in other_bindings
+                or name in attribute_mutations
+                or name in subscript_mutations
+                or namespace_reflection
+            ):
+                return None
+            target, value = bindings[0]
+            if (
+                name_stores[0] is not target
+                or target.lineno >= node.lineno
+                or not pattern.fullmatch(value)
+            ):
+                return None
+            return value
 
         direct_calls = []
         non_name_calls = []
+        reject_sites = []
         for node in ast.walk(tree):
+            if (
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "reject"
+            ):
+                reject_sites.append(node.lineno)
+            elif (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id == "reject"
+            ):
+                reject_sites.append(node.lineno)
+            elif isinstance(node, ast.Attribute) and node.attr == "reject":
+                reject_sites.append(node.lineno)
             if not isinstance(node, ast.Call):
                 continue
-            if isinstance(node.func, ast.Name) and node.func.id in rejection_callees:
+            if isinstance(node.func, ast.Name) and node.func.id == "AuditError":
                 direct_calls.append(node)
-            elif isinstance(node.func, ast.Attribute) and node.func.attr in rejection_callees:
+            elif isinstance(node.func, ast.Attribute) and node.func.attr == "AuditError":
                 non_name_calls.append(node.lineno)
+
+        indirect_uses = []
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id == "AuditError"
+            ):
+                continue
+            parent = parents.get(node)
+            if isinstance(parent, ast.Call) and parent.func is node:
+                continue
+            cursor = node
+            while isinstance(parents.get(cursor), ast.Tuple):
+                cursor = parents[cursor]
+            parent = parents.get(cursor)
+            if isinstance(parent, ast.ExceptHandler) and parent.type is cursor:
+                continue
+            if (
+                isinstance(parent, ast.Call)
+                and isinstance(parent.func, ast.Name)
+                and parent.func.id == "isinstance"
+                and cursor in parent.args[1:]
+            ):
+                continue
+            indirect_uses.append(node.lineno)
 
         self.assertEqual(
             [],
-            non_name_calls,
-            f"structured-error callees must be direct ast.Name nodes: {non_name_calls}",
+            reject_sites,
+            f"the dynamic reject bridge is forbidden: {reject_sites}",
         )
         self.assertEqual(
-            258,
-            len(direct_calls),
-            "physical direct structured-error call-site count drifted",
+            [],
+            non_name_calls,
+            f"AuditError constructors must be direct ast.Name calls: {non_name_calls}",
+        )
+        self.assertEqual(
+            [],
+            indirect_uses,
+            f"indirect AuditError constructor uses are forbidden: {indirect_uses}",
         )
 
         missing_arguments = [node.lineno for node in direct_calls if not node.args]
         self.assertEqual(
             [],
             missing_arguments,
-            f"structured-error calls lack a code argument: {missing_arguments}",
+            f"AuditError calls lack a positional code argument: {missing_arguments}",
         )
 
-        static_sites = []
-        forwarding_sites = []
-        unextractable = []
-        declarative_forms = set()
-        static_raised = set()
+        raised = set()
+        module_bound = set()
+        invalid_code_expressions = []
         for node in direct_calls:
             first = node.args[0]
-            codes = static_codes(first)
-            if codes is not None:
-                static_sites.append(node)
-                static_raised.update(codes)
-                declarative_forms.add(ast.dump(first, include_attributes=False))
-            elif isinstance(first, ast.Name):
-                forwarding_sites.append(node)
-            else:
-                unextractable.append(
-                    (node.lineno, ast.dump(first, include_attributes=False))
-                )
+            if (
+                isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+                and pattern.fullmatch(first.value)
+            ):
+                raised.add(first.value)
+                continue
+            if isinstance(first, ast.Name):
+                value = module_literal(first.id, first)
+                if value is not None:
+                    raised.add(value)
+                    module_bound.add(value)
+                    continue
+            invalid_code_expressions.append(
+                (node.lineno, type(first).__name__, ast.unparse(first))
+            )
 
         self.assertEqual(
             [],
-            unextractable,
-            f"unextractable structured-error code expressions: {unextractable}",
+            invalid_code_expressions,
+            f"diagnostic code expression violates the static rule: "
+            f"{invalid_code_expressions}",
         )
-        self.assertEqual(8, len(forwarding_sites), "forwarding site count drifted")
-        self.assertEqual(
-            158,
-            len(declarative_forms),
-            "unique declarative rejection-code form count drifted",
-        )
-        constant_raised = {
-            node.args[0].value
-            for node in static_sites
-            if isinstance(node.args[0], ast.Constant)
+        return {
+            "tree": tree,
+            "calls": direct_calls,
+            "raised": raised,
+            "moduleBound": module_bound,
         }
 
-        forwarding_counts = {}
-        for node in forwarding_sites:
-            owner = containing_function(node)
-            key = (
-                owner.name if owner is not None else "<module>",
-                node.func.id,
-                node.args[0].id,
-            )
-            forwarding_counts[key] = forwarding_counts.get(key, 0) + 1
-        self.assertEqual(
-            EXPECTED_FORWARDING_SITE_COUNTS,
-            forwarding_counts,
-            "forwarding structured-error sites must stay explicitly enumerated",
-        )
+    def extract_rejection_evidence(self, source):
+        evidence = self.extract_static_diagnostic_codes(source)
+        tree = evidence["tree"]
+        raised = evidence["raised"]
+        pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
         self.assertEqual(
-            len(direct_calls),
-            len(static_sites) + len(forwarding_sites),
-            "every physical structured-error call must resolve",
+            EXPECTED_STATIC_DIAGNOSTIC_CALLS,
+            len(evidence["calls"]),
+            "physical AuditError constructor count drifted",
         )
-        conditional_raised = static_raised - constant_raised
-        self.assertEqual(
-            EXPECTED_CONDITIONAL_REJECTION_CODES,
-            conditional_raised,
-            "conditional rejection-code extraction drifted",
-        )
-
         literals = {
             node.value
             for node in ast.walk(tree)
@@ -2481,34 +2617,25 @@ class ArchiveAuditorTests(unittest.TestCase):
             and isinstance(node.value, str)
             and pattern.fullmatch(node.value)
         }
-        expected_residue = RESOLVED_REJECTION_CODES | CLASSIFIED_NON_CODE_LITERALS
-        residue = literals - constant_raised
         self.assertEqual(
-            expected_residue,
-            residue,
-            "every code-shaped literal outside direct constant raises must be classified",
+            CLASSIFIED_NON_CODE_LITERALS,
+            literals - raised,
+            "every code-shaped literal outside static AuditError sites must be classified",
         )
-        self.assertFalse(
-            constant_raised & expected_residue,
-            "directly raised literals and the explicit residue must be disjoint",
-        )
-        self.assertFalse(
-            RESOLVED_REJECTION_CODES & CLASSIFIED_NON_CODE_LITERALS,
-            "resolved rejection codes and classified non-codes must be disjoint",
-        )
-        raised = constant_raised | RESOLVED_REJECTION_CODES
         self.assertEqual(
             literals,
             raised | CLASSIFIED_NON_CODE_LITERALS,
-            "raised, resolved, and classified non-code literals must cover the outer bound",
+            "the literal bound is sound only under the enforced static-code rule",
+        )
+        self.assertTrue(
+            FORMERLY_DYNAMIC_REJECTION_CODES <= raised,
+            "formerly dynamic rejection codes must remain statically emitted",
         )
         return {
             "literals": literals,
             "raised": raised,
-            "constantRaised": constant_raised,
-            "resolved": RESOLVED_REJECTION_CODES,
-            "physicalCallSites": len(direct_calls),
-            "declarativeForms": len(declarative_forms),
+            "moduleBound": evidence["moduleBound"],
+            "physicalCallSites": len(evidence["calls"]),
         }
 
     def assert_documented_rejection_contract(
@@ -2572,6 +2699,16 @@ class ArchiveAuditorTests(unittest.TestCase):
             text,
             "the specification must state the one-sided rejection-code contract",
         )
+        self.assertIn(
+            "literal bound are sound only under the enforced",
+            text,
+            "the specification must qualify the literal bound",
+        )
+        self.assertIn(
+            "Any diagnostic constructor form not enumerated by this checker is outside",
+            text,
+            "the specification must state the static checker's residual",
+        )
 
         budget = re.compile(r"^(?:SFX_|ENVELOPE_).*_LIMIT$")
         marker = "Exhausting a budget is a deliberate, stable rejection"
@@ -2603,7 +2740,7 @@ class ArchiveAuditorTests(unittest.TestCase):
         text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
         self.assert_documented_rejection_contract(source, text)
 
-    def test_nonliteral_rejection_codes_are_classified_and_representative_codes_raise(self):
+    def test_formerly_dynamic_rejection_codes_are_static_and_still_raise(self):
         source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
         evidence = self.extract_rejection_evidence(source)
         raised = evidence["raised"]
@@ -2685,8 +2822,186 @@ class ArchiveAuditorTests(unittest.TestCase):
                 self.assertEqual(expected, context.exception.code)
                 self.assertIn(expected, raised)
 
+    def test_diagnostic_code_selectors_reject_unknown_values(self):
+        operations = (
+            lambda: AUDITOR.checked_slice(b"", 0, 1, "COMPUTED_CODE"),
+            lambda: AUDITOR.strict_decode(b"\xff", "ascii", "COMPUTED_CODE"),
+            lambda: AUDITOR.classify_unix_file_type(
+                0o120777,
+                "COMPUTED_CODE",
+                "member",
+                "path",
+            ),
+            lambda: AUDITOR.BinaryReader(b"x").require_end("COMPUTED_CODE"),
+            lambda: AUDITOR.ArchiveAuditor()._reject_compressed_tail(
+                "computed",
+                b"x",
+                0,
+            ),
+        )
+        for operation in operations:
+            with self.subTest(operation=operation.__code__.co_firstlineno):
+                with self.assertRaises(ValueError):
+                    operation()
+
+    def computed_code_refutation(self, source):
+        anchor = (
+            "                raise AuditError(\n"
+            '                    "CONCATENATED_BZIP2_STREAM",\n'
+            '                    f"Only one {description} is accepted",'
+        )
+        replacement = (
+            '                code = "CONCATENATED_BZIP2_STREAM"\n'
+            '                code = archive_format.upper() + "_CONCATENATED"\n'
+            "                raise AuditError(\n"
+            "                    code,\n"
+            '                    f"Only one {description} is accepted",'
+        )
+        self.assertEqual(1, source.count(anchor))
+        return source.replace(anchor, replacement, 1)
+
+    def test_static_diagnostic_code_rule_rejects_the_computed_code_refutation(self):
+        source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
+        refutation = self.computed_code_refutation(source)
+        pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
+
+        def literals(value):
+            return {
+                node.value
+                for node in ast.walk(ast.parse(value))
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and pattern.fullmatch(node.value)
+            }
+
+        self.assertEqual(literals(source), literals(refutation))
+        attribute_constructor = source.replace(
+            "                raise AuditError(\n"
+            '                    "CONCATENATED_BZIP2_STREAM",',
+            "                raise errors.AuditError(\n"
+            '                    "CONCATENATED_BZIP2_STREAM",',
+            1,
+        )
+        self.assertNotEqual(source, attribute_constructor)
+        controls = (
+            (
+                "computed-code inversion",
+                refutation,
+                "diagnostic code expression violates the static rule.*Name.*code",
+                "archive_format.upper() computed-code refutation was accepted",
+            ),
+            (
+                "structural positive control",
+                attribute_constructor,
+                "AuditError constructors must be direct ast.Name calls",
+                "attribute constructor positive control was accepted",
+            ),
+        )
+        for label, mutated, expected, message in controls:
+            with self.subTest(control=label):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    expected,
+                    msg=message,
+                ):
+                    self.extract_static_diagnostic_codes(mutated)
+
+    def test_static_diagnostic_code_expression_forms_are_rejected(self):
+        literal = 'AuditError("STATIC_LITERAL_CODE", "message")\n'
+        self.assertEqual(
+            {"STATIC_LITERAL_CODE"},
+            self.extract_static_diagnostic_codes(literal)["raised"],
+        )
+        module_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            "def emit():\n"
+            "    global MODULE_BOUND_CODE\n"
+            '    AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        self.assertEqual(
+            {"MODULE_BOUND_CODE"},
+            self.extract_static_diagnostic_codes(module_name)["raised"],
+        )
+
+        rejected = {
+            "concatenation BinOp": '"STATIC_" + "CONCATENATION"',
+            "percent-format BinOp": '"STATIC_%s" % "FORMAT"',
+            "f-string JoinedStr": 'f"STATIC_FSTRING"',
+            "format Call": '"{}".format("STATIC_FORMAT")',
+            "upper Call": '"static_computed".upper()',
+            "lookup Subscript": '{"code": "STATIC_LOOKUP"}["code"]',
+            "attribute": "holder.STATIC_ATTRIBUTE",
+            "conditional IfExp": '"STATIC_TRUE" if condition else "STATIC_FALSE"',
+            "unbound Name": "UNBOUND_STATIC_CODE",
+            "non-string Constant": "123",
+        }
+        for label, expression in rejected.items():
+            with self.subTest(expression=label):
+                mutated = f'AuditError({expression}, "message")\n'
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "diagnostic code expression violates the static rule",
+                ):
+                    self.extract_static_diagnostic_codes(mutated)
+
+        local_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            "def emit(MODULE_BOUND_CODE):\n"
+            '    AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        computed_module_name = (
+            'MODULE_BOUND_CODE = "MODULE_" + "BOUND_CODE"\n'
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        deleted_module_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            "del MODULE_BOUND_CODE\n"
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        late_module_name = (
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+        )
+        reflected_module_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            'globals()["MODULE_BOUND_CODE"] = '
+            'archive_format.upper() + "_CONCATENATED"\n'
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        attributed_module_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            'module.MODULE_BOUND_CODE = "REFLECTED_CODE"\n'
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        subscripted_module_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            'namespace["MODULE_BOUND_CODE"] = "REFLECTED_CODE"\n'
+            'AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        type_parameter_name = (
+            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
+            "class Emit[MODULE_BOUND_CODE]:\n"
+            '    error = AuditError(MODULE_BOUND_CODE, "message")\n'
+        )
+        for label, mutated in (
+            ("local Name", local_name),
+            ("computed module Name", computed_module_name),
+            ("deleted module Name", deleted_module_name),
+            ("late module Name", late_module_name),
+            ("reflected module Name", reflected_module_name),
+            ("attribute-rebound module Name", attributed_module_name),
+            ("subscript-rebound module Name", subscripted_module_name),
+            ("type-parameter Name", type_parameter_name),
+        ):
+            with self.subTest(expression=label):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "diagnostic code expression violates the static rule",
+                ):
+                    self.extract_static_diagnostic_codes(mutated)
+
     def test_documented_rejection_contract_mutation_controls(self):
-        """Dormant strings, exclusions, and budget drift cannot bless documentation."""
+        """Static-code, documentation, exclusion, and budget drift must fail."""
         source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
         text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
         baseline_evidence = self.extract_rejection_evidence(source)
@@ -2694,6 +3009,27 @@ class ArchiveAuditorTests(unittest.TestCase):
         def replace_once(value, old, new):
             self.assertEqual(1, value.count(old), f"mutation anchor drifted: {old!r}")
             return value.replace(old, new, 1)
+
+        module_bound_source = replace_once(
+            source,
+            "except ImportError:\n    zstd = None\n\n\n",
+            "except ImportError:\n    zstd = None\n\n\n"
+            'DUPLICATE_PHYSICAL_NAME = "DUPLICATE_PHYSICAL_NAME"\n\n\n',
+        )
+        module_bound_source = replace_once(
+            module_bound_source,
+            "    def add(self, raw_name, logical_name, ordinal):\n"
+            "        if raw_name in self.raw:",
+            "    def add(self, raw_name, logical_name, ordinal):\n"
+            "        global DUPLICATE_PHYSICAL_NAME\n"
+            "        if raw_name in self.raw:",
+        )
+        module_bound_source = replace_once(
+            module_bound_source,
+            '                "DUPLICATE_PHYSICAL_NAME",',
+            "                DUPLICATE_PHYSICAL_NAME,",
+        )
+        self.assert_documented_rejection_contract(module_bound_source, text)
 
         def must_fail(
             label,
@@ -2710,6 +3046,37 @@ class ArchiveAuditorTests(unittest.TestCase):
                         exclusions,
                     )
                 self.assertIn(expected, str(context.exception))
+
+        deleted_module_name = replace_once(
+            module_bound_source,
+            "        global DUPLICATE_PHYSICAL_NAME\n"
+            "        if raw_name in self.raw:",
+            "        global DUPLICATE_PHYSICAL_NAME\n"
+            "        del DUPLICATE_PHYSICAL_NAME\n"
+            "        if raw_name in self.raw:",
+        )
+        must_fail(
+            "deleted module-bound code",
+            deleted_module_name,
+            text,
+            "diagnostic code expression violates the static rule",
+        )
+        reflected_module_name = replace_once(
+            module_bound_source,
+            "        global DUPLICATE_PHYSICAL_NAME\n"
+            "        if raw_name in self.raw:",
+            "        global DUPLICATE_PHYSICAL_NAME\n"
+            '        globals()["DUPLICATE_PHYSICAL_NAME"] = (\n'
+            '            raw_name.decode("latin-1").upper() + "_CONCATENATED"\n'
+            "        )\n"
+            "        if raw_name in self.raw:",
+        )
+        must_fail(
+            "reflectively rebound module-bound code",
+            reflected_module_name,
+            text,
+            "diagnostic code expression violates the static rule",
+        )
 
         parent_text = replace_once(
             text,
@@ -2734,7 +3101,7 @@ class ArchiveAuditorTests(unittest.TestCase):
             "documented dormant literal",
             source + '\n_DORMANT_CODE = "DORMANT_REJECTION_CODE"\n',
             text + "\n`DORMANT_REJECTION_CODE`\n",
-            "outside direct constant raises",
+            "outside static AuditError sites",
         )
 
         renamed_source = replace_once(
@@ -2747,19 +3114,7 @@ class ArchiveAuditorTests(unittest.TestCase):
             "renamed raise with dormant old code",
             renamed_source,
             text,
-            "outside direct constant raises",
-        )
-        renamed_conditional = replace_once(
-            source,
-            '"AMBIGUOUS_ZIP_EOCD" if candidates else "INVALID_ZIP_EOCD"',
-            '"RENAMED_ZIP_EOCD" if candidates else "INVALID_ZIP_EOCD"',
-        )
-        renamed_conditional += '\n_DORMANT_OLD_CODE = "AMBIGUOUS_ZIP_EOCD"\n'
-        must_fail(
-            "renamed conditional raise with dormant old code",
-            renamed_conditional,
-            text,
-            "conditional rejection-code extraction drifted",
+            "outside static AuditError sites",
         )
 
         must_fail(
@@ -2776,22 +3131,21 @@ class ArchiveAuditorTests(unittest.TestCase):
             "cannot suppress raised codes",
             STRUCTURAL_IDENTIFIERS | {"UNCLASSIFIED_PE_OVERLAY"},
         )
-        for code in sorted(RESOLVED_REJECTION_CODES):
+        for code in sorted(FORMERLY_DYNAMIC_REJECTION_CODES):
             must_fail(
-                f"newly resolved structural exclusion {code}",
+                f"formerly dynamic structural exclusion {code}",
                 source,
                 text,
                 "cannot suppress raised codes",
                 STRUCTURAL_IDENTIFIERS | {code},
             )
 
-        no_raised_source = source.replace("reject(", "mutated_reject(")
-        no_raised_source = no_raised_source.replace("AuditError(", "MutatedAuditError(")
+        no_raised_source = source.replace("AuditError(", "MutatedAuditError(")
         must_fail(
             "empty raised extraction",
             no_raised_source,
             text,
-            "physical direct structured-error call-site count",
+            "physical AuditError constructor count",
         )
         must_fail(
             "empty documented extraction",
@@ -2807,6 +3161,24 @@ class ArchiveAuditorTests(unittest.TestCase):
                 "a selected catalog",
             ),
             "specification must state the one-sided rejection-code contract",
+        )
+        must_fail(
+            "unqualified literal bound",
+            source,
+            text.replace(
+                "literal bound are sound only under the enforced",
+                "derived from the implementation",
+            ),
+            "specification must qualify the literal bound",
+        )
+        must_fail(
+            "missing checker residual",
+            source,
+            text.replace(
+                "Any diagnostic constructor form not enumerated by this checker is outside",
+                "All diagnostic constructor forms are inside",
+            ),
+            "specification must state the static checker's residual",
         )
         all_raised = baseline_evidence["raised"]
         exhaustive_text = text + "\n" + " ".join(
@@ -2830,7 +3202,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                 f"unextractable direct {label}",
                 replace_once(source, direct_code, expression),
                 text,
-                "unextractable structured-error code expressions",
+                "diagnostic code expression violates the static rule",
             )
 
         must_fail(
@@ -2841,27 +3213,17 @@ class ArchiveAuditorTests(unittest.TestCase):
                 'strict_decode(entry["nameRaw"], encoding, "NEW_FORWARD_CODE")',
             ),
             text,
-            "outside direct constant raises",
-        )
-        must_fail(
-            "unclassified table-bound literal",
-            replace_once(
-                source,
-                '"CONCATENATED_BZIP2_STREAM"',
-                '"NEW_TABLE_BOUND_CODE"',
-            ),
-            text,
-            "outside direct constant raises",
+            "outside static AuditError sites",
         )
         must_fail(
             "attribute rejection callee",
             replace_once(
                 source,
-                'reject(\n                "DUPLICATE_PHYSICAL_NAME"',
-                'self.reject(\n                "DUPLICATE_PHYSICAL_NAME"',
+                'raise AuditError(\n                "DUPLICATE_PHYSICAL_NAME"',
+                'raise errors.AuditError(\n                "DUPLICATE_PHYSICAL_NAME"',
             ),
             text,
-            "structured-error callees must be direct ast.Name nodes",
+            "AuditError constructors must be direct ast.Name calls",
         )
 
         addition_victim = '"DUPLICATE_PHYSICAL_NAME"'
@@ -2889,7 +3251,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                 f"removed budget with dormant literal {code}",
                 removed_source + f'\n_DORMANT_OLD_BUDGET = "{code}"\n',
                 removed_text,
-                "outside direct constant raises",
+                "outside static AuditError sites",
             )
             must_fail(
                 f"removed budget {code}",
