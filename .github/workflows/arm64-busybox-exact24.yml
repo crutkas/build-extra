@@ -1,0 +1,129 @@
+name: ARM64 BusyBox exact24 proof
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/arm64-busybox-exact24.yml
+      - arm64-validation/busybox-exact24-*
+      - arm64-validation/busybox-residual-coreutils-*
+      - t/check-arm64-busybox-exact24.ps1
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  exact24:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: revalidate frozen fork-local inputs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ($env:GITHUB_REPOSITORY -cne 'crutkas/build-extra') {
+            throw "Unexpected repository: $env:GITHUB_REPOSITORY"
+          }
+          $pr4 = gh api 'repos/crutkas/build-extra/pulls/4' |
+            ConvertFrom-Json
+          if ($pr4.state -cne 'open' -or $pr4.merged -or
+              $pr4.head.repo.full_name -cne 'crutkas/build-extra' -or
+              $pr4.head.ref -cne 'crutkas-arm64-busybox-packaging' -or
+              $pr4.head.sha -cne '50de8f12409d8cc8e16aef190629073db1a8606d') {
+            throw 'Frozen crutkas/build-extra#4 changed'
+          }
+          $pr12 = gh api 'repos/crutkas/build-extra/pulls/12' |
+            ConvertFrom-Json
+          if ($pr12.state -cne 'open' -or $pr12.merged -or
+              $pr12.head.repo.full_name -cne 'crutkas/build-extra' -or
+              $pr12.head.sha -cne '3ef6d935092dc6ab2e376bcd0ffc74fa52dac39d') {
+            throw 'Frozen crutkas/build-extra#12 changed'
+          }
+
+          $blob = gh api (
+            'repos/crutkas/build-extra/git/blobs/' +
+            '7ceb6596e7258e5420a9c86fd9ef9d2aa8519aec'
+          ) | ConvertFrom-Json
+          $frozenSource = Join-Path $env:RUNNER_TEMP 'busybox-retained-v2.55.0.4.tsv'
+          [IO.File]::WriteAllBytes(
+            $frozenSource,
+            [Convert]::FromBase64String(($blob.content -replace '\s', ''))
+          )
+          "FROZEN_SOURCE=$frozenSource" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+          $artifact = gh api (
+            'repos/crutkas/build-extra/actions/artifacts/9208307139'
+          ) | ConvertFrom-Json
+          if ($artifact.expired -or $artifact.name -cne 'portable-artifacts-aarch64' -or
+              $artifact.workflow_run.id -ne 31771293786 -or
+              $artifact.workflow_run.head_sha -cne
+                '50de8f12409d8cc8e16aef190629073db1a8606d') {
+            throw 'Frozen PR #4 control artifact changed or expired'
+          }
+      - name: validate checked-in derivation and dispositions
+        shell: pwsh
+        run: |
+          ./t/check-arm64-busybox-exact24.ps1 `
+            -FrozenSourcePath $env:FROZEN_SOURCE `
+            -DataOnly
+      - name: download and materialize the exact fork-local control
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP 'pr4-portable'
+          gh run download 31771293786 `
+            --repo crutkas/build-extra `
+            --name portable-artifacts-aarch64 `
+            --dir $download
+          $portable = Join-Path $download 'PortableGit-0-test-arm64.7z.exe'
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $portable).Hash.ToLowerInvariant()
+          if ($hash -cne 'e4208e3d92172011475644d7afb2c207ae971a64e615f5330c5f6079001ded03') {
+            throw "Unexpected PR #4 portable artifact SHA-256: $hash"
+          }
+
+          $control = Join-Path $env:RUNNER_TEMP 'exact24-control'
+          $candidate = Join-Path $env:RUNNER_TEMP 'exact24-candidate'
+          $extract = Start-Process -FilePath $portable `
+            -ArgumentList "-o`"$control`" -y" `
+            -Wait -PassThru
+          if ($extract.ExitCode -ne 0) {
+            throw "The PR #4 portable extractor exited with $($extract.ExitCode)"
+          }
+          $extract = Start-Process -FilePath $portable `
+            -ArgumentList "-o`"$candidate`" -y" `
+            -Wait -PassThru
+          if ($extract.ExitCode -ne 0) {
+            throw "The candidate portable extractor exited with $($extract.ExitCode)"
+          }
+
+          $exact24 = Join-Path $env:RUNNER_TEMP 'exact24-paths.txt'
+          (Import-Csv -Delimiter "`t" `
+            -LiteralPath arm64-validation/busybox-exact24-source-v2.55.0.4.tsv).path |
+            Set-Content -LiteralPath $exact24 -Encoding ascii
+          ./arm64-busybox/materialize.ps1 `
+            -Root $candidate `
+            -BusyBox (Join-Path $candidate 'clangarm64/bin/busybox.exe') `
+            -Shim (Join-Path $candidate 'clangarm64/bin/busybox-shim.exe') `
+            -DefaultList arm64-busybox/default-replacements.txt `
+            -ExperimentalList $exact24 `
+            -RetainedList arm64-busybox/retained-paths.tsv `
+            -Experimental 1
+
+          "CONTROL_ROOT=$control" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "CANDIDATE_ROOT=$candidate" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: compare x64 controls with native ARM64 candidates
+        shell: pwsh
+        run: |
+          ./t/check-arm64-busybox-exact24.ps1 `
+            -ControlRoot $env:CONTROL_ROOT `
+            -CandidateRoot $env:CANDIDATE_ROOT `
+            -OutputDirectory exact24-proof `
+            -FrozenSourcePath $env:FROZEN_SOURCE
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: arm64-busybox-exact24-proof
+          path: exact24-proof
