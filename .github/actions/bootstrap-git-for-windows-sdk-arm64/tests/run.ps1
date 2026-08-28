@@ -180,6 +180,25 @@ function Assert-ContainedPath {
 	} $Parent $Child
 }
 
+function Assert-LocalPathSyntax {
+	param(
+		[Parameter(Mandatory = $true)][object]$Path,
+		[Parameter(Mandatory = $true)][object]$Name
+	)
+	return & $script:bootstrapModule {
+		param($Path, $Name)
+		Assert-LocalPathSyntax $Path $Name
+	} $Path $Name
+}
+
+function Get-LongPath {
+	param([Parameter(Mandatory = $true)][object]$Path)
+	return & $script:bootstrapModule {
+		param($Path)
+		Get-LongPath $Path
+	} $Path
+}
+
 function New-PrivateSdkRoot {
 	param(
 		[Parameter(Mandatory = $true)][object]$RunnerTemp,
@@ -255,7 +274,8 @@ function Assert-Equal {
 function Assert-Throws {
 	param(
 		[Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
-		[Parameter(Mandatory = $true)][string]$Pattern
+		[Parameter(Mandatory = $true)][string]$Pattern,
+		[string]$ForbiddenPattern
 	)
 
 	$caught = $null
@@ -267,8 +287,15 @@ function Assert-Throws {
 	if ($null -eq $caught) {
 		throw "Expected failure matching '$Pattern'"
 	}
-	if ($caught.Exception.Message -notmatch $Pattern) {
-		throw "Expected '$Pattern', got '$($caught.Exception.Message)'"
+	$message = $caught.Exception.Message
+	if (
+		-not [string]::IsNullOrEmpty($ForbiddenPattern) -and
+		$message -cmatch $ForbiddenPattern
+	) {
+		throw "Expected no '$ForbiddenPattern', got '$message'"
+	}
+	if ($message -cnotmatch $Pattern) {
+		throw "Expected '$Pattern', got '$message'"
 	}
 }
 
@@ -465,7 +492,7 @@ function Assert-GateStopsBeforeSideEffects {
 	if ($message -ceq 'SIDE_EFFECT_SENTINEL') {
 		throw 'Admission failure reached a side-effect sentinel'
 	}
-	if ($message -notmatch $ExpectedPattern) {
+	if ($message -cnotmatch $ExpectedPattern) {
 		throw "Expected '$ExpectedPattern', got '$message'"
 	}
 }
@@ -565,9 +592,121 @@ function Get-TestFileFacts {
 	}
 }
 
-$testRoot = Join-Path ([IO.Path]::GetTempPath()) (
+function Resolve-TestRootBase {
+	param(
+		[AllowNull()]
+		[AllowEmptyString()]
+		[AllowEmptyCollection()]
+		[object]$RunnerTemp,
+		[AllowNull()]
+		[AllowEmptyString()]
+		[AllowEmptyCollection()]
+		[object]$ProcessTemp
+	)
+
+	$candidate = $null
+	$source = $null
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $RunnerTemp; Name = 'RUNNER_TEMP' },
+		[pscustomobject]@{ Value = $ProcessTemp; Name = 'TEMP' }
+	)) {
+		if ($null -eq $entry.Value) {
+			continue
+		}
+		if ($entry.Value -isnot [string]) {
+			throw "$($entry.Name) must be a string path"
+		}
+		if ([string]::IsNullOrWhiteSpace($entry.Value)) {
+			continue
+		}
+		$candidate = [string]$entry.Value
+		$source = $entry.Name
+		break
+	}
+	if ($null -eq $candidate) {
+		throw 'No test root base is available from RUNNER_TEMP or TEMP'
+	}
+
+	$name = "test root base ($source)"
+	$trimmed = $candidate.TrimEnd('\')
+	if (
+		-not [IO.Path]::IsPathFullyQualified($candidate) -or
+		$trimmed -notmatch '^[A-Za-z]:\\' -or
+		$trimmed.Contains('/') -or
+		$trimmed.Substring(2).Contains(':') -or
+		$trimmed -match '[*?]'
+	) {
+		throw "$name must be a drive-qualified canonical local path"
+	}
+	if (-not [IO.Directory]::Exists($trimmed)) {
+		throw "$name must identify an existing directory"
+	}
+
+	$longPath = Get-LongPath $trimmed
+	if (-not [IO.Directory]::Exists($longPath)) {
+		throw "$name must identify an existing directory"
+	}
+	$canonical = Assert-LocalPathSyntax $longPath $name
+
+	foreach ($shared in @(
+		[Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::ProgramFiles),
+		[Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::ProgramFilesX86),
+		[Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::Windows),
+		'C:\msys64'
+	)) {
+		if ([string]::IsNullOrEmpty($shared)) {
+			continue
+		}
+		$sharedRoot = $shared.TrimEnd('\')
+		if (
+			[string]::Equals(
+				$canonical,
+				$sharedRoot,
+				[StringComparison]::OrdinalIgnoreCase) -or
+			$canonical.StartsWith(
+				"$sharedRoot\",
+				[StringComparison]::OrdinalIgnoreCase)
+		) {
+			throw "$name resolves to a shared installation root"
+		}
+	}
+	return $canonical
+}
+
+function Get-TestVolumeFileSystem {
+	param([Parameter(Mandatory = $true)][string]$Path)
+
+	$root = [IO.Path]::GetPathRoot($Path)
+	if ([string]::IsNullOrEmpty($root)) {
+		throw "Cannot determine the volume root of '$Path'"
+	}
+	return [IO.DriveInfo]::new($root).DriveFormat
+}
+
+# GitHub-hosted runners point TEMP at a DOS 8.3 path such as
+# C:\Users\RUNNER~1\AppData\Local\Temp. Production path validation rejects
+# any 8.3-shaped segment that reaches it, so prefer RUNNER_TEMP and
+# canonicalize the base explicitly rather than relying on the runtime to
+# expand the alias first.
+$script:AliasRejectionPattern =
+	'short-name alias|relative or noncanonical path components'
+$testRootBase = Resolve-TestRootBase `
+	$env:RUNNER_TEMP ([IO.Path]::GetTempPath())
+$testRoot = Join-Path $testRootBase (
 	"gfw-sdk-bootstrap-tests-$([Guid]::NewGuid().ToString('N'))")
 [void][IO.Directory]::CreateDirectory($testRoot)
+try {
+	$verifiedTestRoot = Assert-SafeExistingDirectory $testRoot 'test root'
+	if ($verifiedTestRoot -cne $testRoot) {
+		throw "The test root '$testRoot' is not its own canonical path"
+	}
+} catch {
+	Remove-Item -LiteralPath $testRoot -Recurse -Force
+	throw
+}
 
 $savedNoSystem = $env:GIT_CONFIG_NOSYSTEM
 $savedGlobal = $env:GIT_CONFIG_GLOBAL
@@ -1046,6 +1185,14 @@ try {
 				Assert-ProductionSdkLock $mutated
 			} 'property count'
 		}
+		Invoke-Test "lock rejects empty object at $path" {
+			$mutated = Copy-Lock $lock
+			Set-LockValue $mutated $path ([pscustomobject]@{})
+			$escaped = [regex]::Escape("lock.$path")
+			Assert-Throws {
+				Assert-ProductionSdkLock $mutated
+			} "^$escaped has an unexpected property count$"
+		}
 	}
 
 	foreach ($path in @(
@@ -1389,17 +1536,25 @@ try {
 		} 'Windows-unsafe Git path'
 	}
 
-	Invoke-Test 'alternate data stream is rejected when supported' {
+	Invoke-Test 'alternate data stream is rejected' {
 		$worktree = New-MaterializedFixture 'alternate-stream'
 		$file = Join-Path $worktree 'bin\tool.exe'
+		$fileSystem = Get-TestVolumeFileSystem $testRoot
+		if ($fileSystem -cne 'NTFS') {
+			throw "The test volume is '$fileSystem'; alternate data " +
+				'stream coverage requires the expected NTFS environment'
+		}
 		try {
 			[IO.File]::WriteAllText(
 				"$file`:probe",
 				"probe`n",
 				[Text.UTF8Encoding]::new($false))
 		} catch [System.NotSupportedException] {
-			Write-Host 'ADS fixture not supported by this filesystem'
-			return
+			throw "The NTFS test volume refused an alternate data " +
+				"stream at '$file': $($_.Exception.Message)"
+		}
+		if ($null -eq (Get-Item -LiteralPath $file -Stream probe)) {
+			throw "The alternate data stream fixture at '$file' is absent"
 		}
 		Assert-Throws {
 			Assert-MaterializedSdkTree `
@@ -1630,7 +1785,7 @@ try {
 		New-TestJunction $junction $junctionTarget
 		Assert-Throws {
 			Assert-SafeExistingDirectory $junction
-		} 'reparse point'
+		} 'reparse point' -ForbiddenPattern $script:AliasRejectionPattern
 		Assert-Throws {
 			Assert-ContainedPath $testRoot (
 				Join-Path $testRoot '..\escape')
@@ -1658,7 +1813,7 @@ try {
 				-Job test `
 				-MatrixDiscriminator arm64 `
 				-Nonce $nonce
-		} 'already exists'
+		} 'already exists' -ForbiddenPattern $script:AliasRejectionPattern
 		Remove-OwnedSdkRoot $ownedRoot
 		if (Test-Path -LiteralPath $root) {
 			throw 'Owned private root was not removed'
@@ -1704,7 +1859,10 @@ try {
 					-Value $systemGit
 			}
 		} $approvedPath $testRoot
-		if ($message -notmatch 'after-root-sentinel') {
+		if ($message -cmatch $script:AliasRejectionPattern) {
+			throw "Post-root failure rejected the test root: $message"
+		}
+		if ($message -cnotmatch 'after-root-sentinel') {
 			throw "Unexpected post-root failure: $message"
 		}
 		$residue = @(Get-ChildItem -LiteralPath $testRoot -Directory |
@@ -1744,6 +1902,176 @@ try {
 		} finally {
 			$env:PATH = $savedPath
 		}
+	}
+
+	$aliasCandidate = 'C:\PROGRA~1'
+	$aliasExpansion = $null
+	if ([IO.Directory]::Exists($aliasCandidate)) {
+		$probeExpansion = Get-LongPath $aliasCandidate
+		if ($probeExpansion -cne $aliasCandidate) {
+			$aliasExpansion = $probeExpansion
+		}
+	}
+
+	Invoke-Test 'test root base prefers RUNNER_TEMP over TEMP' {
+		$preferred = Join-Path $testRoot 'runner-temp-preferred'
+		$ignored = Join-Path $testRoot 'process-temp-ignored'
+		[void][IO.Directory]::CreateDirectory($preferred)
+		[void][IO.Directory]::CreateDirectory($ignored)
+		Assert-Equal (Resolve-TestRootBase $preferred $ignored) $preferred
+		Assert-Equal (Resolve-TestRootBase "$preferred\" $ignored) $preferred
+	}
+
+	Invoke-Test 'test root base falls back to TEMP without RUNNER_TEMP' {
+		$fallback = Join-Path $testRoot 'process-temp-fallback'
+		[void][IO.Directory]::CreateDirectory($fallback)
+		foreach ($absent in @($null, '', '   ')) {
+			Assert-Equal (Resolve-TestRootBase $absent $fallback) $fallback
+		}
+	}
+
+	Invoke-Test 'test root base accepts a hosted RUNNER_TEMP shape' {
+		$hosted = Join-Path $testRoot 'a\_temp'
+		[void][IO.Directory]::CreateDirectory($hosted)
+		Assert-Equal (Resolve-TestRootBase $hosted $null) $hosted
+		Assert-Equal (Assert-LocalPathSyntax $hosted 'hosted base') $hosted
+	}
+
+	Invoke-Test 'test root base rejects a hosted short-name TEMP shape' {
+		$aliasShaped = Join-Path $testRoot `
+			'hosted\Users\RUNNER~1\AppData\Local\Temp'
+		[void][IO.Directory]::CreateDirectory($aliasShaped)
+		foreach ($selection in @(
+			[pscustomobject]@{ Runner = $aliasShaped; Process = $null },
+			[pscustomobject]@{ Runner = $null; Process = $aliasShaped }
+		)) {
+			Assert-Throws {
+				Resolve-TestRootBase $selection.Runner $selection.Process
+			} 'short-name alias'
+		}
+	}
+
+	if ($null -ne $aliasExpansion) {
+		Invoke-Test 'test root base canonicalizes an available 8.3 alias' {
+			Assert-Equal $aliasExpansion ([Environment]::GetFolderPath(
+				[Environment+SpecialFolder]::ProgramFiles))
+			Assert-Throws {
+				Assert-LocalPathSyntax $aliasCandidate 'alias probe'
+			} $script:AliasRejectionPattern
+			Assert-Throws {
+				Resolve-TestRootBase $aliasCandidate $null
+			} 'shared installation root'
+		}
+	} else {
+		Invoke-Test 'DOS 8.3 alias canonicalization is unavailable here' {
+			if ([IO.Directory]::Exists($aliasCandidate)) {
+				throw "'$aliasCandidate' exists but did not expand"
+			}
+			Assert-Throws {
+				Get-LongPath $aliasCandidate
+			} 'Cannot canonicalize path'
+		}
+	}
+
+	Invoke-Test 'test root base preserves a safe non-alias path' {
+		$control = Join-Path $testRoot 'non-alias-control-directory'
+		[void][IO.Directory]::CreateDirectory($control)
+		Assert-Equal (Get-LongPath $control) $control
+		Assert-Equal (Resolve-TestRootBase $control $null) $control
+		$windowsRoot = [Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::Windows)
+		$windowsLong = Get-LongPath $windowsRoot
+		if (-not [string]::Equals(
+			$windowsRoot.TrimEnd('\'),
+			$windowsLong,
+			[StringComparison]::OrdinalIgnoreCase
+		)) {
+			throw "Canonicalization rewrote '$windowsRoot' to '$windowsLong'"
+		}
+	}
+
+	Invoke-Test 'test root base rejects malformed and missing inputs' {
+		foreach ($bad in @(
+			'relative',
+			'C:\',
+			"\\?\$testRoot",
+			(Join-Path $testRoot 'nonexistent-base'),
+			(Join-Path $testRoot '..\escape'),
+			(Join-Path $testRoot 'wild*card')
+		)) {
+			Assert-Throws {
+				Resolve-TestRootBase $bad $null
+			} 'drive-qualified|existing directory'
+		}
+		Assert-Throws {
+			Resolve-TestRootBase ([object[]]@()) $testRoot
+		} '^RUNNER_TEMP must be a string path$'
+		Assert-Throws {
+			Resolve-TestRootBase $null ([pscustomobject]@{ value = 'x' })
+		} '^TEMP must be a string path$'
+		Assert-Throws {
+			Resolve-TestRootBase $null $null
+		} '^No test root base is available from RUNNER_TEMP or TEMP$'
+	}
+
+	Invoke-Test 'test root base rejects shared installation roots' {
+		$checked = 0
+		foreach ($shared in @(
+			[Environment]::GetFolderPath(
+				[Environment+SpecialFolder]::ProgramFiles),
+			[Environment]::GetFolderPath(
+				[Environment+SpecialFolder]::ProgramFilesX86),
+			[Environment]::GetFolderPath(
+				[Environment+SpecialFolder]::Windows)
+		)) {
+			if (
+				[string]::IsNullOrEmpty($shared) -or
+				-not [IO.Directory]::Exists($shared)
+			) {
+				continue
+			}
+			$checked++
+			Assert-Throws {
+				Resolve-TestRootBase $shared $null
+			} 'shared installation root'
+		}
+		if ($checked -eq 0) {
+			throw 'No shared installation root was available to reject'
+		}
+	}
+
+	Invoke-Test 'composed test root is canonical and alias free' {
+		Assert-Equal (
+			Assert-SafeExistingDirectory $testRoot 'test root') $testRoot
+		Assert-Equal (Get-LongPath $testRoot) $testRoot
+		Assert-Equal (Assert-LocalPathSyntax $testRoot 'test root') $testRoot
+		foreach ($segment in $testRoot.Substring(3).Split('\')) {
+			if ($segment -cmatch '^[^~\\]{1,6}~[0-9](?:\.[^.\\]{0,3})?$') {
+				throw "The test root segment '$segment' is a DOS alias"
+			}
+		}
+	}
+
+	Invoke-Test 'expected-message matching is case sensitive' {
+		Assert-Throws {
+			Assert-ProductionSdkLock $lock -RequireApproval
+		} 'not independently admitted'
+		Assert-Throws {
+			Assert-Throws {
+				Assert-ProductionSdkLock $lock -RequireApproval
+			} 'NOT INDEPENDENTLY ADMITTED'
+		} "^Expected 'NOT INDEPENDENTLY ADMITTED', got '"
+	}
+
+	Invoke-Test 'expected-message matching honours forbidden patterns' {
+		Assert-Throws {
+			Assert-Throws {
+				Assert-ProductionSdkLock $lock -RequireApproval
+			} 'not independently admitted' -ForbiddenPattern 'independently'
+		} "^Expected no 'independently', got '"
+		Assert-Throws {
+			Assert-ProductionSdkLock $lock -RequireApproval
+		} 'not independently admitted' -ForbiddenPattern 'INDEPENDENTLY'
 	}
 
 	Invoke-Test 'runtime source forbids cache package and extra network operations' {
