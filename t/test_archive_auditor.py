@@ -7,7 +7,9 @@ import io
 import json
 import lzma
 from pathlib import Path
+import random
 import struct
+import time
 import tempfile
 import unittest
 from unittest import mock
@@ -413,6 +415,150 @@ def make_7z_multiple_folders(entries):
     streams = pack + unpack + b"\0"
     header = b"\x01\x04" + streams + seven_files(entries) + b"\0"
     return wrap_7z(packed, header)
+
+
+PE_DIRECTORY_RELATIVE = {0x10b: 96, 0x20b: 112}
+PE_DIRECTORY_COUNT_RELATIVE = {0x10b: 92, 0x20b: 108}
+
+
+def build_pe(
+    magic=0x20b,
+    sections=((".text", 0x200, 0x200),),
+    number_of_rva_and_sizes=16,
+    optional_size=None,
+    size_of_headers=None,
+    pe_offset=0x80,
+    security=None,
+    image_length=None,
+    section_fill=0x90,
+):
+    """Build a realistic PE image with nonzero section content.
+
+    Sections are (name, raw_offset, raw_size) triples so that gaps, overlaps,
+    and empty sections can all be expressed directly.
+    """
+    directory_relative = PE_DIRECTORY_RELATIVE[magic]
+    if optional_size is None:
+        optional_size = directory_relative + 8 * number_of_rva_and_sizes
+    optional_offset = pe_offset + 24
+    section_table = optional_offset + optional_size
+    section_table_end = section_table + 40 * len(sections)
+    if size_of_headers is None:
+        size_of_headers = (section_table_end + 511) // 512 * 512
+    end = size_of_headers
+    for _, raw_offset, raw_size in sections:
+        if raw_size:
+            end = max(end, raw_offset + raw_size)
+    if image_length is not None:
+        end = max(end, image_length)
+
+    image = bytearray(end)
+    for _, raw_offset, raw_size in sections:
+        for position in range(raw_offset, min(raw_offset + raw_size, len(image))):
+            image[position] = section_fill
+    image[:2] = b"MZ"
+    struct.pack_into("<I", image, 0x3c, pe_offset)
+    image[pe_offset:pe_offset + 4] = b"PE\0\0"
+    struct.pack_into(
+        "<HHIIIHH",
+        image,
+        pe_offset + 4,
+        0xaa64,
+        len(sections),
+        0,
+        0,
+        0,
+        optional_size,
+        0x0002,
+    )
+    struct.pack_into("<H", image, optional_offset, magic)
+    struct.pack_into("<I", image, optional_offset + 60, size_of_headers)
+    struct.pack_into(
+        "<I",
+        image,
+        optional_offset + PE_DIRECTORY_COUNT_RELATIVE[magic],
+        number_of_rva_and_sizes,
+    )
+    if security is not None:
+        struct.pack_into(
+            "<II",
+            image,
+            optional_offset + directory_relative + 8 * 4,
+            security[0],
+            security[1],
+        )
+    for index, (name, raw_offset, raw_size) in enumerate(sections):
+        entry = section_table + 40 * index
+        image[entry:entry + 8] = name.encode("ascii").ljust(8, b"\0")
+        struct.pack_into("<I", image, entry + 16, raw_size)
+        struct.pack_into("<I", image, entry + 20, raw_offset if raw_size else 0)
+    return bytes(image)
+
+
+def security_directory_offset(data):
+    pe_offset = struct.unpack_from("<I", data, 0x3c)[0]
+    optional_offset = pe_offset + 24
+    magic = struct.unpack_from("<H", data, optional_offset)[0]
+    return optional_offset + PE_DIRECTORY_RELATIVE[magic] + 8 * 4
+
+
+def win_certificate(payload, revision=0x0200, certificate_type=0x0002):
+    entry = struct.pack("<IHH", len(payload) + 8, revision, certificate_type) + payload
+    return entry + b"\0" * (-len(entry) % 8)
+
+
+def sign(body, certificates, offset=None, length=None):
+    """Append a declared WIN_CERTIFICATE table and patch the security directory."""
+    signed = bytearray(body)
+    table = b"".join(certificates)
+    struct.pack_into(
+        "<II",
+        signed,
+        security_directory_offset(signed),
+        len(signed) if offset is None else offset,
+        len(table) if length is None else length,
+    )
+    return bytes(signed) + table
+
+
+def align_image(archive, **kwargs):
+    """Pad the PE image so the certificate table lands on an 8-byte boundary
+    immediately after the 7z overlay, with no gap between them."""
+    image = build_pe(security=(0, 0), **kwargs)
+    gap = -(len(image) + len(archive)) % 8
+    if gap:
+        image = build_pe(security=(0, 0), **dict(kwargs, image_length=len(image) + gap))
+    return image
+
+
+def signed_sfx(archive, certificates, **kwargs):
+    """The physically common layout: PE image | 7z overlay | certificate table."""
+    image = align_image(archive, **kwargs)
+    return image, sign(image + archive, certificates)
+
+
+def seven_zip_decoy(total_length, offset):
+    """A 32-byte start header that survives every cheap check.
+
+    Without a work budget each one forces a next-header copy and CRC over
+    nearly the whole input, which is the quadratic blowup being bounded.
+    """
+    start_header = struct.pack("<QQI", 0, total_length - (offset + 32), 0)
+    return (
+        AUDITOR.SEVEN_ZIP_SIGNATURE
+        + b"\0\x04"
+        + struct.pack("<I", zlib.crc32(start_header) & 0xffffffff)
+        + start_header
+    )
+
+
+def make_decoy_sfx(decoys, total_length=1 << 20, prefix=None, tail=b""):
+    prefix = build_pe() if prefix is None else prefix
+    body = bytearray(prefix.ljust(total_length - len(tail), b"\0"))
+    for index in range(decoys):
+        offset = len(prefix) + index * 32
+        body[offset:offset + 32] = seven_zip_decoy(total_length, offset)
+    return bytes(body) + tail
 
 
 class ArchiveAuditorTests(unittest.TestCase):
@@ -1483,6 +1629,627 @@ class ArchiveAuditorTests(unittest.TestCase):
                 finally:
                     AUDITOR.sys.stdout = old_stdout
                 self.assertTrue(json.loads(stdout.getvalue())["equal"])
+
+    def measure_crc(self, data, limits=None, name="hostile.bin"):
+        """Run an audit while counting every byte fed to zlib.crc32 and sha256."""
+        crc_bytes = []
+        hash_bytes = []
+        starts = []
+        real_crc32 = AUDITOR.zlib.crc32
+        real_start = AUDITOR.seven_zip_start_header
+        real_sha256 = AUDITOR.hashlib.sha256
+
+        def counting_crc32(payload, value=0):
+            crc_bytes.append(len(payload))
+            return real_crc32(payload, value)
+
+        def counting_start(data_, offset, archive_end=None):
+            starts.append(offset)
+            return real_start(data_, offset, archive_end)
+
+        class CountingSha256:
+            def __init__(self, payload=b""):
+                hash_bytes.append(len(payload))
+                self._digest = real_sha256(payload)
+
+            def update(self, payload):
+                hash_bytes.append(len(payload))
+                self._digest.update(payload)
+
+            def hexdigest(self):
+                return self._digest.hexdigest()
+
+            def digest(self):
+                return self._digest.digest()
+
+        with mock.patch.object(AUDITOR.zlib, "crc32", counting_crc32):
+            with mock.patch.object(AUDITOR, "seven_zip_start_header", counting_start):
+                with mock.patch.object(AUDITOR.hashlib, "sha256", CountingSha256):
+                    try:
+                        AUDITOR.ArchiveAuditor(limits).audit_bytes(data, name)
+                        code = None
+                    except AUDITOR.AuditError as exc:
+                        code = exc.code
+        return {
+            "code": code,
+            "crcBytes": sum(crc_bytes),
+            "hashBytes": sum(hash_bytes),
+            "startHeaders": len(starts),
+        }
+
+    def limits_with(self, **overrides):
+        defaults = AUDITOR.Limits()
+        values = {
+            "max_depth": defaults.max_depth,
+            "max_total_expanded_bytes": defaults.max_total_expanded_bytes,
+            "max_members_per_archive": defaults.max_members_per_archive,
+            "max_members_total": defaults.max_members_total,
+            "max_compression_ratio": defaults.max_compression_ratio,
+            "max_path_length": defaults.max_path_length,
+            "max_sfx_prefix_bytes": defaults.max_sfx_prefix_bytes,
+            "max_sfx_signature_occurrences": defaults.max_sfx_signature_occurrences,
+            "max_sfx_signature_candidates": defaults.max_sfx_signature_candidates,
+            "max_envelope_work_bytes": defaults.max_envelope_work_bytes,
+            "max_certificate_entries": defaults.max_certificate_entries,
+        }
+        values.update(overrides)
+        return values
+
+    def test_sfx_decoy_signatures_cannot_buy_unbounded_crc_work(self):
+        total = 1 << 20
+        decoys = 4000
+        hostile = make_decoy_sfx(decoys, total)
+        unbounded = decoys * total
+        defaults = AUDITOR.Limits()
+
+        measured = self.measure_crc(
+            hostile,
+            AUDITOR.Limits(max_envelope_work_bytes=4 << 20, max_sfx_signature_candidates=4096),
+        )
+        self.assertEqual("ENVELOPE_WORK_LIMIT", measured["code"])
+        self.assertLessEqual(measured["crcBytes"], (4 << 20) + total)
+        self.assertLess(measured["crcBytes"] * 100, unbounded)
+        self.assertLessEqual(measured["hashBytes"], 2 * total)
+
+        measured = self.measure_crc(hostile)
+        self.assertEqual("SFX_SIGNATURE_CANDIDATE_LIMIT", measured["code"])
+        self.assertLessEqual(measured["startHeaders"], defaults.max_sfx_signature_candidates)
+        self.assertLessEqual(
+            measured["crcBytes"],
+            min(
+                defaults.max_envelope_work_bytes,
+                defaults.max_sfx_signature_candidates * total,
+            ) + total,
+        )
+        self.assertLess(measured["crcBytes"] * 8, unbounded)
+        self.assertLessEqual(measured["hashBytes"], 2 * total)
+
+        measured = self.measure_crc(
+            hostile,
+            AUDITOR.Limits(max_sfx_signature_occurrences=4096, max_sfx_signature_candidates=4096),
+        )
+        self.assertEqual("ENVELOPE_WORK_LIMIT", measured["code"])
+        self.assertLessEqual(measured["crcBytes"], defaults.max_envelope_work_bytes + total)
+        self.assertLessEqual(measured["hashBytes"], 2 * total)
+
+        started = time.perf_counter()
+        self.assert_rejected("SFX_SIGNATURE_CANDIDATE_LIMIT", hostile, "hostile.bin")
+        self.assertLess(time.perf_counter() - started, 30.0)
+
+    def test_sfx_signature_candidate_and_occurrence_limits_reject(self):
+        hostile = make_decoy_sfx(64)
+        self.assert_rejected(
+            "SFX_SIGNATURE_CANDIDATE_LIMIT",
+            hostile,
+            "hostile.bin",
+            AUDITOR.Limits(max_sfx_signature_candidates=8),
+        )
+        self.assert_rejected(
+            "SFX_SIGNATURE_OCCURRENCE_LIMIT",
+            hostile,
+            "hostile.bin",
+            AUDITOR.Limits(max_sfx_signature_occurrences=4),
+        )
+
+    def test_exhausted_budget_never_falls_through_to_a_later_valid_overlay(self):
+        genuine = make_7z([{"name": "file", "content": b"payload"}])
+        total = (1 << 20) + len(genuine)
+        hostile = make_decoy_sfx(8, total, tail=genuine)
+
+        relaxed = AUDITOR.Limits(
+            max_envelope_work_bytes=1 << 30,
+            max_sfx_signature_candidates=64,
+        )
+        node = self.audit(hostile, "hostile.bin", relaxed)["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(total - len(genuine), node["headerOffset"])
+
+        for limits, expected in (
+            (AUDITOR.Limits(max_envelope_work_bytes=2 << 20), "ENVELOPE_WORK_LIMIT"),
+            (AUDITOR.Limits(max_sfx_signature_candidates=4), "SFX_SIGNATURE_CANDIDATE_LIMIT"),
+            (AUDITOR.Limits(max_sfx_signature_occurrences=4), "SFX_SIGNATURE_OCCURRENCE_LIMIT"),
+        ):
+            with self.subTest(expected=expected):
+                self.assert_rejected(expected, hostile, "hostile.bin", limits)
+
+    def test_signature_work_budget_is_shared_across_nested_archives(self):
+        inner = make_7z([{"name": "leaf", "content": b"x" * 64}], sfx=build_pe())
+        outer = make_zip([{"name": "inner.bin", "content": inner}])
+        totals = self.audit(outer, "outer.zip")["totals"]
+        self.assertEqual(1, totals["sfxSignatureCandidates"])
+        self.assertGreaterEqual(totals["sfxSignatureOccurrences"], 1)
+        self.assertGreater(totals["envelopeWorkBytes"], 0)
+
+        auditor = AUDITOR.ArchiveAuditor()
+        auditor.state.envelope_work = auditor.limits.max_envelope_work_bytes
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            auditor.audit_bytes(outer, "outer.zip")
+        self.assertEqual("ENVELOPE_WORK_LIMIT", context.exception.code)
+
+    def test_cli_bounded_sfx_limits_match_in_memory_behaviour(self):
+        hostile = make_decoy_sfx(4000)
+        cases = (
+            (
+                ["--max-envelope-work-bytes", str(4 << 20), "--max-sfx-signature-candidates", "4096"],
+                {"max_envelope_work_bytes": 4 << 20, "max_sfx_signature_candidates": 4096},
+                "ENVELOPE_WORK_LIMIT",
+            ),
+            (
+                ["--max-sfx-signature-candidates", "8"],
+                {"max_sfx_signature_candidates": 8},
+                "SFX_SIGNATURE_CANDIDATE_LIMIT",
+            ),
+            (
+                ["--max-sfx-signature-occurrences", "4"],
+                {"max_sfx_signature_occurrences": 4},
+                "SFX_SIGNATURE_OCCURRENCE_LIMIT",
+            ),
+        )
+        with tempfile.TemporaryDirectory(dir=ROOT) as directory:
+            path = Path(directory) / "hostile.bin"
+            path.write_bytes(hostile)
+            for arguments, overrides, expected in cases:
+                with self.subTest(arguments=arguments):
+                    stderr = io.StringIO()
+                    old_stderr = AUDITOR.sys.stderr
+                    try:
+                        AUDITOR.sys.stderr = stderr
+                        self.assertEqual(2, AUDITOR.main(["audit"] + arguments + [str(path)]))
+                    finally:
+                        AUDITOR.sys.stderr = old_stderr
+                    self.assertEqual(expected, json.loads(stderr.getvalue())["error"]["code"])
+
+                    measured = self.measure_crc(
+                        hostile,
+                        AUDITOR.Limits(**self.limits_with(**overrides)),
+                    )
+                    self.assertEqual(expected, measured["code"])
+
+    def test_limits_manifest_reports_every_decision_relevant_ceiling(self):
+        manifest = self.audit(make_zip([{"name": "file"}]), "a.zip")
+        self.assertEqual(
+            {
+                "maxDepth",
+                "maxTotalExpandedBytes",
+                "maxMembersPerArchive",
+                "maxMembersTotal",
+                "maxCompressionRatio",
+                "maxPathLength",
+                "maxSfxPrefixBytes",
+                "maxSfxSignatureOccurrences",
+                "maxSfxSignatureCandidates",
+                "maxEnvelopeWorkBytes",
+                "maxCertificateEntries",
+            },
+            set(manifest["limits"]),
+        )
+        self.assertEqual(
+            {
+                "members",
+                "expandedBytes",
+                "sfxSignatureOccurrences",
+                "sfxSignatureCandidates",
+                "envelopeWorkBytes",
+            },
+            set(manifest["totals"]),
+        )
+        for name in (
+            "max_sfx_prefix_bytes",
+            "max_sfx_signature_occurrences",
+            "max_sfx_signature_candidates",
+            "max_envelope_work_bytes",
+            "max_certificate_entries",
+        ):
+            for value in (0, -1, True, 1.5, "8"):
+                with self.subTest(limit=name, value=value):
+                    with self.assertRaises(AUDITOR.AuditError) as context:
+                        AUDITOR.ArchiveAuditor(AUDITOR.Limits(**{name: value}))
+                    self.assertEqual("INVALID_LIMIT", context.exception.code)
+        for limits in (
+            AUDITOR.Limits(max_sfx_prefix_bytes=64),
+            AUDITOR.Limits(max_depth=True),
+            AUDITOR.Limits(max_compression_ratio=True),
+        ):
+            with self.subTest(limits=limits):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.ArchiveAuditor(limits)
+                self.assertEqual("INVALID_LIMIT", context.exception.code)
+
+    def test_sfx_prefix_ceiling_boundary_uses_candidate_offset_logic(self):
+        ceiling = 4096
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        for prefix_length, expectation in (
+            (ceiling - 1, "7z-sfx"),
+            (ceiling, "7z-sfx"),
+            (ceiling + 1, "SFX_PREFIX_LIMIT"),
+        ):
+            with self.subTest(prefixLength=prefix_length):
+                data = build_pe(image_length=prefix_length) + archive
+                self.assertEqual(prefix_length + len(archive), len(data))
+                limits = AUDITOR.Limits(max_sfx_prefix_bytes=ceiling)
+                if expectation == "7z-sfx":
+                    node = self.audit(data, "sfx.bin", limits)["archive"]
+                    self.assertEqual("7z-sfx", node["format"])
+                    self.assertEqual(prefix_length, node["headerOffset"])
+                else:
+                    self.assert_rejected(expectation, data, "sfx.bin", limits)
+
+    def test_pe32_and_pe32plus_sections_gaps_and_overlaps(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        for magic in (0x10b, 0x20b):
+            with self.subTest(magic=magic):
+                image = build_pe(
+                    magic=magic,
+                    sections=(
+                        (".text", 0x400, 0x200),
+                        (".rdata", 0x800, 0x200),
+                        (".data", 0xc00, 0x200),
+                    ),
+                )
+                node = self.audit(image + archive, "sfx.bin")["archive"]
+                self.assertEqual("7z-sfx", node["format"])
+                layout = node["ownerDisposition"]["peLayout"]
+                self.assertEqual(f"{magic:04x}", layout["optionalHeaderMagic"])
+                self.assertEqual(3, layout["sectionCount"])
+                self.assertEqual(0xe00, layout["peImageEnd"])
+                self.assertEqual(0xe00, layout["overlayStart"])
+                self.assertEqual(len(image) + len(archive), layout["overlayEnd"])
+                self.assertEqual("unsigned", layout["signatureDisposition"])
+
+        overlapping = build_pe(sections=((".text", 0x400, 0x300), (".data", 0x600, 0x200)))
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            self.audit(overlapping + archive, "sfx.bin")
+        self.assertEqual("MALFORMED_SFX_PE_PREFIX", context.exception.code)
+        self.assertEqual({"firstSection", "secondSection"}, set(context.exception.details))
+        self.assertEqual(0, context.exception.details["firstSection"])
+        self.assertEqual(1, context.exception.details["secondSection"])
+
+        empty_section = build_pe(sections=((".text", 0x400, 0x200), (".bss", 0, 0)))
+        self.assertEqual(
+            "7z-sfx",
+            self.audit(empty_section + archive, "sfx.bin")["archive"]["format"],
+        )
+
+        inside_headers = build_pe(sections=((".text", 0x100, 0x200),))
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            self.audit(inside_headers + archive, "sfx.bin")
+        self.assertEqual("MALFORMED_SFX_PE_PREFIX", context.exception.code)
+        self.assertEqual(0x100, context.exception.details["rawOffset"])
+
+    def test_pe_optional_header_and_directory_counts_validated(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        for magic, optional_size in ((0x10b, 64), (0x20b, 96)):
+            with self.subTest(magic=magic, optionalSize=optional_size):
+                short = build_pe(magic=magic, optional_size=optional_size, number_of_rva_and_sizes=0)
+                self.assert_rejected("MALFORMED_SFX_PE_PREFIX", short + archive, "sfx.bin")
+
+        for count in (0, 4):
+            with self.subTest(numberOfRvaAndSizes=count):
+                image = build_pe(number_of_rva_and_sizes=count)
+                layout = self.audit(image + archive, "sfx.bin")["archive"]["ownerDisposition"]["peLayout"]
+                self.assertEqual(count, layout["numberOfRvaAndSizes"])
+                self.assertEqual("unsigned", layout["signatureDisposition"])
+
+        overlong = bytearray(build_pe(number_of_rva_and_sizes=16))
+        struct.pack_into("<I", overlong, 0x80 + 24 + PE_DIRECTORY_COUNT_RELATIVE[0x20b], 17)
+        self.assert_rejected("MALFORMED_SFX_PE_PREFIX", bytes(overlong) + archive, "sfx.bin")
+
+        undersized = build_pe(number_of_rva_and_sizes=16, optional_size=112 + 8 * 15)
+        self.assert_rejected("MALFORMED_SFX_PE_PREFIX", undersized + archive, "sfx.bin")
+
+    def test_signed_sfx_overlay_ends_at_the_validated_certificate_table(self):
+        archive = make_7z([{"name": "file", "content": b"payload"}])
+        certificate = win_certificate(b"pkcs7-placeholder-bytes")
+        image, data = signed_sfx(archive, [certificate])
+
+        node = self.audit(data, "PortableGit.exe")["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(len(image), node["headerOffset"])
+        self.assertEqual(len(image) + len(archive), node["ownerDisposition"]["archiveEnd"])
+        self.assertEqual(["file"], [member["logicalPath"] for member in node["members"]])
+        layout = node["ownerDisposition"]["peLayout"]
+        self.assertEqual("signed", layout["signatureDisposition"])
+        self.assertEqual(len(image) + len(archive), layout["certificateOffset"])
+        self.assertEqual(len(certificate), layout["certificateLength"])
+        self.assertEqual(AUDITOR.sha256(certificate), layout["certificateSha256"])
+        self.assertEqual(1, len(layout["certificateEntries"]))
+        self.assertEqual("0200", layout["certificateEntries"][0]["revision"])
+
+        unsigned = self.audit(image + archive, "PortableGit.exe")["archive"]
+        self.assertEqual(len(image) + len(archive), unsigned["ownerDisposition"]["archiveEnd"])
+        self.assertIsNone(unsigned["ownerDisposition"]["peLayout"]["certificateOffset"])
+
+    def test_signed_sfx_comparison_binds_certificate_bytes(self):
+        archive = make_7z([{"name": "file", "content": b"payload"}])
+        baseline = self.audit(signed_sfx(archive, [win_certificate(b"signature-a")])[1], "a.exe")
+        same = self.audit(signed_sfx(archive, [win_certificate(b"signature-a")])[1], "b.exe")
+        changed = self.audit(signed_sfx(archive, [win_certificate(b"signature-b")])[1], "c.exe")
+
+        self.assertTrue(AUDITOR.compare_manifests(baseline, same)["equal"])
+        self.assertFalse(AUDITOR.compare_manifests(baseline, changed)["equal"])
+        self.assertNotEqual(baseline["source"]["sha256"], changed["source"]["sha256"])
+        self.assertNotEqual(
+            baseline["archive"]["ownerDisposition"]["peLayout"]["certificateSha256"],
+            changed["archive"]["ownerDisposition"]["peLayout"]["certificateSha256"],
+        )
+
+    def test_unsigned_sfx_and_certificate_gaps_must_not_leave_trailing_bytes(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        self.assert_rejected("TRAILING_7Z_PAYLOAD", build_pe() + archive + b"x", "sfx.bin")
+
+        padded = align_image(archive) + archive + b"\0" * 8
+        self.assert_rejected(
+            "TRAILING_7Z_PAYLOAD",
+            sign(padded, [win_certificate(b"signature")]),
+            "sfx.bin",
+        )
+
+    def test_seven_zip_signature_inside_certificate_is_not_a_candidate(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        decoy = win_certificate(AUDITOR.SEVEN_ZIP_SIGNATURE + b"\0" * 26)
+
+        self.assert_rejected(
+            "SFX_SIGNATURE_INSIDE_CERTIFICATE",
+            sign(build_pe(security=(0, 0)), [decoy]),
+            "sfx.bin",
+        )
+
+        image, data = signed_sfx(archive, [decoy])
+        node = self.audit(data, "sfx.bin")["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(len(image), node["headerOffset"])
+
+    def test_in_image_decoy_never_contributes_to_candidate_ambiguity(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        sections = ((".text", 0x400, 0x200),)
+        image = bytearray(align_image(archive, sections=sections))
+        image[0x400:0x420] = seven_zip_decoy(0x420, 0x400)
+        image = bytes(image)
+
+        node = self.audit(image + archive, "sfx.bin")["archive"]
+        self.assertEqual("7z-sfx", node["format"])
+        self.assertEqual(len(image), node["headerOffset"])
+
+        certificate = win_certificate(AUDITOR.SEVEN_ZIP_SIGNATURE + b"\0" * 26)
+        node = self.audit(sign(image + archive, [certificate]), "sfx.bin")["archive"]
+        self.assertEqual(len(image), node["headerOffset"])
+        self.assertEqual("signed", node["ownerDisposition"]["peLayout"]["signatureDisposition"])
+
+        self.assert_rejected("SFX_SIGNATURE_OVERLAPS_PE_IMAGE", image, "sfx.bin")
+
+    def test_two_genuine_overlay_candidates_remain_ambiguous(self):
+        explicit_empty_header = make_7z([])[32:]
+        later = wrap_7z(b"", explicit_empty_header)
+        earlier = wrap_7z(b"\0" * 32, explicit_empty_header)[:32]
+        data = build_pe() + earlier + later
+        with self.assertRaises(AUDITOR.AuditError) as context:
+            self.audit(data, "sfx.bin")
+        self.assertEqual("AMBIGUOUS_7Z_SIGNATURE", context.exception.code)
+        self.assertEqual({"firstOffset", "secondOffset"}, set(context.exception.details))
+
+    def test_malformed_certificate_tables_reject_fail_closed(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        body = align_image(archive) + archive
+        certificate = win_certificate(b"signature")
+
+        cases = {
+            "trailing": sign(body, [certificate]) + b"x",
+            "misaligned-offset": sign(body, [certificate], offset=len(body) + 1),
+            "unaligned-length": sign(body, [certificate], length=len(certificate) - 1),
+            "half-empty-length": sign(body, [certificate], length=0),
+            "half-empty-offset": sign(body, [certificate], offset=0),
+            "before-image": sign(body, [certificate], offset=8),
+            "nonterminal": sign(body, [certificate], length=len(certificate) - 8),
+            "overlong": sign(body, [certificate], length=len(certificate) + 8),
+        }
+        for label, data in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    self.audit(data, "sfx.bin")
+                self.assertIn(
+                    context.exception.code,
+                    ("MALFORMED_SFX_PE_PREFIX", "MALFORMED_PE_CERTIFICATE"),
+                )
+
+        for label, offset, layout, value in (
+            ("short-dwlength", 0, "<I", 4),
+            ("overlong-dwlength", 0, "<I", len(certificate) + 8),
+            ("bad-revision", 4, "<H", 0x0300),
+            ("bad-type", 6, "<H", 0x00ff),
+        ):
+            with self.subTest(case=label):
+                mutated = bytearray(sign(body, [certificate]))
+                struct.pack_into(layout, mutated, len(body) + offset, value)
+                self.assert_rejected("MALFORMED_PE_CERTIFICATE", bytes(mutated), "sfx.bin")
+
+        nonzero_padding = bytearray(sign(body, [win_certificate(b"abc")]))
+        nonzero_padding[-1] = 1
+        self.assert_rejected("MALFORMED_PE_CERTIFICATE", bytes(nonzero_padding), "sfx.bin")
+
+    def test_bounded_crc_and_hash_helpers_match_the_naive_form(self):
+        chunk = AUDITOR.STREAM_CHUNK_LENGTH
+        length = 3 * chunk + 12345
+        data = (bytes(range(256)) * (length // 256 + 1))[:length]
+        ranges = (
+            (0, 0),
+            (0, 1),
+            (5, 5),
+            (1, chunk),
+            (0, chunk),
+            (0, chunk + 1),
+            (chunk, chunk),
+            (chunk - 1, 2 * chunk + 1),
+            (7, 3 * chunk),
+            (length - 1, length),
+            (0, length - 1),
+            (0, length),
+        )
+        for start, end in ranges:
+            with self.subTest(start=start, end=end):
+                self.assertEqual(
+                    zlib.crc32(data[start:end]) & 0xffffffff,
+                    AUDITOR.crc32_range(data, start, end),
+                )
+                self.assertEqual(
+                    AUDITOR.sha256(data[start:end]),
+                    AUDITOR.sha256_range(data, start, end),
+                )
+        for start, end in ((-1, 5), (0, length + 1), (5, 4)):
+            with self.subTest(start=start, end=end):
+                with self.assertRaises(AUDITOR.AuditError) as context:
+                    AUDITOR.crc32_range(data, start, end)
+                self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
+
+    def test_mutations_always_produce_a_structured_outcome(self):
+        archive = make_7z([{"name": "payload.dat", "content": b"content-bytes"}])
+        image, signed = signed_sfx(archive, [win_certificate(b"pkcs7-placeholder")])
+        seeds = {
+            "signed-sfx": signed,
+            "unsigned-sfx": image + archive,
+            "bare-7z": archive,
+            "decoy-sfx": make_decoy_sfx(16, 1 << 14),
+        }
+        limits = AUDITOR.Limits(max_envelope_work_bytes=8 << 20, max_sfx_signature_candidates=32)
+        generator = random.Random(20260828)
+        codes = set()
+        for label, seed in seeds.items():
+            for iteration in range(60):
+                data = bytearray(seed)
+                for _ in range(generator.randint(1, 6)):
+                    data[generator.randrange(len(data))] = generator.randrange(256)
+                if not generator.randrange(10):
+                    data = data[:generator.randrange(1, len(data) + 1)]
+                with self.subTest(seed=label, iteration=iteration):
+                    try:
+                        AUDITOR.ArchiveAuditor(limits).audit_bytes(bytes(data), "fuzz.bin")
+                    except AUDITOR.AuditError as exc:
+                        self.assertIsInstance(exc.code, str)
+                        self.assertTrue(exc.code)
+                        codes.add(exc.code)
+        self.assertGreater(len(codes), 4)
+
+    def test_nested_ordinary_pe_members_are_opaque_leaves(self):
+        executable = build_pe(sections=((".text", 0x400, 0x200),))
+        self.assertNotIn(AUDITOR.SEVEN_ZIP_SIGNATURE, executable)
+        container = make_zip([
+            {"name": "tools/git.exe", "content": executable},
+            {"name": "notes.txt", "content": b"plain"},
+        ])
+        node = self.audit(container, "package.zip")["archive"]
+        self.assertEqual(["tools/git.exe", "notes.txt"], [m["logicalPath"] for m in node["members"]])
+        for member in node["members"]:
+            with self.subTest(path=member["logicalPath"]):
+                self.assertIsNone(member["nestedArchiveIdentity"])
+                self.assertNotIn("nestedArchive", member)
+
+        for label, blob in (
+            ("mz-text", b"MZ this is not a portable executable at all"),
+            ("mz-truncated", executable[:96]),
+            ("mz-bad-signature", executable[:0x80] + b"PX\0\0" + executable[0x84:]),
+        ):
+            with self.subTest(case=label):
+                member = self.audit(
+                    make_zip([{"name": "blob.bin", "content": blob}]),
+                    "package.zip",
+                )["archive"]["members"][0]
+                self.assertIsNone(member["nestedArchiveIdentity"])
+
+        sfx = make_7z([{"name": "leaf", "content": b"x"}], sfx=build_pe())
+        member = self.audit(
+            make_zip([{"name": "inner.bin", "content": sfx}]),
+            "package.zip",
+        )["archive"]["members"][0]
+        self.assertEqual("7z-sfx", member["nestedArchive"]["format"])
+
+        broken = bytearray(sfx)
+        broken[0x80:0x84] = b"PX\0\0"
+        self.assert_rejected(
+            "MALFORMED_SFX_PE_PREFIX",
+            make_zip([{"name": "inner.bin", "content": bytes(broken)}]),
+            "package.zip",
+        )
+
+        self.assert_rejected("MISSING_7Z_SFX_SIGNATURE", executable, "git.exe")
+        self.assert_rejected("MALFORMED_SFX_PE_PREFIX", b"MZ not a real image", "blob.bin")
+
+    def test_accepted_envelope_is_validated_and_charged_exactly_once(self):
+        archive = make_7z([{"name": "file", "content": b"payload"}])
+        _, signed = signed_sfx(archive, [win_certificate(b"signature")])
+        for label, data in (
+            ("bare-7z", archive),
+            ("unsigned-sfx", build_pe() + archive),
+            ("signed-sfx", signed),
+        ):
+            with self.subTest(case=label):
+                manifest = self.audit(data, "input.bin")
+                node = manifest["archive"]
+                self.assertEqual(
+                    node["ownerDisposition"]["nextHeaderLength"],
+                    manifest["totals"]["envelopeWorkBytes"],
+                )
+                self.assertEqual(
+                    1 if label != "bare-7z" else 0,
+                    manifest["totals"]["sfxSignatureCandidates"],
+                )
+
+    def test_overlay_gap_between_image_and_signature_is_recorded(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        image = build_pe(sections=((".text", 0x400, 0x200),), image_length=0x800)
+        node = self.audit(image + archive, "sfx.bin")["archive"]
+        disposition = node["ownerDisposition"]
+        self.assertEqual(0x600, disposition["peLayout"]["peImageEnd"])
+        self.assertEqual(0x800 - 0x600, disposition["overlayGapLength"])
+        self.assertEqual(
+            AUDITOR.sha256(image[0x600:0x800]),
+            disposition["overlayGapSha256"],
+        )
+
+        flush = build_pe(sections=((".text", 0x400, 0x200),))
+        self.assertEqual(
+            0,
+            self.audit(flush + archive, "sfx.bin")["archive"]["ownerDisposition"]["overlayGapLength"],
+        )
+
+    def test_certificate_chain_and_entry_ceiling(self):
+        archive = make_7z([{"name": "file", "content": b"x"}])
+        chain = [win_certificate(b"a" * 9), win_certificate(b"bb"), win_certificate(b"c" * 17)]
+        image, data = signed_sfx(archive, chain)
+        table_start = len(image) + len(archive)
+
+        entries = self.audit(data, "sfx.bin")["archive"]["ownerDisposition"]["peLayout"]["certificateEntries"]
+        self.assertEqual(3, len(entries))
+        self.assertEqual([17, 10, 25], [entry["length"] for entry in entries])
+        self.assertEqual(
+            [table_start, table_start + 24, table_start + 40],
+            [entry["offset"] for entry in entries],
+        )
+
+        self.assert_rejected(
+            "CERTIFICATE_ENTRY_LIMIT",
+            data,
+            "sfx.bin",
+            AUDITOR.Limits(max_certificate_entries=2),
+        )
 
 
 if __name__ == "__main__":

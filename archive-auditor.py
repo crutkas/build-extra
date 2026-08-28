@@ -24,8 +24,23 @@ SCHEMA = "git-for-windows.archive-audit/v1"
 COMPARISON_SCHEMA = "git-for-windows.archive-comparison/v1"
 SEVEN_ZIP_SIGNATURE = b"7z\xbc\xaf'\x1c"
 MAX_SFX_PREFIX_LENGTH = 16 * 1024 * 1024
+MAX_SFX_SIGNATURE_OCCURRENCES = 4096
+MAX_SFX_SIGNATURE_CANDIDATES = 64
+MAX_ENVELOPE_WORK_BYTES = 256 * 1024 * 1024
+MAX_CERTIFICATE_ENTRIES = 64
 XZ_SIGNATURE = b"\xfd7zXZ\x00"
 ZSTD_SIGNATURE = b"\x28\xb5\x2f\xfd"
+STREAM_CHUNK_LENGTH = 1024 * 1024
+PE32_MAGIC = 0x10b
+PE32PLUS_MAGIC = 0x20b
+PE_DIRECTORY_OFFSETS = {PE32_MAGIC: 96, PE32PLUS_MAGIC: 112}
+PE_DIRECTORY_COUNT_OFFSETS = {PE32_MAGIC: 92, PE32PLUS_MAGIC: 108}
+PE_MAX_DATA_DIRECTORIES = 16
+IMAGE_DIRECTORY_ENTRY_SECURITY = 4
+WIN_CERTIFICATE_HEADER_LENGTH = 8
+WIN_CERTIFICATE_ALIGNMENT = 8
+WIN_CERTIFICATE_REVISIONS = (0x0100, 0x0200)
+WIN_CERTIFICATE_TYPES = (0x0001, 0x0002, 0x0003, 0x0004)
 WINDOWS_RESERVED = re.compile(
     r"^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|"
     r"com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\..*)?$",
@@ -60,6 +75,43 @@ def reject(code, message, **details):
 
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def _bounded_range(data, start, end, code="OUT_OF_RANGE_RECORD"):
+    if start < 0 or end < start or end > len(data):
+        reject(
+            code,
+            "Archive record extends outside its containing byte stream",
+            offset=start,
+            length=end - start,
+            containerLength=len(data),
+        )
+
+
+def crc32_range(data, start, end):
+    """CRC a byte range in bounded chunks without copying the range."""
+    _bounded_range(data, start, end)
+    view = memoryview(data)
+    crc = 0
+    position = start
+    while position < end:
+        stop = min(position + STREAM_CHUNK_LENGTH, end)
+        crc = zlib.crc32(view[position:stop], crc)
+        position = stop
+    return crc & 0xffffffff
+
+
+def sha256_range(data, start, end):
+    """Hash a byte range in bounded chunks without copying the range."""
+    _bounded_range(data, start, end)
+    digest = hashlib.sha256()
+    view = memoryview(data)
+    position = start
+    while position < end:
+        stop = min(position + STREAM_CHUNK_LENGTH, end)
+        digest.update(view[position:stop])
+        position = stop
+    return digest.hexdigest()
 
 
 def checked_slice(data, offset, length, code="OUT_OF_RANGE_RECORD"):
@@ -230,6 +282,11 @@ class Limits:
     max_members_total: int = 200000
     max_compression_ratio: float = 1000.0
     max_path_length: int = 4096
+    max_sfx_prefix_bytes: int = MAX_SFX_PREFIX_LENGTH
+    max_sfx_signature_occurrences: int = MAX_SFX_SIGNATURE_OCCURRENCES
+    max_sfx_signature_candidates: int = MAX_SFX_SIGNATURE_CANDIDATES
+    max_envelope_work_bytes: int = MAX_ENVELOPE_WORK_BYTES
+    max_certificate_entries: int = MAX_CERTIFICATE_ENTRIES
 
     def manifest(self):
         values = asdict(self)
@@ -240,6 +297,11 @@ class Limits:
             "maxMembersTotal": values["max_members_total"],
             "maxCompressionRatio": values["max_compression_ratio"],
             "maxPathLength": values["max_path_length"],
+            "maxSfxPrefixBytes": values["max_sfx_prefix_bytes"],
+            "maxSfxSignatureOccurrences": values["max_sfx_signature_occurrences"],
+            "maxSfxSignatureCandidates": values["max_sfx_signature_candidates"],
+            "maxEnvelopeWorkBytes": values["max_envelope_work_bytes"],
+            "maxCertificateEntries": values["max_certificate_entries"],
         }
 
 
@@ -248,6 +310,54 @@ class AuditState:
         self.limits = limits
         self.total_expanded = 0
         self.total_members = 0
+        self.signature_occurrences = 0
+        self.signature_candidates = 0
+        self.envelope_work = 0
+
+    def totals(self):
+        return {
+            "members": self.total_members,
+            "expandedBytes": self.total_expanded,
+            "sfxSignatureOccurrences": self.signature_occurrences,
+            "sfxSignatureCandidates": self.signature_candidates,
+            "envelopeWorkBytes": self.envelope_work,
+        }
+
+    def charge_signature_occurrence(self, offset):
+        self.signature_occurrences += 1
+        if self.signature_occurrences > self.limits.max_sfx_signature_occurrences:
+            reject(
+                "SFX_SIGNATURE_OCCURRENCE_LIMIT",
+                "MZ/PE input contains more 7z signature occurrences than the configured ceiling",
+                offset=offset,
+                count=self.signature_occurrences,
+                limit=self.limits.max_sfx_signature_occurrences,
+            )
+
+    def charge_signature_candidate(self, offset):
+        self.signature_candidates += 1
+        if self.signature_candidates > self.limits.max_sfx_signature_candidates:
+            reject(
+                "SFX_SIGNATURE_CANDIDATE_LIMIT",
+                "MZ/PE input contains more overlay 7z signature candidates than the configured ceiling",
+                offset=offset,
+                count=self.signature_candidates,
+                limit=self.limits.max_sfx_signature_candidates,
+            )
+
+    def charge_envelope_work(self, length, offset):
+        if length < 0:
+            reject("INVALID_LENGTH", "7z next header declares a negative length", offset=offset)
+        if self.envelope_work + length > self.limits.max_envelope_work_bytes:
+            reject(
+                "ENVELOPE_WORK_LIMIT",
+                "7z envelope validation exceeds the configured next-header work budget",
+                offset=offset,
+                requestedLength=length,
+                total=self.envelope_work + length,
+                limit=self.limits.max_envelope_work_bytes,
+            )
+        self.envelope_work += length
 
     def add_member(self, archive_count):
         archive_count += 1
@@ -395,14 +505,26 @@ class ArchiveAuditor:
             "maxMembersPerArchive": self.limits.max_members_per_archive,
             "maxMembersTotal": self.limits.max_members_total,
             "maxPathLength": self.limits.max_path_length,
+            "maxSfxPrefixBytes": self.limits.max_sfx_prefix_bytes,
+            "maxSfxSignatureOccurrences": self.limits.max_sfx_signature_occurrences,
+            "maxSfxSignatureCandidates": self.limits.max_sfx_signature_candidates,
+            "maxEnvelopeWorkBytes": self.limits.max_envelope_work_bytes,
+            "maxCertificateEntries": self.limits.max_certificate_entries,
         }
-        if not isinstance(self.limits.max_depth, int) or not 0 <= self.limits.max_depth <= 128:
+        if (
+            isinstance(self.limits.max_depth, bool)
+            or not isinstance(self.limits.max_depth, int)
+            or not 0 <= self.limits.max_depth <= 128
+        ):
             reject("INVALID_LIMIT", "maxDepth must be an integer between 0 and 128")
         for name, value in integer_limits.items():
-            if not isinstance(value, int) or value <= 0:
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 reject("INVALID_LIMIT", f"{name} must be a positive integer")
+        if self.limits.max_sfx_prefix_bytes < 88:
+            reject("INVALID_LIMIT", "maxSfxPrefixBytes must leave room for a bounded PE header")
         if (
-            not isinstance(self.limits.max_compression_ratio, (int, float))
+            isinstance(self.limits.max_compression_ratio, bool)
+            or not isinstance(self.limits.max_compression_ratio, (int, float))
             or not math.isfinite(self.limits.max_compression_ratio)
             or self.limits.max_compression_ratio <= 0
         ):
@@ -435,10 +557,7 @@ class ArchiveAuditor:
                 "sha256": sha256(data),
             },
             "limits": self.limits.manifest(),
-            "totals": {
-                "members": self.state.total_members,
-                "expandedBytes": self.state.total_expanded,
-            },
+            "totals": self.state.totals(),
             "archive": archive,
         }
 
@@ -459,14 +578,11 @@ class ArchiveAuditor:
                 "sha256": sha256(data),
             },
             "limits": self.limits.manifest(),
-            "totals": {
-                "members": self.state.total_members,
-                "expandedBytes": self.state.total_expanded,
-            },
+            "totals": self.state.totals(),
             "archive": archive,
         }
 
-    def _audit_bytes(self, data, name, parent, depth, chain):
+    def _audit_bytes(self, data, name, parent, depth, chain, detection=None):
         if depth > self.limits.max_depth:
             reject(
                 "RECURSION_DEPTH_LIMIT",
@@ -479,11 +595,14 @@ class ArchiveAuditor:
         if identity in chain:
             reject("ARCHIVE_CYCLE", "Nested archive repeats an ancestor byte identity", identity=identity)
 
-        detected, signature_offset = detect_format(
-            data,
-            self._tar_recognition_member_limit(),
-        )
-        archive_format = detected
+        if detection is None:
+            detection = detect_format(
+                data,
+                self._tar_recognition_member_limit(),
+                self.state,
+            )
+        archive_format = detection.archive_format
+        signature_offset = detection.signature_offset
         if not archive_format:
             reject("UNRECOGNIZED_ARCHIVE", "Input is not a supported archive format")
 
@@ -505,7 +624,7 @@ class ArchiveAuditor:
         elif archive_format in ("gzip", "bzip2", "xz", "zstd"):
             self._parse_wrapper(data, node, archive_format)
         elif archive_format == "7z":
-            self._parse_7z(data, node, signature_offset)
+            self._parse_7z(data, node, detection)
         else:
             reject("UNSUPPORTED_ARCHIVE_FORMAT", "Archive format is recognized but unsupported", format=archive_format)
 
@@ -518,18 +637,20 @@ class ArchiveAuditor:
             nested_name = member.pop("_nestedName", member["logicalPath"] or "")
             if member["type"] != "file":
                 continue
-            nested_detected, _ = detect_format(
+            detection = detect_format(
                 content,
                 self._tar_recognition_member_limit(),
+                self.state,
+                nested=True,
             )
-            if not nested_detected:
+            if not detection.archive_format:
                 continue
             parent = {
                 "archiveIdentity": node["identity"],
                 "memberOrdinal": member["ordinal"],
                 "logicalPath": member["logicalPath"],
             }
-            nested = self._audit_bytes(content, nested_name, parent, depth + 1, chain)
+            nested = self._audit_bytes(content, nested_name, parent, depth + 1, chain, detection)
             member["nestedArchiveIdentity"] = nested["identity"]
             member["nestedArchive"] = nested
 
@@ -1389,13 +1510,16 @@ class ArchiveAuditor:
             embedded_name_raw,
         )
 
-    def _parse_7z(self, data, node, signature_offset):
-        if signature_offset:
-            validate_sfx_pe_prefix(data, signature_offset)
-        major, minor, next_start, next_size, next_header = seven_zip_envelope(
-            data,
-            signature_offset,
-        )
+    def _parse_7z(self, data, node, detection):
+        signature_offset = detection.signature_offset
+        pe_layout = detection.pe_layout
+        archive_end = pe_layout.overlay_end if pe_layout is not None else len(data)
+        envelope = detection.envelope
+        if envelope is None:
+            envelope = seven_zip_envelope(data, signature_offset, archive_end, self.state)
+        major, minor = envelope.major, envelope.minor
+        next_start, next_size = envelope.next_start, envelope.next_size
+        next_header = checked_slice(data, next_start, next_size)
 
         physical_ranges = []
         if next_size == 0:
@@ -1441,7 +1565,7 @@ class ArchiveAuditor:
         self._validate_physical_ranges(
             physical_ranges,
             signature_offset + 32,
-            len(data),
+            archive_end,
             "7z",
         )
 
@@ -1545,10 +1669,20 @@ class ArchiveAuditor:
             "archiveVersion": f"{major}.{minor}",
             "signatureOffset": signature_offset,
             "sfxPrefixLength": signature_offset,
-            "sfxPrefixSha256": sha256(data[:signature_offset]) if signature_offset else None,
+            "sfxPrefixSha256": sha256_range(data, 0, signature_offset) if signature_offset else None,
+            "overlayGapLength": (
+                signature_offset - pe_layout.image_end if pe_layout is not None else None
+            ),
+            "overlayGapSha256": (
+                sha256_range(data, pe_layout.image_end, signature_offset)
+                if pe_layout is not None
+                else None
+            ),
+            "archiveEnd": archive_end,
             "nextHeaderOffset": next_start,
             "nextHeaderLength": next_size,
             "nextHeaderDisposition": header_disposition,
+            "peLayout": pe_layout.manifest() if pe_layout is not None else None,
         }
 
     def _seven_parse_header(self, reader):
@@ -2243,20 +2377,38 @@ def parse_zstd_header(data):
     }
 
 
-def seven_zip_envelope(data, signature_offset):
-    if signature_offset < 0 or signature_offset > len(data):
+@dataclass(frozen=True)
+class SevenZipEnvelope:
+    signature_offset: int
+    major: int
+    minor: int
+    next_offset: int
+    next_start: int
+    next_size: int
+    next_crc: int
+
+
+def seven_zip_start_header(data, signature_offset, archive_end=None):
+    """Validate the cheap fixed-size 7z start header.
+
+    This never touches more than the 32 signature bytes, so a hostile input
+    cannot buy expensive work with a decoy that fails here.
+    """
+    if archive_end is None:
+        archive_end = len(data)
+    if signature_offset < 0 or signature_offset > archive_end:
         reject(
             "SEVEN_ZIP_SIGNATURE_OUT_OF_RANGE",
             "7z signature offset is outside the containing byte stream",
             offset=signature_offset,
-            containerLength=len(data),
+            containerLength=archive_end,
         )
-    if len(data) - signature_offset < 32:
+    if archive_end - signature_offset < 32:
         reject(
             "TRUNCATED_7Z_START_HEADER",
             "7z start header is shorter than 32 bytes",
             offset=signature_offset,
-            availableLength=len(data) - signature_offset,
+            availableLength=archive_end - signature_offset,
         )
     signature = data[signature_offset:signature_offset + 32]
     if signature[:6] != SEVEN_ZIP_SIGNATURE:
@@ -2269,91 +2421,297 @@ def seven_zip_envelope(data, signature_offset):
 
     next_offset, next_size, next_crc = struct.unpack_from("<QQI", signature, 12)
     payload_start = signature_offset + 32
-    if next_offset > len(data) - payload_start:
+    if next_offset > archive_end - payload_start:
         reject(
             "SEVEN_ZIP_NEXT_HEADER_OUT_OF_RANGE",
             "7z next-header offset is outside the containing byte stream",
             nextHeaderOffset=next_offset,
-            availableLength=len(data) - payload_start,
+            availableLength=archive_end - payload_start,
         )
     next_start = payload_start + next_offset
-    if next_size > len(data) - next_start:
+    if next_size > archive_end - next_start:
         reject(
             "SEVEN_ZIP_NEXT_HEADER_OUT_OF_RANGE",
             "7z next header extends outside the containing byte stream",
             nextHeaderOffset=next_offset,
             nextHeaderLength=next_size,
-            availableLength=len(data) - next_start,
+            availableLength=archive_end - next_start,
         )
     next_end = next_start + next_size
-    if next_end != len(data):
+    if next_end != archive_end:
         reject(
             "TRAILING_7Z_PAYLOAD",
             "7z next header does not end at the archive boundary",
             nextHeaderEnd=next_end,
-            archiveLength=len(data),
+            archiveLength=archive_end,
         )
-    next_header = data[next_start:next_end]
-    if zlib.crc32(next_header) & 0xffffffff != next_crc:
-        reject("SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH", "7z next-header checksum is invalid")
     if next_size == 0 and next_offset != 0:
         reject(
             "UNDECLARED_7Z_EMPTY_PAYLOAD",
             "A 7z archive with no next header cannot declare preceding payload bytes",
             payloadLength=next_offset,
         )
-    return major, minor, next_start, next_size, next_header
+    return SevenZipEnvelope(
+        signature_offset,
+        major,
+        minor,
+        next_offset,
+        next_start,
+        next_size,
+        next_crc,
+    )
 
 
-def validate_sfx_pe_prefix(data, signature_offset=None):
-    if len(data) < 64:
-        reject("MALFORMED_SFX_PE_PREFIX", "MZ-prefixed input is shorter than a DOS header")
-    pe_offset = struct.unpack_from("<I", data, 0x3c)[0]
-    if pe_offset < 64 or pe_offset > MAX_SFX_PREFIX_LENGTH - 24:
-        reject(
-            "MALFORMED_SFX_PE_PREFIX",
-            "MZ-prefixed input has an invalid PE header offset",
-            peHeaderOffset=pe_offset,
+def verify_seven_zip_next_header(data, envelope):
+    """Expensive phase: the caller must charge the work budget first."""
+    next_end = envelope.next_start + envelope.next_size
+    if crc32_range(data, envelope.next_start, next_end) != envelope.next_crc:
+        reject("SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH", "7z next-header checksum is invalid")
+
+
+def seven_zip_envelope(data, signature_offset, archive_end, state):
+    envelope = seven_zip_start_header(data, signature_offset, archive_end)
+    state.charge_envelope_work(envelope.next_size, signature_offset)
+    verify_seven_zip_next_header(data, envelope)
+    return envelope
+
+
+@dataclass(frozen=True)
+class CertificateEntry:
+    offset: int
+    length: int
+    revision: int
+    certificate_type: int
+
+    def manifest(self):
+        return {
+            "offset": self.offset,
+            "length": self.length,
+            "revision": f"{self.revision:04x}",
+            "certificateType": f"{self.certificate_type:04x}",
+        }
+
+
+@dataclass(frozen=True)
+class PeLayout:
+    pe_offset: int
+    optional_offset: int
+    optional_size: int
+    optional_magic: int
+    number_of_rva_and_sizes: int
+    section_count: int
+    section_table: int
+    section_table_end: int
+    size_of_headers: int
+    image_end: int
+    container_length: int
+    certificate_offset: int = None
+    certificate_length: int = None
+    certificate_sha256: str = None
+    certificate_entries: tuple = ()
+
+    @property
+    def signed(self):
+        return self.certificate_offset is not None
+
+    @property
+    def overlay_start(self):
+        return self.image_end
+
+    @property
+    def overlay_end(self):
+        return self.certificate_offset if self.signed else self.container_length
+
+    def classify(self, offset):
+        """Classify a physical signature offset before ambiguity resolution."""
+        if offset < self.image_end:
+            return "image"
+        if self.signed and offset >= self.certificate_offset:
+            return "certificate"
+        return "overlay"
+
+    def manifest(self):
+        return {
+            "peHeaderOffset": self.pe_offset,
+            "optionalHeaderMagic": f"{self.optional_magic:04x}",
+            "optionalHeaderLength": self.optional_size,
+            "numberOfRvaAndSizes": self.number_of_rva_and_sizes,
+            "sectionCount": self.section_count,
+            "sizeOfHeaders": self.size_of_headers,
+            "peImageEnd": self.image_end,
+            "overlayStart": self.overlay_start,
+            "overlayEnd": self.overlay_end,
+            "signatureDisposition": "signed" if self.signed else "unsigned",
+            "certificateOffset": self.certificate_offset,
+            "certificateLength": self.certificate_length,
+            "certificateSha256": self.certificate_sha256,
+            "certificateEntries": [entry.manifest() for entry in self.certificate_entries],
+        }
+
+
+def malformed_pe(message, **details):
+    reject("MALFORMED_SFX_PE_PREFIX", message, **details)
+
+
+def parse_win_certificate_table(data, start, length, limits):
+    """Validate the declared attribute-certificate table as an exact,
+    8-byte-aligned, fully consumed WIN_CERTIFICATE sequence.
+
+    Certificate content is never decoded, parsed as ASN.1, or trusted; only
+    the declared framing is bound so that the bytes are accounted for.
+    """
+    end = start + length
+    entries = []
+    position = start
+    while position < end:
+        if end - position < WIN_CERTIFICATE_HEADER_LENGTH:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE entry header is truncated by the declared table",
+                offset=position,
+                availableLength=end - position,
+            )
+        entry_length = u32(data, position)
+        revision = u16(data, position + 4)
+        certificate_type = u16(data, position + 6)
+        if entry_length < WIN_CERTIFICATE_HEADER_LENGTH:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE dwLength is smaller than its own header",
+                offset=position,
+                declaredLength=entry_length,
+            )
+        if entry_length > end - position:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE entry extends past the declared certificate table",
+                offset=position,
+                declaredLength=entry_length,
+                availableLength=end - position,
+            )
+        if revision not in WIN_CERTIFICATE_REVISIONS:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE entry declares an unsupported revision",
+                offset=position,
+                revision=f"{revision:04x}",
+            )
+        if certificate_type not in WIN_CERTIFICATE_TYPES:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE entry declares an unsupported certificate type",
+                offset=position,
+                certificateType=f"{certificate_type:04x}",
+            )
+        padded_length = (
+            (entry_length + WIN_CERTIFICATE_ALIGNMENT - 1)
+            // WIN_CERTIFICATE_ALIGNMENT
+            * WIN_CERTIFICATE_ALIGNMENT
         )
-    if pe_offset + 24 > len(data) or data[pe_offset:pe_offset + 4] != b"PE\0\0":
+        if padded_length > end - position:
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE alignment padding extends past the declared certificate table",
+                offset=position,
+                declaredLength=entry_length,
+                paddedLength=padded_length,
+                availableLength=end - position,
+            )
+        if any(checked_slice(data, position + entry_length, padded_length - entry_length)):
+            reject(
+                "MALFORMED_PE_CERTIFICATE",
+                "WIN_CERTIFICATE alignment padding is nonzero",
+                offset=position + entry_length,
+                length=padded_length - entry_length,
+            )
+        entries.append(CertificateEntry(position, entry_length, revision, certificate_type))
+        if len(entries) > limits.max_certificate_entries:
+            reject(
+                "CERTIFICATE_ENTRY_LIMIT",
+                "PE certificate table declares more entries than the configured ceiling",
+                count=len(entries),
+                limit=limits.max_certificate_entries,
+            )
+        position += padded_length
+    if position != end:
         reject(
-            "MALFORMED_SFX_PE_PREFIX",
+            "MALFORMED_PE_CERTIFICATE",
+            "WIN_CERTIFICATE entries do not consume the declared certificate table exactly",
+            declaredEnd=position,
+            certificateTableEnd=end,
+        )
+    if not entries:
+        reject(
+            "MALFORMED_PE_CERTIFICATE",
+            "PE declares a certificate table that contains no WIN_CERTIFICATE entry",
+            offset=start,
+            length=length,
+        )
+    return tuple(entries)
+
+
+def parse_pe_layout(data, limits):
+    """Parse the MZ/PE physical layout exactly once.
+
+    Returns the bounded image extent plus the validated attribute-certificate
+    table so that physical 7z candidates can be classified before any
+    ambiguity resolution or expensive envelope validation.
+    """
+    prefix_limit = limits.max_sfx_prefix_bytes
+    if len(data) < 64:
+        malformed_pe("MZ-prefixed input is shorter than a DOS header")
+    pe_offset = u32(data, 0x3c)
+    if pe_offset < 64 or pe_offset > prefix_limit - 24:
+        malformed_pe("MZ-prefixed input has an invalid PE header offset", peHeaderOffset=pe_offset)
+    if pe_offset + 24 > len(data) or data[pe_offset:pe_offset + 4] != b"PE\0\0":
+        malformed_pe(
             "MZ-prefixed input does not contain a bounded PE signature",
             peHeaderOffset=pe_offset,
         )
 
-    section_count = struct.unpack_from("<H", data, pe_offset + 6)[0]
-    optional_size = struct.unpack_from("<H", data, pe_offset + 20)[0]
+    section_count = u16(data, pe_offset + 6)
+    optional_size = u16(data, pe_offset + 20)
     if not 1 <= section_count <= 96:
-        reject(
-            "MALFORMED_SFX_PE_PREFIX",
+        malformed_pe(
             "PE section count is outside the supported structural bound",
             sectionCount=section_count,
         )
     optional_offset = pe_offset + 24
     section_table = optional_offset + optional_size
     section_table_end = section_table + 40 * section_count
-    if section_table_end > len(data) or section_table_end > MAX_SFX_PREFIX_LENGTH:
-        reject(
-            "MALFORMED_SFX_PE_PREFIX",
-            "PE headers extend outside the bounded SFX prefix",
-            headerEnd=section_table_end,
-        )
+    if section_table_end > len(data) or section_table_end > prefix_limit:
+        malformed_pe("PE headers extend outside the bounded SFX prefix", headerEnd=section_table_end)
     if optional_size < 64:
-        reject("MALFORMED_SFX_PE_PREFIX", "PE optional header is too short")
-    optional_magic = struct.unpack_from("<H", data, optional_offset)[0]
-    minimum_optional_size = {0x10b: 96, 0x20b: 112}.get(optional_magic)
+        malformed_pe("PE optional header is too short")
+    optional_magic = u16(data, optional_offset)
+    minimum_optional_size = PE_DIRECTORY_OFFSETS.get(optional_magic)
     if minimum_optional_size is None or optional_size < minimum_optional_size:
-        reject(
-            "MALFORMED_SFX_PE_PREFIX",
+        malformed_pe(
             "PE optional header has an unsupported shape",
             optionalHeaderMagic=f"{optional_magic:04x}",
             optionalHeaderLength=optional_size,
         )
-    size_of_headers = struct.unpack_from("<I", data, optional_offset + 60)[0]
+
+    number_of_rva_and_sizes = u32(data, optional_offset + PE_DIRECTORY_COUNT_OFFSETS[optional_magic])
+    if number_of_rva_and_sizes > PE_MAX_DATA_DIRECTORIES:
+        malformed_pe(
+            "PE declares more data directories than the architecture allows",
+            numberOfRvaAndSizes=number_of_rva_and_sizes,
+            limit=PE_MAX_DATA_DIRECTORIES,
+        )
+    directory_offset = optional_offset + minimum_optional_size
+    directory_end = directory_offset + 8 * number_of_rva_and_sizes
+    if directory_end > section_table:
+        malformed_pe(
+            "PE data directories extend past the declared optional header",
+            numberOfRvaAndSizes=number_of_rva_and_sizes,
+            directoryEnd=directory_end,
+            optionalHeaderEnd=section_table,
+        )
+
+    size_of_headers = u32(data, optional_offset + 60)
     if size_of_headers < section_table_end or size_of_headers > len(data):
-        reject(
-            "MALFORMED_SFX_PE_PREFIX",
+        malformed_pe(
             "PE SizeOfHeaders does not contain the section table",
             sizeOfHeaders=size_of_headers,
             sectionTableEnd=section_table_end,
@@ -2363,14 +2721,13 @@ def validate_sfx_pe_prefix(data, signature_offset=None):
     image_end = size_of_headers
     for index in range(section_count):
         section = section_table + 40 * index
-        raw_size = struct.unpack_from("<I", data, section + 16)[0]
-        raw_offset = struct.unpack_from("<I", data, section + 20)[0]
+        raw_size = u32(data, section + 16)
+        raw_offset = u32(data, section + 20)
         if not raw_size:
             continue
         raw_end = raw_offset + raw_size
         if raw_offset < size_of_headers or raw_end > len(data):
-            reject(
-                "MALFORMED_SFX_PE_PREFIX",
+            malformed_pe(
                 "PE section data extends outside the executable image",
                 section=index,
                 rawOffset=raw_offset,
@@ -2381,99 +2738,231 @@ def validate_sfx_pe_prefix(data, signature_offset=None):
     raw_ranges.sort()
     for previous, current in zip(raw_ranges, raw_ranges[1:]):
         if previous[1] > current[0]:
-            reject(
-                "MALFORMED_SFX_PE_PREFIX",
+            malformed_pe(
                 "PE section data ranges overlap",
                 firstSection=previous[2],
                 secondSection=current[2],
             )
 
-    if signature_offset is not None:
-        if signature_offset > MAX_SFX_PREFIX_LENGTH:
-            reject(
-                "SFX_PREFIX_LIMIT",
-                "7z SFX prefix exceeds the fixed physical scan ceiling",
-                prefixLength=signature_offset,
-                limit=MAX_SFX_PREFIX_LENGTH,
-            )
-        if signature_offset < image_end:
-            reject(
-                "SFX_SIGNATURE_OVERLAPS_PE_IMAGE",
-                "Embedded 7z signature overlaps PE headers or section data",
-                signatureOffset=signature_offset,
-                peImageEnd=image_end,
-            )
+    layout = PeLayout(
+        pe_offset,
+        optional_offset,
+        optional_size,
+        optional_magic,
+        number_of_rva_and_sizes,
+        section_count,
+        section_table,
+        section_table_end,
+        size_of_headers,
+        image_end,
+        len(data),
+    )
+    if number_of_rva_and_sizes <= IMAGE_DIRECTORY_ENTRY_SECURITY:
+        return layout
+
+    security = directory_offset + 8 * IMAGE_DIRECTORY_ENTRY_SECURITY
+    certificate_offset = u32(data, security)
+    certificate_length = u32(data, security + 4)
+    if not certificate_offset and not certificate_length:
+        return layout
+    if not certificate_offset or not certificate_length:
+        malformed_pe(
+            "PE security directory declares a half-empty certificate table",
+            certificateOffset=certificate_offset,
+            certificateLength=certificate_length,
+        )
+    if certificate_offset % WIN_CERTIFICATE_ALIGNMENT:
+        malformed_pe(
+            "PE certificate table is not 8-byte aligned",
+            certificateOffset=certificate_offset,
+        )
+    if certificate_length % WIN_CERTIFICATE_ALIGNMENT:
+        malformed_pe(
+            "PE certificate table length is not an 8-byte multiple",
+            certificateLength=certificate_length,
+        )
+    if certificate_length < WIN_CERTIFICATE_HEADER_LENGTH:
+        malformed_pe(
+            "PE certificate table is shorter than one WIN_CERTIFICATE header",
+            certificateLength=certificate_length,
+        )
+    if certificate_offset < image_end:
+        malformed_pe(
+            "PE certificate table overlaps the executable image",
+            certificateOffset=certificate_offset,
+            peImageEnd=image_end,
+        )
+    if certificate_offset > len(data) or certificate_length > len(data) - certificate_offset:
+        malformed_pe(
+            "PE certificate table extends outside the containing byte stream",
+            certificateOffset=certificate_offset,
+            certificateLength=certificate_length,
+            containerLength=len(data),
+        )
+    if certificate_offset + certificate_length != len(data):
+        malformed_pe(
+            "PE certificate table is not the terminal suffix of the input",
+            certificateEnd=certificate_offset + certificate_length,
+            containerLength=len(data),
+        )
+
+    entries = parse_win_certificate_table(data, certificate_offset, certificate_length, limits)
+    return PeLayout(
+        pe_offset,
+        optional_offset,
+        optional_size,
+        optional_magic,
+        number_of_rva_and_sizes,
+        section_count,
+        section_table,
+        section_table_end,
+        size_of_headers,
+        image_end,
+        len(data),
+        certificate_offset,
+        certificate_length,
+        sha256_range(data, certificate_offset, certificate_offset + certificate_length),
+        entries,
+    )
 
 
-def detect_format(data, tar_member_limit=Limits.max_members_per_archive):
-    if data.startswith((b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06")):
-        return "zip", 0
-    if data.startswith(SEVEN_ZIP_SIGNATURE):
-        return "7z", 0
-    if data.startswith(b"\x1f\x8b"):
-        return "gzip", 0
-    if data.startswith(b"BZh"):
-        return "bzip2", 0
-    if data.startswith(XZ_SIGNATURE):
-        return "xz", 0
-    if data.startswith(ZSTD_SIGNATURE):
-        return "zstd", 0
-    if data.startswith(b"MZ"):
-        validate_sfx_pe_prefix(data)
-        scan_end = min(len(data), MAX_SFX_PREFIX_LENGTH + len(SEVEN_ZIP_SIGNATURE))
-        cursor = 0
-        first_candidate = None
-        second_candidate = None
-        first_error = None
-        valid_candidates = []
-        while True:
-            candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, scan_end)
-            if candidate < 0 or candidate > MAX_SFX_PREFIX_LENGTH:
-                break
-            if first_candidate is None:
-                first_candidate = candidate
-            elif second_candidate is None:
-                second_candidate = candidate
-            try:
-                seven_zip_envelope(data, candidate)
-            except AuditError as exc:
-                if first_error is None:
-                    first_error = exc
-            else:
-                valid_candidates.append(candidate)
-                if len(valid_candidates) == 2:
-                    reject(
-                        "AMBIGUOUS_7Z_SIGNATURE",
-                        "SFX contains multiple valid 7z signature envelopes",
-                        firstOffset=valid_candidates[0],
-                        secondOffset=valid_candidates[1],
-                    )
-            cursor = candidate + 1
-        if valid_candidates:
-            validate_sfx_pe_prefix(data, valid_candidates[0])
-            return "7z", valid_candidates[0]
-        if first_candidate is not None:
-            validate_sfx_pe_prefix(data, first_candidate)
-            if second_candidate is not None:
-                reject(
-                    "INVALID_7Z_SFX_CANDIDATES",
-                    "SFX contains multiple 7z signatures but none has a valid envelope",
-                    firstOffset=first_candidate,
-                    secondOffset=second_candidate,
-                )
-            raise first_error
-        if len(data) > MAX_SFX_PREFIX_LENGTH:
+@dataclass(frozen=True)
+class Detection:
+    archive_format: str = None
+    signature_offset: int = 0
+    pe_layout: PeLayout = None
+    envelope: SevenZipEnvelope = None
+
+
+def detect_sfx_7z(data, state, nested=False):
+    """Locate the single legal 7z overlay in an MZ/PE input.
+
+    Every signature occurrence is charged against a bounded occurrence
+    budget, only occurrences that fall in the physical overlay window become
+    candidates, and the expensive next-header CRC is charged against a
+    bounded work budget before it runs. Budget exhaustion is a deliberate
+    rejection: a candidate is never silently skipped so that some other
+    candidate can be accepted in its place.
+
+    A nested member that carries no 7z signature at all is an ordinary PE
+    file rather than an SFX archive, so it is reported as an opaque leaf
+    instead of failing the whole audit. Once any signature is present the
+    strict path runs and every structural rejection is preserved.
+    """
+    limits = state.limits
+    scan_end = min(len(data), limits.max_sfx_prefix_bytes + len(SEVEN_ZIP_SIGNATURE))
+    first_occurrence = data.find(SEVEN_ZIP_SIGNATURE, 0, scan_end)
+    if first_occurrence < 0:
+        if nested:
+            return Detection()
+        parse_pe_layout(data, limits)
+        if len(data) > limits.max_sfx_prefix_bytes:
             reject(
                 "SFX_PREFIX_LIMIT",
-                "No 7z signature occurs within the fixed physical scan ceiling",
-                limit=MAX_SFX_PREFIX_LENGTH,
+                "No 7z signature occurs within the configured physical scan ceiling",
+                limit=limits.max_sfx_prefix_bytes,
             )
         reject("MISSING_7Z_SFX_SIGNATURE", "MZ/PE input contains no embedded 7z signature")
+
+    layout = parse_pe_layout(data, limits)
+    cursor = first_occurrence
+    first_candidate = None
+    second_candidate = None
+    first_error = None
+    first_rejected_placement = None
+    valid_candidates = []
+    valid_envelope = None
+    while True:
+        candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, scan_end)
+        if candidate < 0:
+            break
+        cursor = candidate + 1
+        state.charge_signature_occurrence(candidate)
+        placement = layout.classify(candidate)
+        if placement != "overlay":
+            if first_rejected_placement is None:
+                first_rejected_placement = (candidate, placement)
+            continue
+        if first_candidate is None:
+            first_candidate = candidate
+        elif second_candidate is None:
+            second_candidate = candidate
+        state.charge_signature_candidate(candidate)
+        try:
+            envelope = seven_zip_start_header(data, candidate, layout.overlay_end)
+        except AuditError as exc:
+            if first_error is None:
+                first_error = exc
+            continue
+        state.charge_envelope_work(envelope.next_size, candidate)
+        try:
+            verify_seven_zip_next_header(data, envelope)
+        except AuditError as exc:
+            if first_error is None:
+                first_error = exc
+            continue
+        if len(valid_candidates) < 2:
+            valid_candidates.append(candidate)
+            if valid_envelope is None:
+                valid_envelope = envelope
+        if len(valid_candidates) == 2:
+            reject(
+                "AMBIGUOUS_7Z_SIGNATURE",
+                "SFX contains multiple valid 7z signature envelopes",
+                firstOffset=valid_candidates[0],
+                secondOffset=valid_candidates[1],
+            )
+
+    if valid_candidates:
+        return Detection("7z", valid_candidates[0], layout, valid_envelope)
+    if first_candidate is not None:
+        if second_candidate is not None:
+            reject(
+                "INVALID_7Z_SFX_CANDIDATES",
+                "SFX contains multiple overlay 7z signatures but none has a valid envelope",
+                firstOffset=first_candidate,
+                secondOffset=second_candidate,
+            )
+        raise first_error
+    if first_rejected_placement is not None:
+        offset, placement = first_rejected_placement
+        if placement == "certificate":
+            reject(
+                "SFX_SIGNATURE_INSIDE_CERTIFICATE",
+                "Embedded 7z signature lies inside the declared PE certificate table",
+                signatureOffset=offset,
+                certificateOffset=layout.certificate_offset,
+                certificateLength=layout.certificate_length,
+            )
+        reject(
+            "SFX_SIGNATURE_OVERLAPS_PE_IMAGE",
+            "Embedded 7z signature overlaps PE headers or section data",
+            signatureOffset=offset,
+            peImageEnd=layout.image_end,
+        )
+    reject("MISSING_7Z_SFX_SIGNATURE", "MZ/PE input contains no embedded 7z signature")
+
+
+def detect_format(data, tar_member_limit=Limits.max_members_per_archive, state=None, nested=False):
+    if data.startswith((b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06")):
+        return Detection("zip")
+    if data.startswith(SEVEN_ZIP_SIGNATURE):
+        return Detection("7z")
+    if data.startswith(b"\x1f\x8b"):
+        return Detection("gzip")
+    if data.startswith(b"BZh"):
+        return Detection("bzip2")
+    if data.startswith(XZ_SIGNATURE):
+        return Detection("xz")
+    if data.startswith(ZSTD_SIGNATURE):
+        return Detection("zstd")
+    if data.startswith(b"MZ"):
+        return detect_sfx_7z(data, state if state is not None else AuditState(Limits()), nested)
     if len(data) >= 512 and data[257:263] in (b"ustar\0", b"ustar "):
-        return "tar", 0
+        return Detection("tar")
     if is_structural_tar(data, tar_member_limit):
-        return "tar", 0
-    return None, 0
+        return Detection("tar")
+    return Detection()
 
 
 def manifest_for_comparison(manifest):
@@ -2561,6 +3050,23 @@ def add_limit_arguments(parser):
     parser.add_argument("--max-members-total", type=positive_int, default=Limits.max_members_total)
     parser.add_argument("--max-compression-ratio", type=positive_float, default=Limits.max_compression_ratio)
     parser.add_argument("--max-path-length", type=positive_int, default=Limits.max_path_length)
+    parser.add_argument("--max-sfx-prefix-bytes", type=positive_int, default=Limits.max_sfx_prefix_bytes)
+    parser.add_argument(
+        "--max-sfx-signature-occurrences",
+        type=positive_int,
+        default=Limits.max_sfx_signature_occurrences,
+    )
+    parser.add_argument(
+        "--max-sfx-signature-candidates",
+        type=positive_int,
+        default=Limits.max_sfx_signature_candidates,
+    )
+    parser.add_argument(
+        "--max-envelope-work-bytes",
+        type=positive_int,
+        default=Limits.max_envelope_work_bytes,
+    )
+    parser.add_argument("--max-certificate-entries", type=positive_int, default=Limits.max_certificate_entries)
 
 
 def limits_from_args(args):
@@ -2571,6 +3077,11 @@ def limits_from_args(args):
         max_members_total=args.max_members_total,
         max_compression_ratio=args.max_compression_ratio,
         max_path_length=args.max_path_length,
+        max_sfx_prefix_bytes=args.max_sfx_prefix_bytes,
+        max_sfx_signature_occurrences=args.max_sfx_signature_occurrences,
+        max_sfx_signature_candidates=args.max_sfx_signature_candidates,
+        max_envelope_work_bytes=args.max_envelope_work_bytes,
+        max_certificate_entries=args.max_certificate_entries,
     )
 
 

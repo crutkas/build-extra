@@ -43,11 +43,61 @@ The configurable limits and defaults are:
 | `--max-members-total` | 200,000 physical members |
 | `--max-compression-ratio` | 1000 |
 | `--max-path-length` | 4096 UTF-8 bytes |
+| `--max-sfx-prefix-bytes` | 16 MiB of MZ/PE prefix scanned for a 7z signature |
+| `--max-sfx-signature-occurrences` | 4096 signature byte matches examined |
+| `--max-sfx-signature-candidates` | 64 overlay candidates parsed |
+| `--max-envelope-work-bytes` | 256 MiB of 7z next-header CRC across the audit |
+| `--max-certificate-entries` | 64 `WIN_CERTIFICATE` entries |
+
+Every limit is validated as a positive integer of the correct type,
+`--max-depth` additionally as 0 to 128, and `--max-compression-ratio` as a
+positive finite number. A limit of the wrong type, including a `bool`, is an
+`INVALID_LIMIT` rejection rather than a coerced value. The effective limits
+are echoed in the manifest so a decision can be replayed.
 
 The decompression paths apply output bounds before materializing the full
 stream. A limit violation is therefore a rejection boundary, not only an
-after-the-fact report. MZ/PE SFX discovery scans at most 16 MiB of prefix
-bytes and does not allocate an unbounded candidate list.
+after-the-fact report.
+
+### Bounded MZ/PE signature discovery
+
+A 7z signature is six bytes, so an attacker who controls an MZ/PE input can
+place many cheap 32-byte start headers that each declare a next header
+covering nearly the whole file. Validating them naively costs a copy and a
+CRC per decoy, which is quadratic in the input.
+
+Discovery is therefore explicitly budgeted, and every budget is charged
+*before* the work it pays for:
+
+1. The PE layout is parsed exactly once, before any candidate is considered.
+2. Each signature byte match is charged against
+   `--max-sfx-signature-occurrences`.
+3. Only matches inside the physical overlay window become candidates. A
+   match inside the PE headers, inside section raw data, or inside the
+   declared certificate table is classified and skipped; it never becomes a
+   candidate and never contributes to ambiguity.
+4. Each candidate is charged against `--max-sfx-signature-candidates` and
+   then parsed with the fixed 32-byte start-header check only, which reads
+   at most 20 bytes of CRC.
+5. The declared next-header length is charged against
+   `--max-envelope-work-bytes` before the next-header CRC runs. The CRC
+   is computed incrementally over bounded `memoryview` chunks, so no
+   candidate ever materializes a copy of its next header.
+
+Candidate storage is bounded: only the first two legal candidates and the
+first two valid envelopes are retained for reporting. Budgets are held on
+the shared audit state, so nested archives draw on the same ceilings as
+their container, and the totals are reported in the manifest.
+`--max-envelope-work-bytes` is charged for every 7z next header, including
+bare non-SFX archives, so the aggregate CRC work of a recursive audit is
+bounded regardless of how the archives are nested. The envelope accepted by
+discovery is carried into parsing, so an accepted next header is CRC-checked
+and charged exactly once.
+
+Exhausting a budget is a deliberate, stable rejection
+(`SFX_SIGNATURE_OCCURRENCE_LIMIT`, `SFX_SIGNATURE_CANDIDATE_LIMIT`, or
+`ENVELOPE_WORK_LIMIT`). A candidate is never silently skipped so that an
+earlier or later candidate can be accepted in its place.
 
 ## Supported physical formats
 
@@ -60,7 +110,7 @@ bytes and does not allocate an unbounded candidate list.
 | xz | One xz stream |
 | zstd | One dictionary-free zstd frame |
 | 7z | Version 0.x, inline metadata, plain or encoded headers, solid streams, and one Copy, LZMA, or LZMA2 coder per folder |
-| 7z SFX | The same 7z subset after one structurally bounded, inert MZ/PE prefix |
+| 7z SFX | The same 7z subset after one structurally bounded, inert MZ/PE prefix, optionally followed by a validated terminal `WIN_CERTIFICATE` table |
 
 Physical bytes alone identify ZIP, compression streams, 7z, and 7z SFX;
 caller path, basename, case, and suffix never affect classification,
@@ -71,12 +121,58 @@ v7 TARs that have no magic. ustar and GNU magic classify malformed input as
 TAR so that strict parsing rejects it rather than treating it as an opaque
 leaf. Opaque decompressed content remains a leaf.
 
-An MZ prefix must contain bounded DOS, PE, optional-header, and section-table
-structures. The embedded 7z signature must occur after all declared PE headers
-and section data and no later than the 16 MiB prefix ceiling. Candidate
-envelopes must have valid 7z start-header and next-header CRCs and exact
-boundaries; multiple valid envelopes reject as ambiguous. The SFX bytes are
-only parsed and hashed, never executed.
+A nested member that begins with `MZ` but carries no 7z signature anywhere in
+the scanned prefix is an ordinary executable rather than an SFX archive, so
+it is recorded as an opaque leaf instead of failing the audit. Packages that
+ship ordinary `.exe` members are therefore auditable. As soon as any 7z
+signature is present the strict SFX path runs and every structural rejection
+applies. A root input that is an ordinary PE with no embedded archive is
+still rejected, because it is not an archive.
+
+An MZ prefix must contain bounded DOS, PE, optional-header, data-directory,
+and section-table structures. Both PE32 (`0x10b`) and PE32+ (`0x20b`)
+optional headers are parsed, including `NumberOfRvaAndSizes`, which may not
+exceed 16 and whose declared directory bytes must fit inside the declared
+optional header. Section raw ranges must start at or after `SizeOfHeaders`,
+end inside the file, and must not overlap each other. The embedded 7z
+signature must occur at or after the end of the PE image and no later than
+the configured prefix ceiling. Candidate envelopes must have valid 7z
+start-header and next-header CRCs and exact boundaries; multiple valid
+envelopes reject as ambiguous. The SFX bytes are only parsed and hashed,
+never executed, and certificate bytes are never decoded or trusted.
+
+### Signed and unsigned SFX
+
+`IMAGE_DIRECTORY_ENTRY_SECURITY` (index 4) is the attribute-certificate
+directory. Unlike every other directory its `VirtualAddress` is a physical
+file offset, not an RVA, and it is read as such.
+
+For an **unsigned** SFX the security directory is absent or zero, and the 7z
+envelope must end at physical end of file.
+
+For a **signed** SFX the physically common layout is
+`PE image | 7z overlay | terminal WIN_CERTIFICATE table`. The 7z envelope is
+permitted to end at the certificate-table offset instead of end of file,
+but only when the declared table is valid and consumes the terminal suffix
+exactly. The table must be 8-byte aligned, have an 8-byte-multiple length,
+begin at or after the end of the PE image, and end exactly at end of file.
+It is then walked as a bounded `WIN_CERTIFICATE` sequence: each entry's
+`dwLength` must be at least the 8-byte header, must fit in the table, must
+carry a known revision and certificate type, and is followed by 8-byte
+alignment padding that must be present, in range, and zero. The entries must
+consume the table exactly, and at least one entry must exist.
+
+The certificate offset, length, SHA-256, and per-entry framing are recorded
+as physical provenance, so a comparison binds the certificate bytes. The
+source SHA-256 continues to bind every byte of the input, and the input is
+fully classified as PE image, optional alignment gap, 7z archive, and
+optional certificate table, each of which is separately hash-bound.
+
+These reject rather than fall back: a candidate inside the certificate
+table, a certificate table before or overlapping the image or the archive, a
+nonterminal table, undeclared or trailing bytes between the archive and the
+table, a half-declared directory, misaligned offsets or lengths, malformed
+entries or padding, and any range overlap.
 
 The following variants reject rather than fall back to an extractor:
 ZIP64, split or encrypted ZIP, ZIP Unicode shadow-name fields, ZIP
@@ -150,7 +246,21 @@ metadata.
 
 For 7z SFX input, `sfxPrefixLength` and `sfxPrefixSha256` record the exact PE
 prefix as physical provenance. A changed prefix length or byte therefore
-changes comparison even when the embedded 7z members are unchanged.
+changes comparison even when the embedded 7z members are unchanged. The
+`archiveEnd` field records where the 7z envelope is required to end,
+`overlayGapLength` and `overlayGapSha256` record any file-alignment padding
+between the end of the PE image and the 7z signature, and
+`peLayout` records the parsed PE geometry: optional-header magic and length,
+`NumberOfRvaAndSizes`, section count, `SizeOfHeaders`, the image end, the
+overlay window, the signed/unsigned disposition, and the certificate offset,
+length, SHA-256, and per-entry offsets, lengths, revisions, and types. A
+changed certificate therefore changes comparison even when the PE image and
+the embedded 7z members are identical.
+
+The recursive `totals` report the members and expanded bytes as before, plus
+`sfxSignatureOccurrences`, `sfxSignatureCandidates`, and
+`envelopeWorkBytes`, so the discovery work an accepted input actually
+cost is visible and comparable.
 
 ## Fail-closed rejection matrix
 
@@ -164,7 +274,9 @@ changes comparison even when the embedded 7z members are unchanged.
 | Compression | Unsupported methods, invalid streams, dictionaries, ratio excess, or expanded-byte excess |
 | Recursion | Depth excess, global member excess, and repeated ancestor archive identity |
 | Trailing data | ZIP data after EOCD, nonzero TAR data after terminators, a second valid gzip member/bzip2 stream/xz stream/zstd frame, and bytes after the 7z next header |
-| SFX bounds | Missing or out-of-ceiling embedded signatures and signatures overlapping declared PE image ranges |
+| SFX bounds | Missing or out-of-ceiling embedded signatures, signatures overlapping declared PE image ranges, and signatures inside a declared certificate table |
+| SFX work budgets | More signature occurrences, overlay candidates, or aggregate next-header CRC bytes than the configured ceilings |
+| PE certificates | Malformed, misaligned, half-declared, nonterminal, overlapping, over-count, or inexactly consumed `WIN_CERTIFICATE` tables |
 
 `t/test_archive_auditor.py` creates all fixtures in repository-local test
 code. It commits no payload or package binaries. The suite covers valid
@@ -177,3 +289,20 @@ empty and solid/encoded 7z headers, filename-independent nested wrapper
 recognition, canonical and explicit-header empty 7z archives, filename-
 independent 7z SFX audit/compare pairs, bounded and ambiguous SFX scans, and
 physical A/B order and layout differences.
+
+The PE fixtures are built from a parameterized image builder covering PE32
+and PE32+, nonzero section content, multiple sections, section gaps,
+overlapping sections, sections inside the headers, short optional headers,
+differing `NumberOfRvaAndSizes`, and valid and malformed security
+directories and `WIN_CERTIFICATE` chains. Signed SFX coverage includes
+acceptance, comparison equality, changed-certificate inequality, a candidate
+inside the certificate table, a genuine overlay alongside in-image and
+in-certificate decoys, malformed and trailing certificate cases, and the
+exact prefix-ceiling boundary at limit minus one, limit, and limit plus one.
+
+The adversarial coverage is deterministic rather than timing-based: a
+fixture with thousands of valid-looking cheap decoys asserts a stable
+rejection code and asserts measured CRC bytes against a hard bound derived
+from the configured limits, which is orders of magnitude below the
+unbounded cost. A generous wall-clock assertion is included only as an
+additional smoke check.
