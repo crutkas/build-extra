@@ -6,8 +6,10 @@ name: ARM64 PR governance
 # COPILOT_AGENT_SESSION_ID environment variable and verify it resolves to an
 # existing directory under the CLI session-state folder before committing.
 # Never take it from the prompt header, and never from the mc_session_id or
-# mc_task_id fields of session-state workspace.yaml; those are app-side
-# identifiers, and workspace.yaml carries them next to the correct id field.
+# mc_task_id fields of session-state workspace.yaml; those are different
+# identifiers that do not resolve as session-state directories, and
+# workspace.yaml carries them in its final lines while the correct id field
+# is its first.
 # Every one of these is a lowercase UUID, so a wrong value is invisible on
 # inspection and only the resolution check catches it: the identifier either
 # exists as a session-state directory or it does not.
