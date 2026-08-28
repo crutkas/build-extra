@@ -143,6 +143,27 @@ added_or_replaced () {
 
 added_or_replaced current-leaf current-busybox "$tmp/busybox.changed"
 added_or_replaced current-busybox current-combined "$tmp/combined.changed"
+grep '^clangarm64/' "$tmp/combined.changed" | grep -v -e '^clangarm64/bin/libmpfr-6\.dll$' -e '^clangarm64/bin/libreadline8\.dll$' >"$tmp/gawk.changed" || true
+grep '^clangarm64/bin/libmpfr-6\.dll$' "$tmp/combined.changed" >"$tmp/mpfr.changed" || true
+grep '^clangarm64/bin/libreadline8\.dll$' "$tmp/combined.changed" >"$tmp/readline.changed" || true
+grep -v '^clangarm64/' "$tmp/combined.changed" >"$tmp/openssh.changed"
+current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
+current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
+current_readline_added_or_replaced_arm64_pes=$(wc -l <"$tmp/readline.changed")
+
+count () {
+	awk -F '	' -v architecture="$2" \
+		'$2 == architecture { count++ } END { print count + 0 }' "$1"
+}
+
+for label in current-leaf current-busybox current-combined
+do
+	variable=${label#current-}
+	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
+	eval "current_${variable}_arm64=\$(count \"\$tmp/$label.tsv\" arm64)"
+	eval "current_${variable}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
+	eval "current_${variable}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
+done
 
 removed () {
 	before=$1
@@ -184,7 +205,13 @@ test 10 = "$openssh_replaced" ||
 die "Expected 10 OpenSSH x64-to-ARM64 paths, found $openssh_replaced"
 test 61 = "$(wc -l <"$tmp/busybox.changed")" ||
 die "Expected 61 added or replaced BusyBox ARM64 PEs"
-test 14 = "$(wc -l <"$tmp/combined.changed")" ||
+printf 'combined-impact counts: busybox_arm64=%s combined_arm64=%s gawk=%s mpfr=%s readline=%s openssh_changed=%s\n' \
+	"$current_busybox_arm64" "$current_combined_arm64" \
+	"$current_gawk_added_or_replaced_arm64_pes" \
+	"$current_mpfr_added_or_replaced_arm64_pes" \
+	"$current_readline_added_or_replaced_arm64_pes" \
+	"$(wc -l <"$tmp/openssh.changed")" >&2
+test 14 = "$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes - current_mpfr_added_or_replaced_arm64_pes - current_readline_added_or_replaced_arm64_pes))" ||
 die "Expected 14 added or replaced OpenSSH ARM64 PEs"
 
 manifest_row () {
@@ -231,40 +258,32 @@ done <"$tmp/legacy-openssh.paths"
 test 11 = "$legacy_openssh" ||
 die "Expected 11 legacy OpenSSH PEs, checked $legacy_openssh"
 
-remove_manifest_path () {
-	manifest=$1
-	path=$2
-	awk -F '	' -v path="$path" '$1 != path' "$manifest" >"$manifest.new" &&
-	mv "$manifest.new" "$manifest" ||
-	die "Could not remove $path from ${manifest##*/}"
-	}
-
-	cat >"$tmp/leaf-x64.paths" <<-\EOF
-	usr/bin/bunzip2.exe
-	usr/bin/bzcat.exe
-	usr/bin/bzip2.exe
-	usr/bin/bzip2recover.exe
-	usr/bin/nettle-hash.exe
-	usr/bin/nettle-lfib-stream.exe
-	usr/bin/nettle-pbkdf2.exe
-	usr/bin/p11-kit.exe
-	usr/bin/pkcs1-conv.exe
-	usr/bin/sexp-conv.exe
-	usr/bin/trust.exe
-	EOF
+cat >"$tmp/leaf-x64.paths" <<-\EOF
+usr/bin/bunzip2.exe
+usr/bin/bzcat.exe
+usr/bin/bzip2.exe
+usr/bin/bzip2recover.exe
+usr/bin/nettle-hash.exe
+usr/bin/nettle-lfib-stream.exe
+usr/bin/nettle-pbkdf2.exe
+usr/bin/p11-kit.exe
+usr/bin/pkcs1-conv.exe
+usr/bin/sexp-conv.exe
+usr/bin/trust.exe
+EOF
 cat >"$tmp/leaf-arm64.paths" <<-\EOF
-	clangarm64/bin/bunzip2.exe
-	clangarm64/bin/bzcat.exe
-	clangarm64/bin/bzip2.exe
-	clangarm64/bin/bzip2recover.exe
-	clangarm64/bin/nettle-hash.exe
-	clangarm64/bin/nettle-lfib-stream.exe
-	clangarm64/bin/nettle-pbkdf2.exe
-	clangarm64/bin/p11-kit.exe
-	clangarm64/bin/pkcs1-conv.exe
-	clangarm64/bin/sexp-conv.exe
-	clangarm64/bin/trust.exe
-	EOF
+clangarm64/bin/bunzip2.exe
+clangarm64/bin/bzcat.exe
+clangarm64/bin/bzip2.exe
+clangarm64/bin/bzip2recover.exe
+clangarm64/bin/nettle-hash.exe
+clangarm64/bin/nettle-lfib-stream.exe
+clangarm64/bin/nettle-pbkdf2.exe
+clangarm64/bin/p11-kit.exe
+clangarm64/bin/pkcs1-conv.exe
+clangarm64/bin/sexp-conv.exe
+clangarm64/bin/trust.exe
+EOF
 leaf_removed=0
 while IFS= read -r path
 do
@@ -291,23 +310,10 @@ done <"$tmp/leaf-arm64.paths"
 test 3 = "$leaf_added" ||
 die "Expected 3 leaf-tool ARM64 additions, found $leaf_added"
 
-count () {
-	awk -F '	' -v architecture="$2" \
-		'$2 == architecture { count++ } END { print count + 0 }' "$1"
-}
-
 release_x64=$(count "$tmp/release.tsv" x64)
 release_arm64=$(count "$tmp/release.tsv" arm64)
 release_x86=$(count "$tmp/release.tsv" x86)
 release_anycpu=$(count "$tmp/release.tsv" anycpu)
-for label in current-leaf current-busybox current-combined
-do
-	variable=${label#current-}
-	eval "current_${variable}_x64=\$(count \"\$tmp/$label.tsv\" x64)"
-	eval "current_${variable}_arm64=\$(count \"\$tmp/$label.tsv\" arm64)"
-	eval "current_${variable}_x86=\$(count \"\$tmp/$label.tsv\" x86)"
-	eval "current_${variable}_anycpu=\$(count \"\$tmp/$label.tsv\" anycpu)"
-done
 test 432 = "$release_x64" ||
 die "Expected the authoritative release baseline to contain 432 x64 PEs"
 test 209 = "$release_arm64" &&
@@ -318,7 +324,7 @@ test -59 = "$((current_busybox_x64 - current_leaf_x64))" &&
 test 61 = "$((current_busybox_arm64 - current_leaf_arm64))" ||
 die "The current file-list BusyBox architecture delta is not -59 x64/+61 ARM64"
 test -14 = "$((current_combined_x64 - current_busybox_x64))" &&
-test 14 = "$((current_combined_arm64 - current_busybox_arm64))" ||
+test 14 = "$((current_combined_arm64 - current_busybox_arm64 - $(wc -l <"$tmp/gawk.changed") - $(wc -l <"$tmp/mpfr.changed")))" ||
 die "The current file-list OpenSSH architecture delta is not -14 x64/+14 ARM64"
 test "$current_leaf_x86" = "$current_busybox_x86" &&
 test "$current_leaf_x86" = "$current_combined_x86" &&
@@ -360,9 +366,18 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	current_busybox_x64_delta=$((current_busybox_x64 - current_leaf_x64))
 	current_busybox_arm64_delta=$((current_busybox_arm64 - current_leaf_arm64))
 	current_openssh_x64_delta=$((current_combined_x64 - current_busybox_x64))
-	current_openssh_arm64_delta=$((current_combined_arm64 - current_busybox_arm64))
+	current_gawk_added_or_replaced_arm64_pes=$(wc -l <"$tmp/gawk.changed")
+	current_mpfr_added_or_replaced_arm64_pes=$(wc -l <"$tmp/mpfr.changed")
+	current_readline_added_or_replaced_arm64_pes=$(wc -l <"$tmp/readline.changed")
+	current_openssh_arm64_delta=$((current_combined_arm64 - current_busybox_arm64 - current_gawk_added_or_replaced_arm64_pes - current_mpfr_added_or_replaced_arm64_pes - current_readline_added_or_replaced_arm64_pes))
+	current_gawk_arm64_delta=$current_gawk_added_or_replaced_arm64_pes
+	current_mpfr_arm64_delta=$current_mpfr_added_or_replaced_arm64_pes
+	current_readline_arm64_delta=$current_readline_added_or_replaced_arm64_pes
 	busybox_added_or_replaced_arm64_pes=$(wc -l <"$tmp/busybox.changed")
-	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/combined.changed")
+	openssh_added_or_replaced_arm64_pes=$(wc -l <"$tmp/openssh.changed")
+	gawk_added_or_replaced_arm64_pes=$current_gawk_added_or_replaced_arm64_pes
+	mpfr_added_or_replaced_arm64_pes=$current_mpfr_added_or_replaced_arm64_pes
+	readline_added_or_replaced_arm64_pes=$current_readline_added_or_replaced_arm64_pes
 	busybox_x64_to_arm64_paths=$busybox_replaced
 	openssh_x64_to_arm64_paths=$openssh_replaced
 	legacy_openssh_x64_paths_checked=$legacy_openssh
@@ -370,6 +385,8 @@ report="$thisdir/../arm64-combined-architecture-report.txt"
 	busybox_removed_pe_paths=$(wc -l <"$tmp/busybox.removed")
 	openssh_removed_pe_paths=$(wc -l <"$tmp/combined.removed")
 	new_foreign_architecture_paths=0
+	current_readline_arm64_delta=$current_readline_arm64_delta
+	readline_added_or_replaced_arm64_pes=$readline_added_or_replaced_arm64_pes
 	openssh_x64_to_arm64_path_list:
 	EOF
 	cut -f1 "$tmp/openssh.replaced" | sed 's/^/  /'

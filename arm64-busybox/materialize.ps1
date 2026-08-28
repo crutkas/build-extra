@@ -32,7 +32,14 @@ $installedShimPath = Join-Path $rootPath 'clangarm64\bin\busybox-shim.exe'
 $installedShimDirectory = Split-Path -Parent $installedShimPath
 New-Item -ItemType Directory -Force -Path $installedShimDirectory | Out-Null
 if ($shimPath -ne $installedShimPath) {
-    Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    Remove-Item -LiteralPath $installedShimPath -Force -ErrorAction SilentlyContinue
+    try {
+        New-Item -ItemType HardLink -Path $installedShimPath -Target $shimPath -ErrorAction Stop |
+            Out-Null
+    }
+    catch {
+        Copy-Item -LiteralPath $shimPath -Destination $installedShimPath -Force
+    }
 }
 $defaultPaths = @(Get-Content -LiteralPath $DefaultList)
 $experimentalPaths = @(Get-Content -LiteralPath $ExperimentalList)
@@ -54,16 +61,16 @@ foreach ($replacement in $selected) {
     $parent = Split-Path -Parent $destination
     New-Item -ItemType Directory -Force -Path $parent | Out-Null
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
-    if (-not $ForceCopy) {
+    if (-not $ForceCopy -and $replacement.Path -notmatch '[\[\]\*\?]') {
         try {
-            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath |
+            New-Item -ItemType HardLink -Path $destination -Target $installedShimPath -ErrorAction Stop |
                 Out-Null
         }
         catch {
-            Copy-Item -LiteralPath $installedShimPath -Destination $destination
+            [IO.File]::Copy($installedShimPath, $destination, $true)
         }
     } else {
-        Copy-Item -LiteralPath $installedShimPath -Destination $destination
+        [IO.File]::Copy($installedShimPath, $destination, $true)
     }
 
     $alias = [IO.Path]::GetFileName($replacement.Path)

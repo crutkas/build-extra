@@ -298,8 +298,7 @@ jobs:
            throw "Standard MinGit validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root $minGitRoot `
-           -AllowMissingReplacements
+           -Root $minGitRoot
 
           $busyboxZip = Get-ChildItem -Path "${{ steps.build.outputs.result }}/busybox/*.zip" |
            Select-Object -First 1
@@ -310,8 +309,7 @@ jobs:
            throw "BusyBox MinGit Git validation failed"
           }
           ./t/check-arm64-busybox.ps1 `
-           -Root $busyboxMinGitRoot `
-           -AllowMissingReplacements
+           -Root $busyboxMinGitRoot
           & "$busyboxMinGitRoot/clangarm64/bin/ash.exe" -c "uname -m"
           if ($LASTEXITCODE -ne 0) {
            throw "BusyBox MinGit shell validation failed"
@@ -338,6 +336,40 @@ jobs:
           } else {
             ./t/check-arm64-openssh-package.ps1 @parameters
           }
+      - name: validate ARM64 native tools
+        if: matrix.architecture.name == 'aarch64' && matrix.directory != 'portable'
+        shell: bash
+        run: |
+          script="$(cygpath -au "$GITHUB_WORKSPACE/t/check-arm64-native-tools.sh")" &&
+          case "${{ matrix.directory }}" in
+            installer)
+              root=$(cygpath -au "$ProgramFiles/Git") &&
+              "$script" --root="$root"
+              ;;
+            portable)
+              root="$(cygpath -au "$RUNNER_TEMP/portable-git")" &&
+              "$root/bin/bash.exe" --noprofile --norc "$script" --root="$root"
+              ;;
+            mingit)
+              root="$(cygpath -au "$RUNNER_TEMP/mingit-root")" &&
+              "$script" --root="$root"
+              ;;
+            *)
+              echo "Unexpected artifact: ${{ matrix.directory }}" >&2
+              exit 1
+              ;;
+          esac
+      - name: validate ARM64 native tools (PowerShell)
+        if: matrix.architecture.name == 'aarch64'
+        shell: pwsh
+        run: |
+          $root = switch ("${{ matrix.directory }}") {
+            "installer" { "$env:ProgramFiles\Git" }
+            "portable" { "$env:RUNNER_TEMP\portable-git" }
+            "mingit" { "$env:RUNNER_TEMP\mingit-root" }
+            default { throw "Unexpected artifact: ${{ matrix.directory }}" }
+          }
+          ./t/check-arm64-native-tools.ps1 -Root $root
       - name: validate ARM64 installer lifecycle and external SSH
         if: always() && matrix.architecture.name == 'aarch64' && matrix.directory == 'installer'
         shell: pwsh

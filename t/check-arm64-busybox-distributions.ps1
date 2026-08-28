@@ -43,6 +43,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$hostArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+if ($hostArch -ne [System.Runtime.InteropServices.Architecture]::Arm64) {
+    throw 'Native ARM64 distribution checks require windows-11-arm'
+}
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $defaultPaths = @(Get-Content -LiteralPath (Join-Path $repoRoot 'arm64-busybox\default-replacements.txt'))
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)

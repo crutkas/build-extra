@@ -402,6 +402,26 @@ else
 		-e "^\\($(echo $EXTRA_FILE_EXCLUDES |
 			sed 's/ /\\|/g')\\)\$"
 fi |
+{
+	cat
+	if test aarch64 = "$ARCH"
+	then
+		cat <<-EOF
+		/clangarm64/bin/awk.exe
+		/clangarm64/bin/gawk.exe
+		/clangarm64/bin/gawk-5.4.1.exe
+		/clangarm64/bin/libgmp-10.dll
+		/clangarm64/bin/libmpfr-6.dll
+		/clangarm64/bin/libreadline8.dll
+		/clangarm64/bin/libtermcap-0.dll
+		EOF
+		for dll in /clangarm64/lib/gawk/*.dll
+		do
+			test -f "$dll" || continue
+			printf '/clangarm64/lib/gawk/%s\n' "${dll##*/}"
+		done
+	fi
+} |
 if test aarch64 != "$ARCH" || test -n "$MINIMAL_GIT"
 then
 	cat

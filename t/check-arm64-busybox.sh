@@ -29,10 +29,11 @@ then
 
 	while IFS= read -r path
 	do
+		path=${path%$'\r'}
 		test -x "/$path" ||
 		die "Missing ARM64 BusyBox replacement /$path"
 		awk -F '	' -v path="$path" \
-			'$1 == path && $3 == "default" { found = 1 } END { exit !found }' \
+			'{ sub(/\r$/, "", $1); sub(/\r$/, "", $3); if ($1 == path && $3 == "default") found = 1 } END { exit !found }' \
 			"$replacement_file" ||
 		die "$path is not recorded as a default replacement"
 	done <"$thisdir/../arm64-busybox/default-replacements.txt"

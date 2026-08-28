@@ -102,6 +102,21 @@ LIST="$(ARCH=$ARCH MINIMAL_GIT=1 ETC_GITCONFIG="$etc_gitconfig" \
 	PACKAGE_VERSIONS_FILE="$SCRIPT_PATH"/root/etc/package-versions.txt \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@")" ||
 die "Could not generate file list"
+if test aarch64 = "$ARCH" && test 0 != "${GFW_ARM64_BUSYBOX:-1}"
+then
+	busybox_excludes="${TMPDIR:-/tmp}/arm64-busybox-excludes.$$"
+	{
+		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/default-replacements.txt
+		tr -d '\r' <"$SCRIPT_PATH"/../arm64-busybox/experimental-replacements.txt
+		printf '%s\n' \
+			etc/arm64-busybox-aliases.txt \
+			etc/arm64-busybox-replacements.tsv \
+			etc/arm64-busybox-retained-paths.tsv
+	} | sort -u >"$busybox_excludes" &&
+	LIST="$(printf '%s\n' "$LIST" | grep -vxF -f "$busybox_excludes")" ||
+	{ rm -f "$busybox_excludes"; die "Could not filter duplicate ARM64 BusyBox metadata"; }
+	rm -f "$busybox_excludes"
+fi
 
 # For compatibility with core Git's branches
 original_etc_gitconfig="$etc_gitconfig"
@@ -181,6 +196,22 @@ $BIN_DIR/busybox.exe
 
 	rm "$SCRIPT_PATH/root/$BIN_DIR"/busybox.exe
 esac
+
+if test aarch64 = "$ARCH"
+then
+	# MinGit does not run the post-install hook, so materialize the ARM64
+	# BusyBox aliases directly in the checkout root.
+	powershell.exe -NoProfile -ExecutionPolicy Bypass \
+		-File "$SCRIPT_PATH"/../arm64-busybox/materialize.ps1 \
+		-Root "$SCRIPT_PATH"/root \
+		-BusyBox /clangarm64/bin/busybox.exe \
+		-Shim "$SCRIPT_PATH"/../arm64-busybox/busybox-shim.exe \
+		-DefaultList "$SCRIPT_PATH"/../arm64-busybox/default-replacements.txt \
+		-ExperimentalList "$SCRIPT_PATH"/../arm64-busybox/experimental-replacements.txt \
+		-RetainedList "$SCRIPT_PATH"/../arm64-busybox/retained-paths.tsv ||
+	die "Could not materialize ARM64 BusyBox aliases"
+	rm "$SCRIPT_PATH/root/$BIN_DIR"/busybox-shim.exe
+fi
 
 test ! -f "$TARGET" || rm "$TARGET" || die "Could not remove $TARGET"
 
