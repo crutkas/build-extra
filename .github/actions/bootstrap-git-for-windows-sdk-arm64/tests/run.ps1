@@ -10,10 +10,16 @@ $actionPath = Join-Path $actionRoot 'action.yml'
 if (-not ('GfwSdkBootstrapTestNativeMethods' -as [type])) {
 	Add-Type -TypeDefinition @'
 using System;
+using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 
 public static class GfwSdkBootstrapTestNativeMethods
 {
+    public const uint GenericReadWrite = 0xc0000000;
+    public const uint ShareReadWriteDelete = 0x00000007;
+    public const uint CreateAlways = 2;
+    public const uint FileAttributeNormal = 0x00000080;
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true,
         SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -21,6 +27,17 @@ public static class GfwSdkBootstrapTestNativeMethods
         string fileName,
         string existingFileName,
         IntPtr securityAttributes);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true,
+        SetLastError = true)]
+    public static extern SafeFileHandle CreateFileW(
+        string fileName,
+        uint desiredAccess,
+        uint shareMode,
+        IntPtr securityAttributes,
+        uint creationDisposition,
+        uint flagsAndAttributes,
+        IntPtr templateFile);
 }
 '@
 }
@@ -216,6 +233,7 @@ function Get-ProductionPathBudget {
 		[pscustomobject]@{
 			Limit = $script:MaxUsablePathLength
 			Sentinel = $script:RootSentinelName
+			GitVersion = $script:GitControlPathAnalyzedVersion
 			GitDirectory = $script:GitDirectoryName
 			SdkDirectory = $script:SdkDirectoryName
 			TemplateDirectory = $script:GitTemplateDirectoryName
@@ -261,6 +279,14 @@ function Get-SystemGitPath {
 		param($RunnerTemp)
 		Get-SystemGitPath $RunnerTemp
 	} $RunnerTemp
+}
+
+function Assert-GitControlPathAnalysisVersion {
+	param([Parameter(Mandatory = $true)][object]$VersionText)
+	& $script:bootstrapModule {
+		param($VersionText)
+		Assert-GitControlPathAnalysisVersion $VersionText
+	} $VersionText
 }
 
 function Assert-RunnerPlatformFacts {
@@ -786,14 +812,89 @@ function Resolve-TestRootBase {
 	return $canonical
 }
 
-function Get-TestVolumeFileSystem {
-	param([Parameter(Mandatory = $true)][string]$Path)
+function Get-AlternateDataStreamCapability {
+	param([Parameter(Mandatory = $true)][string]$Directory)
 
-	$root = [IO.Path]::GetPathRoot($Path)
-	if ([string]::IsNullOrEmpty($root)) {
-		throw "Cannot determine the volume root of '$Path'"
+	$probe = Join-Path $Directory (
+		"ads-capability-$([Guid]::NewGuid().ToString('N')).bin")
+	$streamPath = "$probe`:probe"
+	$basePayload = "base`n"
+	$streamPayload = [Text.UTF8Encoding]::new($false).GetBytes(
+		"alternate-data-stream-capability`n")
+	try {
+		[IO.File]::WriteAllText(
+			$probe, $basePayload, [Text.UTF8Encoding]::new($false))
+		$handle = [GfwSdkBootstrapTestNativeMethods]::CreateFileW(
+			$streamPath,
+			[GfwSdkBootstrapTestNativeMethods]::GenericReadWrite,
+			[GfwSdkBootstrapTestNativeMethods]::ShareReadWriteDelete,
+			[IntPtr]::Zero,
+			[GfwSdkBootstrapTestNativeMethods]::CreateAlways,
+			[GfwSdkBootstrapTestNativeMethods]::FileAttributeNormal,
+			[IntPtr]::Zero)
+		$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+		if ($handle.IsInvalid) {
+			$handle.Dispose()
+			if ($errorCode -in @(1, 50, 123)) {
+				return [pscustomobject][ordered]@{
+					Supported = $false
+					Reason = (
+						'active alternate data stream CreateFileW probe ' +
+						"is unsupported (Windows error $errorCode)")
+				}
+			}
+			throw [ComponentModel.Win32Exception]::new(
+				$errorCode,
+				"Cannot create the alternate data stream probe '$streamPath' " +
+					"(Win32 error $errorCode)")
+		}
+		$stream = $null
+		try {
+			$stream = [IO.FileStream]::new(
+				$handle, [IO.FileAccess]::ReadWrite)
+			$stream.Write($streamPayload, 0, $streamPayload.Length)
+			$stream.Flush()
+			$stream.Position = 0
+			$actual = [byte[]]::new($streamPayload.Length)
+			$offset = 0
+			while ($offset -lt $actual.Length) {
+				$count = $stream.Read(
+					$actual, $offset, $actual.Length - $offset)
+				if ($count -eq 0) {
+					break
+				}
+				$offset += $count
+			}
+			if (
+				$offset -ne $streamPayload.Length -or
+				$stream.ReadByte() -ne -1 -or
+				[Convert]::ToHexString($actual) -cne
+					[Convert]::ToHexString($streamPayload)
+			) {
+				throw 'The alternate data stream capability probe changed bytes'
+			}
+		} finally {
+			if ($null -eq $stream) {
+				$handle.Dispose()
+			} else {
+				$stream.Dispose()
+			}
+		}
+		if (
+			[IO.File]::ReadAllText(
+				$probe, [Text.UTF8Encoding]::new($false)) -cne $basePayload
+		) {
+			throw 'The alternate data stream probe changed the base file'
+		}
+		return [pscustomobject][ordered]@{
+			Supported = $true
+			Reason = $null
+		}
+	} finally {
+		if (Test-Path -LiteralPath $probe) {
+			Remove-Item -LiteralPath $probe -Force
+		}
 	}
-	return [IO.DriveInfo]::new($root).DriveFormat
 }
 
 # GitHub-hosted runners point TEMP at a DOS 8.3 path such as
@@ -1653,30 +1754,43 @@ try {
 		} 'Windows-unsafe Git path'
 	}
 
-	Invoke-Test 'alternate data stream is rejected' {
-		$worktree = New-MaterializedFixture 'alternate-stream'
-		$file = Join-Path $worktree 'bin\tool.exe'
-		$fileSystem = Get-TestVolumeFileSystem $testRoot
-		if ($fileSystem -cne 'NTFS') {
-			throw "The test volume is '$fileSystem'; alternate data " +
-				'stream coverage requires the expected NTFS environment'
+	$alternateStreamCapability = $null
+	$alternateStreamProbeError = $null
+	try {
+		$alternateStreamCapability =
+			Get-AlternateDataStreamCapability $testRoot
+	} catch {
+		$alternateStreamProbeError = $_
+	}
+	if ($null -ne $alternateStreamProbeError) {
+		Invoke-Test 'alternate data stream is rejected' {
+			throw $alternateStreamProbeError
 		}
-		try {
+	} elseif (-not $alternateStreamCapability.Supported) {
+		Skip-Test 'alternate data stream is rejected' `
+			$alternateStreamCapability.Reason
+	} else {
+		Invoke-Test 'alternate data stream is rejected' {
+			$worktree = New-MaterializedFixture 'alternate-stream'
+			$file = Join-Path $worktree 'bin\tool.exe'
+			$payload = "probe`n"
 			[IO.File]::WriteAllText(
 				"$file`:probe",
-				"probe`n",
+				$payload,
 				[Text.UTF8Encoding]::new($false))
-		} catch [System.NotSupportedException] {
-			throw "The NTFS test volume refused an alternate data " +
-				"stream at '$file': $($_.Exception.Message)"
+			$actual = [IO.File]::ReadAllText(
+				"$file`:probe", [Text.UTF8Encoding]::new($false))
+			if ($actual -cne $payload) {
+				throw "The alternate data stream fixture at '$file' changed bytes"
+			}
+			if ($null -eq (Get-Item -LiteralPath $file -Stream probe)) {
+				throw "The alternate data stream fixture at '$file' is absent"
+			}
+			Assert-Throws {
+				Assert-MaterializedSdkTree `
+					$gitPath $bareRepo $worktree $fixtureManifest
+			} 'alternate data stream'
 		}
-		if ($null -eq (Get-Item -LiteralPath $file -Stream probe)) {
-			throw "The alternate data stream fixture at '$file' is absent"
-		}
-		Assert-Throws {
-			Assert-MaterializedSdkTree `
-				$gitPath $bareRepo $worktree $fixtureManifest
-		} 'alternate data stream'
 	}
 
 	Invoke-Test 'hardlink alias is rejected' {
@@ -1998,7 +2112,7 @@ try {
 		Assert-Equal $residue.Count 0
 	}
 
-	Invoke-Test 'system Git rejects writable installs and ignores PATH' {
+	Invoke-Test 'system Git rejects writable installs, versions and PATH' {
 		$poisonBin = Join-Path $testRoot 'poison-bin'
 		[void][IO.Directory]::CreateDirectory($poisonBin)
 		[IO.File]::WriteAllBytes(
@@ -2007,6 +2121,10 @@ try {
 		$savedPath = $env:PATH
 		try {
 			$env:PATH = "$poisonBin;$savedPath"
+			$expectedGit = Join-Path (
+				[Environment]::GetFolderPath(
+					[Environment+SpecialFolder]::ProgramFiles)
+				) 'Git\cmd\git.exe'
 			$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 			$principal = [Security.Principal.WindowsPrincipal]::new($identity)
 			if ($principal.IsInRole(
@@ -2016,12 +2134,30 @@ try {
 					Get-SystemGitPath $testRoot
 				} 'owned by the runner token|writable by an untrusted identity'
 			} else {
-				$trustedGit = Get-SystemGitPath $testRoot
-				$expectedGit = Join-Path (
-					[Environment]::GetFolderPath(
-						[Environment+SpecialFolder]::ProgramFiles)
-				) 'Git\cmd\git.exe'
-				Assert-Equal $trustedGit $expectedGit
+				if (-not (Test-Path -LiteralPath $expectedGit -PathType Leaf)) {
+					Assert-Throws {
+						Get-SystemGitPath $testRoot
+					} -ExpectedMessage (
+						'The protected system Git executable does not exist')
+					return
+				}
+				$installedVersion = (& $expectedGit --version).Trim()
+				$versionMatch = [regex]::Match(
+					$installedVersion,
+					'\Agit version (?<source>[0-9]+\.[0-9]+\.[0-9]+)' +
+						'(?:\.windows\.[0-9]+)?\z')
+				if (
+					$versionMatch.Success -and
+					$versionMatch.Groups['source'].Value -ceq '2.53.0'
+				) {
+					Assert-Equal (Get-SystemGitPath $testRoot) $expectedGit
+				} else {
+					Assert-Throws {
+						Get-SystemGitPath $testRoot
+					} -ExpectedMessage (
+						'The Git control-path analysis requires Git 2.53.0; ' +
+						"found '$installedVersion'")
+				}
 			}
 		} finally {
 			$env:PATH = $savedPath
@@ -2230,6 +2366,7 @@ try {
 		$probe = Get-ProductionPathBudget
 		Assert-Equal $probe.Limit $script:MaxUsablePathLength
 		Assert-Equal $probe.Sentinel $script:TestRootSentinelName
+		Assert-Equal $probe.GitVersion '2.53.0'
 		Assert-Equal $probe.GitDirectory 'repository.git'
 		Assert-Equal $probe.SdkDirectory 'sdk'
 		Assert-Equal $probe.TemplateDirectory 'empty-git-template'
@@ -2250,6 +2387,37 @@ try {
 			}
 		}
 		Assert-Equal $deepest $script:DeepestTestHolder
+		foreach ($accepted in @(
+			'git version 2.53.0',
+			'git version 2.53.0.windows.1',
+			'git version 2.53.0.windows.4'
+		)) {
+			Assert-GitControlPathAnalysisVersion $accepted
+		}
+		foreach ($rejected in @(
+			'git version 2.52.0.windows.1',
+			'git version 2.53.1.windows.1',
+			'git version 2.54.0.windows.1',
+			'git version 2.53.0-rc0',
+			'2.53.0'
+		)) {
+			Assert-Throws {
+				Assert-GitControlPathAnalysisVersion $rejected
+			} -ExpectedMessage (
+				'The Git control-path analysis requires Git 2.53.0; ' +
+				"found '$rejected'")
+		}
+		$gateCalls = & $bootstrapModule {
+			$ast = (Get-Item -LiteralPath 'Function:Get-SystemGitPath').
+				ScriptBlock.Ast
+			return @($ast.FindAll({
+				param($node)
+				$node -is [Management.Automation.Language.CommandAst] -and
+				$node.GetCommandName() -ceq
+					'Assert-GitControlPathAnalysisVersion'
+			}, $true)).Count
+		}
+		Assert-Equal $gateCalls 1
 	}
 
 	Invoke-Test 'path syntax refuses a canonical path over the limit' {

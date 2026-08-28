@@ -21,14 +21,26 @@ $script:Utf8 = [Text.UTF8Encoding]::new($false, $true)
 # create a root it can no longer canonicalize, identity-check or delete.
 $script:MaxUsablePathLength = 259
 $script:RootSentinelName = '.gfw-sdk-bootstrap-owner'
-# The bootstrap creates its bare mirror at <root>\repository.git and fetches
-# into it long before the worktree gate can read the locked manifest, so the
-# root has to be budgeted for Git's own control paths as well. The deepest of
-# those is a pack file: the object-id is 40 hexadecimal characters and
-# '.promisor' is the longest suffix Git appends to a pack name.
+# An independent audit bound this control-path analysis to Git 2.53.0.
+# MODE: argued from that version's source. SCOPE: all inputs to the exact
+# sanitized init and depth-one protocol-v2 fetch below. The 84-character
+# pack-<oid>.pack.temp path is reachable only through the dumb-HTTP walker,
+# which stops when depth is requested; split commit-graph stops for a shallow
+# repository; and multi-pack-index creation is behind core.multiPackIndex.
+# MODE: executed by that audit. SCOPE: forced maintenance, incremental repack,
+# multi-pack-index and split commit-graph cases, whose longest observed
+# control path needed 63 characters. Those cases do not prove all inputs.
+# A different Git source version invalidates both conclusions until rechecked,
+# so Get-SystemGitPath fails before init unless the operative version matches.
+$script:GitControlPathAnalyzedVersion = '2.53.0'
 $script:GitDirectoryName = 'repository.git'
 $script:SdkDirectoryName = 'sdk'
 $script:GitTemplateDirectoryName = 'empty-git-template'
+# The bootstrap creates its bare mirror at <root>\repository.git and fetches
+# into it long before the worktree gate can read the locked manifest, so the
+# root has to be budgeted for Git's own control paths as well. The deepest
+# reachable path in the version-bound analysis is a pack file: the object-id
+# is 40 hexadecimal characters and '.promisor' is its longest suffix.
 $script:GitControlReserve =
 	1 + $script:GitDirectoryName.Length +
 	1 + 'objects'.Length +
@@ -1900,6 +1912,26 @@ function Get-GitText {
 	return $script:Utf8.GetString([byte[]]$Result.Stdout)
 }
 
+function Assert-GitControlPathAnalysisVersion {
+	param([Parameter(Mandatory = $true)][object]$VersionText)
+
+	Assert-ExactStringValue $VersionText 'Git version output'
+	$match = [regex]::Match(
+		$VersionText,
+		'\Agit version (?<source>[0-9]+\.[0-9]+\.[0-9]+)' +
+			'(?:\.windows\.[0-9]+)?\z',
+		[Text.RegularExpressions.RegexOptions]::CultureInvariant)
+	if (
+		-not $match.Success -or
+		$match.Groups['source'].Value -cne
+			$script:GitControlPathAnalyzedVersion
+	) {
+		throw (
+			'The Git control-path analysis requires Git ' +
+			"$script:GitControlPathAnalyzedVersion; found '$VersionText'")
+	}
+}
+
 function Assert-ProtectedInstallationPath {
 	param(
 		[Parameter(Mandatory = $true)][string]$Path,
@@ -2035,6 +2067,10 @@ function Get-SystemGitPath {
 	) {
 		throw 'System Git cannot come from runner.temp'
 	}
+
+	$versionResult = New-SafeGitProcess $gitPath @('--version')
+	$versionText = (Get-GitText $versionResult).Trim()
+	Assert-GitControlPathAnalysisVersion $versionText
 
 	$execPathResult = New-SafeGitProcess $gitPath @('--exec-path')
 	$execPathText = (Get-GitText $execPathResult).Trim().Replace('/', '\')
