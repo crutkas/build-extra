@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "measuring",
+  "status": "admitted",
   "inputId": "native-arm64-vim-9.2.0858-1",
   "source": {
     "repository": "crutkas/MINGW-packages",
@@ -223,8 +223,8 @@
       "unexpectedX64": 0
     },
     "distributionBytesDelta": {
-      "installer": null,
-      "portable": null,
+      "installer": 1680591,
+      "portable": 1086961,
       "mingit": 0,
       "busyboxMingit": 0
     }
