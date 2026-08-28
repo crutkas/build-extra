@@ -19,6 +19,10 @@ try {
 		$guardPattern,
 		[Text.RegularExpressions.RegexOptions]::CultureInvariant)
 	$guardMatches = $guardRegex.Matches($source)
+	# MODE: argued. SCOPE: this file at this head. This count check is the
+	# only protection against more than one matching production rejection:
+	# Replace(..., 1) removes only the first, so a clean kill could leave a
+	# second rejection site unmutated.
 	if ($guardMatches.Count -ne 1) {
 		throw "Expected exactly one production ADS rejection; found $($guardMatches.Count)"
 	}
