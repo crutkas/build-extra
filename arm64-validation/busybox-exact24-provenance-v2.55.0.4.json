@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "crutkas/build-extra",
+    "pullRequest": 12,
+    "head": "3ef6d935092dc6ab2e376bcd0ffc74fa52dac39d",
+    "path": "arm64-validation/busybox-retained-v2.55.0.4.tsv",
+    "gitBlob": "7ceb6596e7258e5420a9c86fd9ef9d2aa8519aec",
+    "sha256": "aef5aaefb1ee5ad67ccdfc5fc8469005dcbf6e26615a3ad05c0704056ca16f46",
+    "derivation": {
+      "excludedPath": "usr/bin/awk.exe",
+      "excludedReasons": [
+        "No exact ARM64 BusyBox applet",
+        "BusyBox does not replace support libraries or extensions"
+      ],
+      "expectedPaths": 24
+    }
+  },
+  "control": {
+    "repository": "crutkas/build-extra",
+    "pullRequest": 4,
+    "head": "50de8f12409d8cc8e16aef190629073db1a8606d",
+    "workflowRun": 31771293786,
+    "artifact": {
+      "id": 9208307139,
+      "name": "portable-artifacts-aarch64",
+      "file": "PortableGit-0-test-arm64.7z.exe",
+      "sha256": "e4208e3d92172011475644d7afb2c207ae971a64e615f5330c5f6079001ded03"
+    },
+    "package": "coreutils",
+    "version": "8.32-5",
+    "architecture": "x64",
+    "machine": "0x8664"
+  },
+  "candidate": {
+    "repository": "crutkas/build-extra",
+    "pullRequest": 4,
+    "head": "50de8f12409d8cc8e16aef190629073db1a8606d",
+    "packageFile": "arm64-busybox/mingw-w64-clang-aarch64-busybox-1.38.0.git.e7299058-1-any.pkg.tar.zst",
+    "packageSha256": "93c5bc40010b58db0de29bd4eac3b87fa48d6c0e140c620208b1cd3d6722b499",
+    "busyBoxSha256": "afe7768285d5bd415fc2440a74bdf6e3c828cd1aca8dd2b36fcdf9b4cc8054bf",
+    "shimSha256": "49ee6f040be4cb42cb5c7ef3dd5e25c8f431bcfbe1d2587d75c55967bbfe8959",
+    "architecture": "arm64",
+    "machine": "0xAA64"
+  },
+  "result": {
+    "safePaths": 0,
+    "blockedPaths": 24,
+    "residualCoreutilsPaths": 54
+  }
+}

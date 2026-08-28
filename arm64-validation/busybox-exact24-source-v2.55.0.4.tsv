@@ -1,0 +1,25 @@
+path	sourceReason
+usr/bin/chmod.exe	Native Windows ACL and MSYS executable-bit semantics are not proven
+usr/bin/date.exe	GNU date parsing and timezone semantics are not proven
+usr/bin/dd.exe	Device, signal, and GNU operand semantics are not proven
+usr/bin/df.exe	MSYS mount and filesystem reporting semantics are not proven
+usr/bin/du.exe	MSYS symlink and allocation reporting semantics are not proven
+usr/bin/factor.exe	GNU option and large-integer semantics are not proven
+usr/bin/groups.exe	MSYS identity mapping semantics are not proven
+usr/bin/id.exe	MSYS identity mapping semantics are not proven
+usr/bin/install.exe	MSYS ownership, mode, and backup semantics are not proven
+usr/bin/link.exe	MSYS link semantics are not proven
+usr/bin/logname.exe	MSYS identity mapping semantics are not proven
+usr/bin/ls.exe	BusyBox has a known piped UTF-8 filename display gap
+usr/bin/printenv.exe	GNU option and environment encoding semantics are not proven
+usr/bin/pwd.exe	MSYS POSIX path rendering semantics are not proven
+usr/bin/readlink.exe	MSYS symlink and POSIX path rendering semantics are not proven
+usr/bin/realpath.exe	MSYS symlink and POSIX path rendering semantics are not proven
+usr/bin/shred.exe	Windows filesystem overwrite guarantees are not proven
+usr/bin/shuf.exe	GNU random-source and option semantics are not proven
+usr/bin/sleep.exe	BusyBox sleep does not observe MSYS SIGTERM
+usr/bin/stat.exe	GNU format and MSYS filesystem metadata semantics are not proven
+usr/bin/stty.exe	MSYS terminal and signal semantics are not proven
+usr/bin/sync.exe	Windows durability semantics are not proven
+usr/bin/timeout.exe	MSYS signal forwarding semantics are not proven
+usr/bin/whoami.exe	MSYS identity mapping semantics are not proven
