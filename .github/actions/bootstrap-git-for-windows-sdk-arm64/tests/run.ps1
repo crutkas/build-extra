@@ -7,6 +7,24 @@ $lockPath = Join-Path $actionRoot 'sdk-lock.json'
 $entrypointPath = Join-Path $actionRoot 'bootstrap.ps1'
 $actionPath = Join-Path $actionRoot 'action.yml'
 
+if (-not ('GfwSdkBootstrapTestNativeMethods' -as [type])) {
+	Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class GfwSdkBootstrapTestNativeMethods
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true,
+        SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CreateHardLinkW(
+        string fileName,
+        string existingFileName,
+        IntPtr securityAttributes);
+}
+'@
+}
+
 $bootstrapModule = Import-Module $modulePath -Force -PassThru
 
 function Read-SdkLock {
@@ -105,6 +123,18 @@ function Assert-MaterializedSdkTree {
 		param($GitPath, $GitDir, $SdkRoot, $Manifest)
 		Assert-MaterializedSdkTree $GitPath $GitDir $SdkRoot $Manifest
 	} $GitPath $GitDir $SdkRoot $Manifest
+}
+
+function Get-GitBlobHash {
+	param(
+		[Parameter(Mandatory = $true)][object]$Path,
+		[Parameter(Mandatory = $true)][object]$ExpectedSize,
+		[Parameter(Mandatory = $true)][object]$FileIdentities
+	)
+	return & $script:bootstrapModule {
+		param($Path, $ExpectedSize, $FileIdentities)
+		Get-GitBlobHash $Path $ExpectedSize $FileIdentities
+	} $Path $ExpectedSize $FileIdentities
 }
 
 function Get-TreeManifestFromBytes {
@@ -473,6 +503,66 @@ function New-TestJunction {
 		throw 'Test junction paths cannot contain wildcard metacharacters'
 	}
 	[void](New-Item -ItemType Junction -Path $Path -Target $Target)
+}
+
+function New-TestHardLink {
+	param(
+		[Parameter(Mandatory = $true)][string]$Path,
+		[Parameter(Mandatory = $true)][string]$ExistingPath
+	)
+
+	if ([GfwSdkBootstrapTestNativeMethods]::CreateHardLinkW(
+		$Path,
+		$ExistingPath,
+		[IntPtr]::Zero
+	)) {
+		return
+	}
+	$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+	if ($errorCode -eq 1 -or $errorCode -eq 50) {
+		throw [ComponentModel.Win32Exception]::new(
+			$errorCode,
+			"The test filesystem cannot create hardlinks at '$Path' " +
+				"(Win32 error $errorCode); hardlink coverage requires NTFS")
+	}
+	throw [ComponentModel.Win32Exception]::new(
+		$errorCode,
+		"Cannot create the test hardlink '$Path' from '$ExistingPath' " +
+			"(Win32 error $errorCode)")
+}
+
+function Get-TestFileFacts {
+	param([Parameter(Mandatory = $true)][string]$Path)
+
+	$stream = [IO.FileStream]::new(
+		$Path,
+		[IO.FileMode]::Open,
+		[IO.FileAccess]::Read,
+		[IO.FileShare]::ReadWrite)
+	try {
+		$information =
+			[GfwSdkBootstrapNativeMethods+ByHandleFileInformation]::new()
+		if (-not [GfwSdkBootstrapNativeMethods]::GetFileInformationByHandle(
+			$stream.SafeFileHandle,
+			[ref]$information
+		)) {
+			$errorCode =
+				[Runtime.InteropServices.Marshal]::GetLastWin32Error()
+			throw [ComponentModel.Win32Exception]::new(
+				$errorCode,
+				"Cannot inspect the test file '$Path' " +
+					"(Win32 error $errorCode)")
+		}
+		return [pscustomobject]@{
+			Links = [int]$information.NumberOfLinks
+			Identity = '{0:x8}:{1:x8}:{2:x8}' -f
+				$information.VolumeSerialNumber,
+				$information.FileIndexHigh,
+				$information.FileIndexLow
+		}
+	} finally {
+		$stream.Dispose()
+	}
 }
 
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) (
@@ -980,6 +1070,14 @@ try {
 				Assert-ProductionSdkLock $mutated
 			} 'property count'
 		}
+		Invoke-Test "lock rejects empty object at $path" {
+			$mutated = Copy-Lock $approvedLock
+			Set-LockValue $mutated $path ([pscustomobject]@{})
+			$escaped = [regex]::Escape("lock.$path")
+			Assert-Throws {
+				Assert-ProductionSdkLock $mutated
+			} "^$escaped has an unexpected property count$"
+		}
 	}
 
 	Invoke-Test 'JSON rejects duplicate nested properties' {
@@ -1309,24 +1407,48 @@ try {
 		} 'alternate data stream'
 	}
 
-	Invoke-Test 'hardlink alias is rejected when supported' {
+	Invoke-Test 'hardlink alias is rejected' {
 		$worktree = New-MaterializedFixture 'hardlink-alias'
 		$file = Join-Path $worktree 'bin\tool.exe'
-		$target = Join-Path $worktree 'base.txt'
+		$linkSource = Join-Path $testRoot 'hardlink-alias-source.bin'
+		[IO.File]::WriteAllText(
+			$linkSource,
+			"fixture`n",
+			[Text.UTF8Encoding]::new($false))
 		Remove-Item -LiteralPath $file -Force
-		try {
-			[IO.File]::CreateHardLink($file, $target)
-		} catch [System.PlatformNotSupportedException] {
-			Write-Host 'Hardlink fixture not supported by this filesystem'
-			return
-		} catch [System.UnauthorizedAccessException] {
-			Write-Host 'Hardlink fixture not permitted by this filesystem'
-			return
-		}
+		New-TestHardLink $file $linkSource
+		$linked = Get-TestFileFacts $file
+		$source = Get-TestFileFacts $linkSource
+		Assert-Equal $linked.Links 2
+		Assert-Equal $source.Links 2
+		Assert-Equal $linked.Identity $source.Identity
 		Assert-Throws {
 			Assert-MaterializedSdkTree `
 				$gitPath $bareRepo $worktree $fixtureManifest
-		} 'hardlink alias|alias the same file|size differs'
+		} 'Materialized file is a hardlink alias'
+	}
+
+	Invoke-Test 'repeated file identity is rejected without a hardlink' {
+		$identityPath = Join-Path $testRoot 'identity-collision.bin'
+		[IO.File]::WriteAllText(
+			$identityPath,
+			"fixture`n",
+			[Text.UTF8Encoding]::new($false))
+		$facts = Get-TestFileFacts $identityPath
+		Assert-Equal $facts.Links 1
+		$expected = @(
+			$fixtureManifest.Entries |
+				Where-Object { $_.Path -ceq 'bin/tool.exe' }
+		)[0]
+		$identities = [Collections.Generic.HashSet[string]]::new(
+			[StringComparer]::Ordinal)
+		$oid = Get-GitBlobHash $identityPath $expected.Size $identities
+		Assert-Equal $oid $expected.Oid
+		Assert-Equal $identities.Count 1
+		Assert-Throws {
+			Get-GitBlobHash $identityPath $expected.Size $identities
+		} 'Materialized files alias the same file'
+		Assert-Equal $identities.Count 1
 	}
 
 	Invoke-Test 'reparse point in materialized tree is rejected' {

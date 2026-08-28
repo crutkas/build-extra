@@ -122,7 +122,10 @@ function Assert-ExactProperties {
 	) {
 		throw "$Name must be an object"
 	}
-	$actual = @($Value.PSObject.Properties.Name)
+	$actual = [Collections.Generic.List[string]]::new()
+	foreach ($property in $Value.PSObject.Properties) {
+		$actual.Add($property.Name)
+	}
 	if ($actual.Count -ne $Expected.Count) {
 		throw "$Name has an unexpected property count"
 	}
