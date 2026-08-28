@@ -29,29 +29,33 @@ SPEC = importlib.util.spec_from_file_location("archive_auditor", ROOT / "archive
 AUDITOR = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDITOR)
 
-# Upper-case identifiers that appear in the documentation as structure or
-# constant names rather than as structured rejection codes.
-NON_CODE_IDENTIFIERS = frozenset({
-    "CRC",
+# Code-shaped Markdown spans that are structure names, not rejection codes.
+# Their exact occurrence counts independently anchor this narrow exclusion set.
+STRUCTURAL_IDENTIFIERS = frozenset({
     "FNAME",
     "IMAGE_DIRECTORY_ENTRY_SECURITY",
-    "MZ",
-    "NFC",
-    "PAX",
-    "PE",
-    "SHA",
     "S_IFBLK",
     "S_IFCHR",
-    "S_IFDIR",
     "S_IFIFO",
-    "S_IFLNK",
     "S_IFMT",
-    "S_IFREG",
     "S_IFSOCK",
-    "TAR",
     "WIN_CERTIFICATE",
-    "ZIP",
-    "ZIP64",
+})
+STRUCTURAL_IDENTIFIER_COUNTS = {
+    "FNAME": 2,
+    "IMAGE_DIRECTORY_ENTRY_SECURITY": 1,
+    "S_IFBLK": 1,
+    "S_IFCHR": 1,
+    "S_IFIFO": 1,
+    "S_IFMT": 2,
+    "S_IFSOCK": 1,
+    "WIN_CERTIFICATE": 5,
+}
+EXPECTED_BUDGET_REJECTION_CODES = frozenset({
+    "ENVELOPE_WORK_LIMIT",
+    "SFX_OVERLAY_SCAN_LIMIT",
+    "SFX_SIGNATURE_CANDIDATE_LIMIT",
+    "SFX_SIGNATURE_OCCURRENCE_LIMIT",
 })
 
 
@@ -2316,16 +2320,12 @@ class ArchiveAuditorTests(unittest.TestCase):
                     AUDITOR.crc32_range(data, start, end)
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
 
-    def test_documented_rejection_codes_match_production(self):
-        """The normative documented rejection contract must track production.
-
-        Production codes are derived from the auditor source by AST, and
-        documented codes from the normative Markdown, so neither side is
-        asserted against a hand-copied list. A retired or unreachable code
-        cannot be advertised, and the budget family cannot silently drift.
-        """
-        source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
-        text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
+    def assert_documented_rejection_contract(
+        self,
+        source,
+        text,
+        structural_identifiers=STRUCTURAL_IDENTIFIERS,
+    ):
         pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
 
         literals = set()
@@ -2335,7 +2335,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                 if pattern.fullmatch(node.value):
                     literals.add(node.value)
             if isinstance(node, ast.Call) and node.args:
-                callee = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                callee = node.func.id if isinstance(node.func, ast.Name) else None
                 first = node.args[0]
                 if (
                     callee in ("reject", "AuditError")
@@ -2344,20 +2344,39 @@ class ArchiveAuditorTests(unittest.TestCase):
                 ):
                     raised.add(first.value)
 
-        documented = {
-            code
-            for code in re.findall(r"`([A-Z][A-Z0-9_]{2,})`", text)
-            if code not in NON_CODE_IDENTIFIERS
-        }
+        code_spans = re.findall(r"`([A-Z][A-Z0-9_]{2,})`", text)
+        structural_identifiers = frozenset(structural_identifiers)
+        documented = set(code_spans) - structural_identifiers
 
         # Anti-tautology anchors: a silently empty extraction must fail loudly.
         self.assertGreater(len(raised), 40, "AST extraction found too few raised codes")
         self.assertGreater(len(documented), 8, "documentation extraction found too few codes")
+        overlap = structural_identifiers & raised
+        self.assertFalse(
+            overlap,
+            f"structural identifiers cannot suppress raised codes: {sorted(overlap)}",
+        )
+        self.assertEqual(
+            STRUCTURAL_IDENTIFIERS,
+            frozenset(STRUCTURAL_IDENTIFIER_COUNTS),
+            "structural vocabulary and occurrence anchors must remain exact",
+        )
+        self.assertEqual(
+            STRUCTURAL_IDENTIFIERS,
+            structural_identifiers,
+            "structural identifier exclusions must match the anchored vocabulary",
+        )
+        for identifier, count in STRUCTURAL_IDENTIFIER_COUNTS.items():
+            self.assertEqual(
+                count,
+                code_spans.count(identifier),
+                f"structural identifier occurrence drifted: {identifier}",
+            )
         self.assertTrue(raised <= literals)
         self.assertIn("UNRECOGNIZED_ARCHIVE", raised)
         self.assertIn("AMBIGUOUS_7Z_SIGNATURE", documented)
 
-        undocumentable = sorted(documented - literals)
+        undocumentable = sorted(documented - raised)
         self.assertEqual(
             [],
             undocumentable,
@@ -2372,14 +2391,161 @@ class ArchiveAuditorTests(unittest.TestCase):
         documented_budget = set(re.findall(r"`([A-Z][A-Z0-9_]{2,})`", paragraph))
         production_budget = {code for code in raised if budget.match(code)}
 
-        self.assertGreater(len(production_budget), 2)
         self.assertEqual(
+            EXPECTED_BUDGET_REJECTION_CODES,
             production_budget,
+            "the production budget family must remain the stable contract",
+        )
+        self.assertEqual(
+            EXPECTED_BUDGET_REJECTION_CODES,
             documented_budget,
-            "the normative budget family must equal the production budget family",
+            "the normative budget family must remain the stable contract",
         )
         self.assertNotIn("SFX_PREFIX_LIMIT", literals)
         self.assertNotIn("SFX_PREFIX_LIMIT", documented)
+
+    def test_documented_rejection_codes_match_production(self):
+        """The normative documented rejection contract must track production."""
+        auditor_path = Path(AUDITOR.__file__).resolve()
+        self.assertEqual((ROOT / "archive-auditor.py").resolve(), auditor_path)
+        source = auditor_path.read_text(encoding="utf-8")
+        text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
+        self.assert_documented_rejection_contract(source, text)
+
+    def test_documented_rejection_contract_mutation_controls(self):
+        """Dormant strings, exclusions, and budget drift cannot bless documentation."""
+        source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
+        text = (ROOT / "archive-auditor.md").read_text(encoding="utf-8")
+
+        def replace_once(value, old, new):
+            self.assertEqual(1, value.count(old), f"mutation anchor drifted: {old!r}")
+            return value.replace(old, new, 1)
+
+        def must_fail(
+            label,
+            mutated_source,
+            mutated_text,
+            expected,
+            exclusions=STRUCTURAL_IDENTIFIERS,
+        ):
+            with self.subTest(mutation=label):
+                with self.assertRaises(AssertionError) as context:
+                    self.assert_documented_rejection_contract(
+                        mutated_source,
+                        mutated_text,
+                        exclusions,
+                    )
+                self.assertIn(expected, str(context.exception))
+
+        parent_text = replace_once(
+            text,
+            "`SFX_OVERLAY_SCAN_LIMIT`, or `ENVELOPE_WORK_LIMIT`). A candidate is never\n"
+            "silently skipped so that an earlier or later candidate can be accepted in\n"
+            "its place.",
+            "`SFX_OVERLAY_SCAN_LIMIT`, `SFX_PREFIX_LIMIT`, or "
+            "`ENVELOPE_WORK_LIMIT`). A\n"
+            "candidate is never silently skipped so that an earlier or later candidate can\n"
+            "be accepted in its place.",
+        )
+        must_fail("parent documentation", source, parent_text, "SFX_PREFIX_LIMIT")
+
+        fake_code = "BOGUS_DOCUMENTED_CODE"
+        must_fail(
+            "unbacked documented code",
+            source,
+            text + f"\n`{fake_code}`\n",
+            fake_code,
+        )
+        must_fail(
+            "documented dormant literal",
+            source + '\n_DORMANT_CODE = "DORMANT_REJECTION_CODE"\n',
+            text + "\n`DORMANT_REJECTION_CODE`\n",
+            "DORMANT_REJECTION_CODE",
+        )
+
+        renamed_source = replace_once(
+            source,
+            '"UNCLASSIFIED_PE_OVERLAY"',
+            '"RENAMED_PE_OVERLAY"',
+        )
+        renamed_source += '\n_DORMANT_OLD_CODE = "UNCLASSIFIED_PE_OVERLAY"\n'
+        must_fail(
+            "renamed raise with dormant old code",
+            renamed_source,
+            text,
+            "UNCLASSIFIED_PE_OVERLAY",
+        )
+
+        must_fail(
+            "bogus structural exclusion",
+            source,
+            text + f"\n`{fake_code}`\n",
+            "anchored vocabulary",
+            STRUCTURAL_IDENTIFIERS | {fake_code},
+        )
+        must_fail(
+            "raised structural exclusion",
+            source,
+            text,
+            "cannot suppress raised codes",
+            STRUCTURAL_IDENTIFIERS | {"UNCLASSIFIED_PE_OVERLAY"},
+        )
+
+        no_raised_source = source.replace("reject(", "mutated_reject(")
+        no_raised_source = no_raised_source.replace("AuditError(", "MutatedAuditError(")
+        must_fail(
+            "empty raised extraction",
+            no_raised_source,
+            text,
+            "AST extraction found too few raised codes",
+        )
+        must_fail(
+            "empty documented extraction",
+            source,
+            text.replace("`", ""),
+            "documentation extraction found too few codes",
+        )
+
+        for added in ("SFX_ADDED_LIMIT", "ENVELOPE_ADDED_LIMIT"):
+            added_source = source + f'\ndef _added_budget():\n    reject("{added}", "mutation")\n'
+            added_text = replace_once(
+                text,
+                "`ENVELOPE_WORK_LIMIT`). A candidate",
+                f"`{added}`, or `ENVELOPE_WORK_LIMIT`). A candidate",
+            )
+            must_fail(
+                f"added budget {added}",
+                added_source,
+                added_text,
+                "production budget family",
+            )
+
+        for code in sorted(EXPECTED_BUDGET_REJECTION_CODES):
+            removed_source = source.replace(f'"{code}"', '"INVALID_LIMIT"')
+            self.assertNotEqual(source, removed_source)
+            removed_source += f'\n_DORMANT_OLD_BUDGET = "{code}"\n'
+            removed_text = text.replace(f"`{code}`", code)
+            self.assertNotEqual(text, removed_text)
+            must_fail(
+                f"removed budget {code}",
+                removed_source,
+                removed_text,
+                "production budget family",
+            )
+
+            prefix = "SFX" if code.startswith("SFX_") else "ENVELOPE"
+            renamed = f"{prefix}_RENAMED_LIMIT"
+            budget_source = source.replace(f'"{code}"', f'"{renamed}"')
+            self.assertNotEqual(source, budget_source)
+            budget_source += f'\n_DORMANT_OLD_BUDGET = "{code}"\n'
+            budget_text = text.replace(f"`{code}`", f"`{renamed}`")
+            self.assertNotEqual(text, budget_text)
+            must_fail(
+                f"renamed budget {code}",
+                budget_source,
+                budget_text,
+                "production budget family",
+            )
 
     def test_mutations_always_produce_a_structured_outcome(self):
         """Mutation control covering all eight third-audit findings.
