@@ -413,29 +413,25 @@ The structured rejection codes published in this specification are
 intentionally a stable subset, not an exhaustive catalog of implementation
 codes. Most implementation codes remain unpublished by design. The general
 contract is one-sided: every published code must belong to the statically
-resolved production set, while a production code need not be published.
+extracted production set, while a production code need not be published.
 
-That production set and its literal bound are sound only under the enforced
-static diagnostic-code rule. Every direct `AuditError` constructor must
-receive either a code-shaped string literal or a bare `ast.Name` that
-resolves to one direct
-module-level assignment whose right-hand side is a code-shaped string
-literal. Such a name must be assigned once and never rebound or shadowed; a
-name used inside a function also requires an explicit `global` declaration.
-The retired dynamic `reject` bridge, missing code arguments,
-attribute or indirect `AuditError` constructors, local or unresolved names,
-and every other first-argument expression are rejected.
+That production set and its literal bound are sound when the checker runs over
+the audited source bytes. The enforced predicate is unconditional: the first
+argument of every direct `AuditError` call is an `ast.Constant` whose value is
+a code-shaped `str`. Every diagnostic call must use a direct `ast.Name` callee.
+The retired dynamic `reject` bridge, missing code arguments, attribute
+`AuditError` constructor spellings, indirect uses of the `AuditError` name,
+`ast.Name` code arguments, and every other first-argument expression are
+rejected.
 
-The checker rejects all first-argument `ast.expr` types other than an
-eligible `ast.Constant` or `ast.Name`. The mutation suite specifically
-executes `ast.BinOp` for concatenation and percent formatting,
-`ast.JoinedStr`, `ast.Call` for `format()` and `upper()`, `ast.Subscript`,
-`ast.Attribute`, `ast.IfExp`, non-string `ast.Constant`, and local,
-unresolved, deleted, late-bound, type-parameter, computed-binding, or
-reflectively rebound `ast.Name` cases. Other expression types take the same
-reject-by-default branch but are not individually exercised.
-Any diagnostic constructor form not enumerated by this checker is outside
-this bound and must be added before the bound can cover it.
+The checker resolves no values and performs no binding or data-flow analysis.
+It rejects all first-argument `ast.expr` types other than a string-valued
+`ast.Constant`. The mutation suite specifically executes `ast.BinOp` for
+concatenation and percent formatting, `ast.JoinedStr`, `ast.Call` for
+`format()` and `upper()`, `ast.Subscript`, `ast.Attribute`, `ast.IfExp`,
+non-string `ast.Constant`, and both unbound and module-level `ast.Name` cases.
+Other expression types take the same reject-by-default branch but are not
+individually exercised.
 
 The four SFX and envelope budget codes are stricter and remain an exact
 bidirectional contract between the implementation and the normative budget

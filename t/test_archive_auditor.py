@@ -7,10 +7,12 @@ import importlib.util
 import io
 import json
 import lzma
+import os
 from pathlib import Path
 import random
 import re
 import struct
+import subprocess
 import sys
 import time
 import tempfile
@@ -58,6 +60,8 @@ EXPECTED_BUDGET_REJECTION_CODES = frozenset({
     "SFX_SIGNATURE_OCCURRENCE_LIMIT",
 })
 EXPECTED_STATIC_DIAGNOSTIC_CALLS = 267
+PARENT_STATIC_DIAGNOSTIC_COMMIT = "fa6cec21bb1c18172c527d3ad42828499324d456"
+PARENT_STATIC_DIAGNOSTIC_BLOB = "70b0a5ee373d1c1a015f3fdb47382def16e09dfc"
 FORMERLY_DYNAMIC_REJECTION_CODES = frozenset({
     "AMBIGUOUS_ZIP_EOCD",
     "CONCATENATED_BZIP2_STREAM",
@@ -2338,7 +2342,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                     AUDITOR.crc32_range(data, start, end)
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
 
-    def extract_static_diagnostic_codes(self, source):
+    def analyze_static_diagnostic_codes(self, source):
         pattern = re.compile(r"[A-Z][A-Z0-9_]{2,}")
         tree = ast.parse(source)
         parents = {
@@ -2346,150 +2350,6 @@ class ArchiveAuditorTests(unittest.TestCase):
             for parent in ast.walk(tree)
             for child in ast.iter_child_nodes(parent)
         }
-
-        stores = {}
-        other_bindings = set()
-        attribute_mutations = set()
-        subscript_mutations = set()
-        namespace_reflection = False
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                stores.setdefault(node.id, []).append(node)
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del):
-                other_bindings.add(node.id)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                other_bindings.add(node.name)
-            elif isinstance(node, ast.arg):
-                other_bindings.add(node.arg)
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                other_bindings.update(
-                    alias.asname or alias.name.split(".", 1)[0]
-                    for alias in node.names
-                )
-            elif isinstance(node, ast.ExceptHandler) and node.name:
-                other_bindings.add(node.name)
-            elif isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name:
-                other_bindings.add(node.name)
-            elif isinstance(node, ast.MatchMapping) and node.rest:
-                other_bindings.add(node.rest)
-            elif (
-                isinstance(node, ast.Attribute)
-                and isinstance(node.ctx, (ast.Store, ast.Del))
-            ):
-                attribute_mutations.add(node.attr)
-            elif (
-                isinstance(node, ast.Subscript)
-                and isinstance(node.ctx, (ast.Store, ast.Del))
-                and isinstance(node.slice, ast.Constant)
-                and isinstance(node.slice.value, str)
-            ):
-                subscript_mutations.add(node.slice.value)
-            for parameter in getattr(node, "type_params", ()):
-                name = getattr(parameter, "name", None)
-                if name:
-                    other_bindings.add(name)
-            if (
-                (
-                    isinstance(node, ast.Name)
-                    and isinstance(node.ctx, ast.Load)
-                    and node.id
-                    in {
-                        "delattr",
-                        "eval",
-                        "exec",
-                        "globals",
-                        "locals",
-                        "setattr",
-                        "vars",
-                    }
-                )
-                or (
-                    isinstance(node, ast.Attribute)
-                    and node.attr
-                    in {
-                        "__dict__",
-                        "delattr",
-                        "eval",
-                        "exec",
-                        "globals",
-                        "locals",
-                        "setattr",
-                        "vars",
-                    }
-                )
-            ):
-                namespace_reflection = True
-
-        module_literals = {}
-        for statement in tree.body:
-            if isinstance(statement, ast.Assign):
-                targets = statement.targets
-                value = statement.value
-            elif isinstance(statement, ast.AnnAssign):
-                targets = [statement.target]
-                value = statement.value
-            else:
-                continue
-            if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
-                continue
-            for target in targets:
-                if isinstance(target, ast.Name):
-                    module_literals.setdefault(target.id, []).append(
-                        (target, value.value)
-                    )
-
-        def containing_function(node):
-            while node in parents:
-                node = parents[node]
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    return node
-            return None
-
-        def module_literal(name, node):
-            owner = node
-            while owner in parents:
-                owner = parents[owner]
-                if isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    declared_global = any(
-                        isinstance(candidate, ast.Global)
-                        and name in candidate.names
-                        and containing_function(candidate) is owner
-                        for candidate in ast.walk(owner)
-                    )
-                    if not declared_global:
-                        return None
-                    break
-                if isinstance(
-                    owner,
-                    (
-                        ast.Lambda,
-                        ast.ClassDef,
-                        ast.ListComp,
-                        ast.SetComp,
-                        ast.DictComp,
-                        ast.GeneratorExp,
-                    ),
-                ):
-                    return None
-            bindings = module_literals.get(name, [])
-            name_stores = stores.get(name, [])
-            if (
-                len(bindings) != 1
-                or len(name_stores) != 1
-                or name in other_bindings
-                or name in attribute_mutations
-                or name in subscript_mutations
-                or namespace_reflection
-            ):
-                return None
-            target, value = bindings[0]
-            if (
-                name_stores[0] is not target
-                or target.lineno >= node.lineno
-                or not pattern.fullmatch(value)
-            ):
-                return None
-            return value
 
         direct_calls = []
         non_name_calls = []
@@ -2510,9 +2370,15 @@ class ArchiveAuditorTests(unittest.TestCase):
                 reject_sites.append(node.lineno)
             if not isinstance(node, ast.Call):
                 continue
-            if isinstance(node.func, ast.Name) and node.func.id == "AuditError":
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id in {"AuditError", "reject"}
+            ):
                 direct_calls.append(node)
-            elif isinstance(node.func, ast.Attribute) and node.func.attr == "AuditError":
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"AuditError", "reject"}
+            ):
                 non_name_calls.append(node.lineno)
 
         indirect_uses = []
@@ -2541,33 +2407,12 @@ class ArchiveAuditorTests(unittest.TestCase):
                 continue
             indirect_uses.append(node.lineno)
 
-        self.assertEqual(
-            [],
-            reject_sites,
-            f"the dynamic reject bridge is forbidden: {reject_sites}",
-        )
-        self.assertEqual(
-            [],
-            non_name_calls,
-            f"AuditError constructors must be direct ast.Name calls: {non_name_calls}",
-        )
-        self.assertEqual(
-            [],
-            indirect_uses,
-            f"indirect AuditError constructor uses are forbidden: {indirect_uses}",
-        )
-
         missing_arguments = [node.lineno for node in direct_calls if not node.args]
-        self.assertEqual(
-            [],
-            missing_arguments,
-            f"AuditError calls lack a positional code argument: {missing_arguments}",
-        )
-
         raised = set()
-        module_bound = set()
         invalid_code_expressions = []
         for node in direct_calls:
+            if not node.args:
+                continue
             first = node.args[0]
             if (
                 isinstance(first, ast.Constant)
@@ -2576,28 +2421,53 @@ class ArchiveAuditorTests(unittest.TestCase):
             ):
                 raised.add(first.value)
                 continue
-            if isinstance(first, ast.Name):
-                value = module_literal(first.id, first)
-                if value is not None:
-                    raised.add(value)
-                    module_bound.add(value)
-                    continue
             invalid_code_expressions.append(
                 (node.lineno, type(first).__name__, ast.unparse(first))
             )
 
-        self.assertEqual(
-            [],
-            invalid_code_expressions,
-            f"diagnostic code expression violates the static rule: "
-            f"{invalid_code_expressions}",
-        )
         return {
             "tree": tree,
             "calls": direct_calls,
             "raised": raised,
-            "moduleBound": module_bound,
+            "invalidCodeExpressions": invalid_code_expressions,
+            "missingArguments": missing_arguments,
+            "nonNameCalls": non_name_calls,
+            "indirectUses": indirect_uses,
+            "rejectSites": reject_sites,
         }
+
+    def extract_static_diagnostic_codes(self, source):
+        evidence = self.analyze_static_diagnostic_codes(source)
+        self.assertEqual(
+            [],
+            evidence["nonNameCalls"],
+            f"diagnostic calls must use direct ast.Name callees: "
+            f"{evidence['nonNameCalls']}",
+        )
+        self.assertEqual(
+            [],
+            evidence["missingArguments"],
+            f"diagnostic calls lack a positional code argument: "
+            f"{evidence['missingArguments']}",
+        )
+        self.assertEqual(
+            [],
+            evidence["invalidCodeExpressions"],
+            f"diagnostic code expression violates the static rule: "
+            f"{evidence['invalidCodeExpressions']}",
+        )
+        self.assertEqual(
+            [],
+            evidence["rejectSites"],
+            f"the dynamic reject bridge is forbidden: {evidence['rejectSites']}",
+        )
+        self.assertEqual(
+            [],
+            evidence["indirectUses"],
+            f"indirect AuditError constructor uses are forbidden: "
+            f"{evidence['indirectUses']}",
+        )
+        return evidence
 
     def extract_rejection_evidence(self, source):
         evidence = self.extract_static_diagnostic_codes(source)
@@ -2634,7 +2504,6 @@ class ArchiveAuditorTests(unittest.TestCase):
         return {
             "literals": literals,
             "raised": raised,
-            "moduleBound": evidence["moduleBound"],
             "physicalCallSites": len(evidence["calls"]),
         }
 
@@ -2700,14 +2569,30 @@ class ArchiveAuditorTests(unittest.TestCase):
             "the specification must state the one-sided rejection-code contract",
         )
         self.assertIn(
-            "literal bound are sound only under the enforced",
+            "literal bound are sound when the checker runs over",
             text,
-            "the specification must qualify the literal bound",
+            "the specification must bind soundness to the audited bytes",
+        )
+        self.assertRegex(
+            text,
+            r"The enforced predicate is unconditional:\s+the first\s+"
+            r"argument of every direct `AuditError` call is an `ast\.Constant`",
+            "the specification must state the literal-only predicate",
         )
         self.assertIn(
-            "Any diagnostic constructor form not enumerated by this checker is outside",
+            "checker resolves no values and performs no binding or data-flow analysis",
             text,
-            "the specification must state the static checker's residual",
+            "the specification must prohibit diagnostic-value resolution",
+        )
+        self.assertNotIn(
+            "module-level assignment whose right-hand side",
+            text,
+            "the specification must not retain module-name resolution",
+        )
+        self.assertNotIn(
+            "Any diagnostic constructor form not enumerated",
+            text,
+            "the specification must not retain the removed constructor residual",
         )
 
         budget = re.compile(r"^(?:SFX_|ENVELOPE_).*_LIMIT$")
@@ -2731,6 +2616,63 @@ class ArchiveAuditorTests(unittest.TestCase):
         self.assertNotIn("SFX_PREFIX_LIMIT", literals)
         self.assertNotIn("SFX_PREFIX_LIMIT", documented)
         return evidence
+
+    def test_literal_only_checker_rejects_exact_parent_blob(self):
+        repository = Path(
+            os.environ.get("ARCHIVE_AUDITOR_TEST_GIT_REPO", ROOT)
+        ).resolve()
+        revision = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repository),
+                "rev-parse",
+                f"{PARENT_STATIC_DIAGNOSTIC_COMMIT}:archive-auditor.py",
+            ],
+            check=True,
+            capture_output=True,
+        ).stdout.decode("ascii").strip()
+        self.assertEqual(PARENT_STATIC_DIAGNOSTIC_BLOB, revision)
+        source_bytes = subprocess.run(
+            ["git", "-C", str(repository), "cat-file", "blob", revision],
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertFalse(any(byte > 127 for byte in source_bytes))
+        source = source_bytes.decode("utf-8")
+
+        evidence = self.analyze_static_diagnostic_codes(source)
+        invalid = evidence["invalidCodeExpressions"]
+        self.assertEqual(258, len(evidence["calls"]))
+        self.assertEqual([], evidence["nonNameCalls"])
+        self.assertEqual([], evidence["missingArguments"])
+        self.assertEqual(
+            [
+                (98, "Name", "code"),
+                (107, "Name", "code"),
+                (144, "Name", "code"),
+                (182, "Name", "code"),
+                (286, "Name", "code"),
+                (294, "Name", "code"),
+                (641, "Name", "code"),
+                (
+                    892,
+                    "IfExp",
+                    "'AMBIGUOUS_ZIP_EOCD' if candidates else "
+                    "'INVALID_ZIP_EOCD'",
+                ),
+                (1562, "Name", "code"),
+            ],
+            sorted(invalid),
+        )
+        self.assertEqual(9, len(invalid))
+        self.assertEqual(8, sum(kind == "Name" for _, kind, _ in invalid))
+        self.assertEqual(1, sum(kind == "IfExp" for _, kind, _ in invalid))
+        with self.assertRaisesRegex(
+            AssertionError,
+            "diagnostic code expression violates the static rule",
+        ):
+            self.extract_static_diagnostic_codes(source)
 
     def test_documented_rejection_codes_match_production(self):
         """The normative documented rejection contract must track production."""
@@ -2851,10 +2793,9 @@ class ArchiveAuditorTests(unittest.TestCase):
             '                    f"Only one {description} is accepted",'
         )
         replacement = (
-            '                code = "CONCATENATED_BZIP2_STREAM"\n'
-            '                code = archive_format.upper() + "_CONCATENATED"\n'
+            '                _preserved_literal = "CONCATENATED_BZIP2_STREAM"\n'
             "                raise AuditError(\n"
-            "                    code,\n"
+            '                    archive_format.upper() + "_CONCATENATED",\n'
             '                    f"Only one {description} is accepted",'
         )
         self.assertEqual(1, source.count(anchor))
@@ -2887,13 +2828,13 @@ class ArchiveAuditorTests(unittest.TestCase):
             (
                 "computed-code inversion",
                 refutation,
-                "diagnostic code expression violates the static rule.*Name.*code",
+                "diagnostic code expression violates the static rule.*BinOp",
                 "archive_format.upper() computed-code refutation was accepted",
             ),
             (
                 "structural positive control",
                 attribute_constructor,
-                "AuditError constructors must be direct ast.Name calls",
+                "diagnostic calls must use direct ast.Name callees",
                 "attribute constructor positive control was accepted",
             ),
         )
@@ -2918,10 +2859,12 @@ class ArchiveAuditorTests(unittest.TestCase):
             "    global MODULE_BOUND_CODE\n"
             '    AuditError(MODULE_BOUND_CODE, "message")\n'
         )
-        self.assertEqual(
-            {"MODULE_BOUND_CODE"},
-            self.extract_static_diagnostic_codes(module_name)["raised"],
-        )
+        with self.subTest(expression="module-bound Name"):
+            with self.assertRaisesRegex(
+                AssertionError,
+                "diagnostic code expression violates the static rule",
+            ):
+                self.extract_static_diagnostic_codes(module_name)
 
         rejected = {
             "concatenation BinOp": '"STATIC_" + "CONCATENATION"',
@@ -2944,62 +2887,6 @@ class ArchiveAuditorTests(unittest.TestCase):
                 ):
                     self.extract_static_diagnostic_codes(mutated)
 
-        local_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            "def emit(MODULE_BOUND_CODE):\n"
-            '    AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        computed_module_name = (
-            'MODULE_BOUND_CODE = "MODULE_" + "BOUND_CODE"\n'
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        deleted_module_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            "del MODULE_BOUND_CODE\n"
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        late_module_name = (
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-        )
-        reflected_module_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            'globals()["MODULE_BOUND_CODE"] = '
-            'archive_format.upper() + "_CONCATENATED"\n'
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        attributed_module_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            'module.MODULE_BOUND_CODE = "REFLECTED_CODE"\n'
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        subscripted_module_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            'namespace["MODULE_BOUND_CODE"] = "REFLECTED_CODE"\n'
-            'AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        type_parameter_name = (
-            'MODULE_BOUND_CODE = "MODULE_BOUND_CODE"\n'
-            "class Emit[MODULE_BOUND_CODE]:\n"
-            '    error = AuditError(MODULE_BOUND_CODE, "message")\n'
-        )
-        for label, mutated in (
-            ("local Name", local_name),
-            ("computed module Name", computed_module_name),
-            ("deleted module Name", deleted_module_name),
-            ("late module Name", late_module_name),
-            ("reflected module Name", reflected_module_name),
-            ("attribute-rebound module Name", attributed_module_name),
-            ("subscript-rebound module Name", subscripted_module_name),
-            ("type-parameter Name", type_parameter_name),
-        ):
-            with self.subTest(expression=label):
-                with self.assertRaisesRegex(
-                    AssertionError,
-                    "diagnostic code expression violates the static rule",
-                ):
-                    self.extract_static_diagnostic_codes(mutated)
-
     def test_documented_rejection_contract_mutation_controls(self):
         """Static-code, documentation, exclusion, and budget drift must fail."""
         source = (ROOT / "archive-auditor.py").read_text(encoding="utf-8")
@@ -3009,6 +2896,22 @@ class ArchiveAuditorTests(unittest.TestCase):
         def replace_once(value, old, new):
             self.assertEqual(1, value.count(old), f"mutation anchor drifted: {old!r}")
             return value.replace(old, new, 1)
+
+        def must_fail(
+            label,
+            mutated_source,
+            mutated_text,
+            expected,
+            exclusions=STRUCTURAL_IDENTIFIERS,
+        ):
+            with self.subTest(mutation=label):
+                with self.assertRaises(AssertionError) as context:
+                    self.assert_documented_rejection_contract(
+                        mutated_source,
+                        mutated_text,
+                        exclusions,
+                    )
+                self.assertIn(expected, str(context.exception))
 
         module_bound_source = replace_once(
             source,
@@ -3029,23 +2932,12 @@ class ArchiveAuditorTests(unittest.TestCase):
             '                "DUPLICATE_PHYSICAL_NAME",',
             "                DUPLICATE_PHYSICAL_NAME,",
         )
-        self.assert_documented_rejection_contract(module_bound_source, text)
-
-        def must_fail(
-            label,
-            mutated_source,
-            mutated_text,
-            expected,
-            exclusions=STRUCTURAL_IDENTIFIERS,
-        ):
-            with self.subTest(mutation=label):
-                with self.assertRaises(AssertionError) as context:
-                    self.assert_documented_rejection_contract(
-                        mutated_source,
-                        mutated_text,
-                        exclusions,
-                    )
-                self.assertIn(expected, str(context.exception))
+        must_fail(
+            "module-bound code",
+            module_bound_source,
+            text,
+            "diagnostic code expression violates the static rule",
+        )
 
         deleted_module_name = replace_once(
             module_bound_source,
@@ -3163,22 +3055,31 @@ class ArchiveAuditorTests(unittest.TestCase):
             "specification must state the one-sided rejection-code contract",
         )
         must_fail(
-            "unqualified literal bound",
+            "missing audited-byte qualification",
             source,
             text.replace(
-                "literal bound are sound only under the enforced",
+                "literal bound are sound when the checker runs over",
                 "derived from the implementation",
             ),
-            "specification must qualify the literal bound",
+            "specification must bind soundness to the audited bytes",
         )
         must_fail(
-            "missing checker residual",
+            "missing literal-only predicate",
             source,
             text.replace(
-                "Any diagnostic constructor form not enumerated by this checker is outside",
-                "All diagnostic constructor forms are inside",
+                "The enforced predicate is unconditional:",
+                "The diagnostic value can be resolved from bindings:",
             ),
-            "specification must state the static checker's residual",
+            "specification must state the literal-only predicate",
+        )
+        must_fail(
+            "missing no-resolution statement",
+            source,
+            text.replace(
+                "checker resolves no values and performs no binding or data-flow analysis",
+                "checker resolves selected values through binding analysis",
+            ),
+            "specification must prohibit diagnostic-value resolution",
         )
         all_raised = baseline_evidence["raised"]
         exhaustive_text = text + "\n" + " ".join(
@@ -3223,7 +3124,7 @@ class ArchiveAuditorTests(unittest.TestCase):
                 'raise errors.AuditError(\n                "DUPLICATE_PHYSICAL_NAME"',
             ),
             text,
-            "AuditError constructors must be direct ast.Name calls",
+            "diagnostic calls must use direct ast.Name callees",
         )
 
         addition_victim = '"DUPLICATE_PHYSICAL_NAME"'
