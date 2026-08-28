@@ -1,7 +1,10 @@
 {
   "schemaVersion": 1,
   "repository": "crutkas/build-extra",
-  "expectedCopilotSession": "b6f1996e-6689-4aca-92fc-07e4d6815369",
+  "authorizedSessions": [
+    "b6f1996e-6689-4aca-92fc-07e4d6815369",
+    "e2cca4d9-1311-4a66-b493-1f1a982d597a"
+  ],
   "bootstrap": {
     "pullRequest": 17,
     "selfAdmission": false,

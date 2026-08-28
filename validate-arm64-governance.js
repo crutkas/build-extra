@@ -10,6 +10,7 @@ const os = require('os')
 const path = require('path')
 
 const COPILOT_COAUTHOR = 'Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>'
+const SESSION_TRAILER_PREFIX = 'Copilot-Session: '
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SHA = /^[0-9a-f]{40}$/
 const DIGEST = /^sha256:[0-9a-f]{64}$/
@@ -170,6 +171,20 @@ const expectSafeInteger = (value, label, minimum) => {
 
 const expectSha = (value, label) => {
   if (typeof value !== 'string' || !SHA.test(value)) fail(`${label} must be a lowercase 40-hex object ID`)
+}
+
+const expectAuthorizedSessions = (value, label) => {
+  const sessions = Array.isArray(value) ? value : [value]
+  if (sessions.length === 0) fail(`${label}: at least one authorized Copilot session UUID is required`)
+  for (const session of sessions) {
+    if (typeof session !== 'string' || !UUID.test(session)) {
+      fail(`${label}: every authorized Copilot session must be an explicit lowercase UUID`)
+    }
+  }
+  if (new Set(sessions).size !== sessions.length) {
+    fail(`${label}: authorized Copilot sessions must be unique`)
+  }
+  return sessions
 }
 
 const clone = value => JSON.parse(JSON.stringify(value))
@@ -656,7 +671,7 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
     [
       'schemaVersion',
       'repository',
-      'expectedCopilotSession',
+      'authorizedSessions',
       'bootstrap',
       'payloadPolicy',
       'ancestryManifest',
@@ -671,8 +686,12 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
   )
   if (policy.schemaVersion !== 1) fail(`${label}.schemaVersion must be 1`)
   if (policy.repository !== 'crutkas/build-extra') fail(`${label}.repository must be "crutkas/build-extra"`)
-  if (typeof policy.expectedCopilotSession !== 'string' || !UUID.test(policy.expectedCopilotSession)) {
-    fail(`${label}.expectedCopilotSession must be an explicit lowercase UUID`)
+  if (!Array.isArray(policy.authorizedSessions)) {
+    fail(`${label}.authorizedSessions must be an explicit list of lowercase session UUIDs`)
+  }
+  expectAuthorizedSessions(policy.authorizedSessions, `${label}.authorizedSessions`)
+  if (policy.authorizedSessions.some((session, index) => index > 0 && session <= policy.authorizedSessions[index - 1])) {
+    fail(`${label}.authorizedSessions must be sorted ascending so the trusted set is order-independent`)
   }
   expectExactKeys(
     policy.bootstrap,
@@ -688,8 +707,8 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
   ) {
     fail(`${label}.bootstrap must state that PR 17 requires independent read-only review and cannot self-admit`)
   }
-  if (policy.expectedCopilotSession === policy.bootstrap.session) {
-    fail(`${label}.expectedCopilotSession must identify the remediation session, not the bootstrap session`)
+  if (policy.authorizedSessions.includes(policy.bootstrap.session)) {
+    fail(`${label}.authorizedSessions must not authorize the bootstrap session for new commits`)
   }
   expectExactKeys(
     policy.payloadPolicy,
@@ -1379,17 +1398,25 @@ const interpretTrailers = (message, cwd) => runGit(
   { input: message }
 ).trimEnd().split('\n').filter(Boolean)
 
-const validateOwnedCommitMessage = (message, expectedSession, cwd = process.cwd(), label = 'commit') => {
-  if (typeof expectedSession !== 'string' || !UUID.test(expectedSession)) {
-    fail(`${label}: an explicit expected Copilot session UUID is required`)
-  }
+const validateOwnedCommitMessage = (message, authorizedSessions, cwd = process.cwd(), label = 'commit') => {
+  const authorized = expectAuthorizedSessions(authorizedSessions, label)
   if (message.includes('\r')) fail(`${label}: commit message must use LF line endings`)
   if (!message.endsWith('\n') || message.endsWith('\n\n')) {
     fail(`${label}: owned commit must end immediately after the Copilot-Session trailer`)
   }
   const lines = message.slice(0, -1).split('\n')
-  const expectedSessionTrailer = `Copilot-Session: ${expectedSession}`
-  if (lines.length < 3 || lines[lines.length - 2] !== COPILOT_COAUTHOR || lines[lines.length - 1] !== expectedSessionTrailer) {
+  if (lines.length < 3) {
+    fail(`${label}: owned commit must end with the exact expected Co-authored-by and Copilot-Session pair`)
+  }
+  const terminal = lines[lines.length - 1]
+  const recorded = terminal.startsWith(SESSION_TRAILER_PREFIX)
+    ? terminal.slice(SESSION_TRAILER_PREFIX.length)
+    : ''
+  if (!UUID.test(recorded) || !authorized.includes(recorded)) {
+    fail(`${label}: terminal Copilot-Session trailer must name a session authorized by the trusted policy`)
+  }
+  const expectedSessionTrailer = `${SESSION_TRAILER_PREFIX}${recorded}`
+  if (lines[lines.length - 2] !== COPILOT_COAUTHOR) {
     fail(`${label}: owned commit must end with the exact expected Co-authored-by and Copilot-Session pair`)
   }
 
@@ -1424,16 +1451,14 @@ const validateOwnedCommitMessage = (message, expectedSession, cwd = process.cwd(
 const validateCommitRange = (
   base,
   head,
-  expectedSession,
+  authorizedSessions,
   deniedCampaignCommits,
   cwd = process.cwd(),
   options = {}
 ) => {
   expectSha(base, 'base commit')
   expectSha(head, 'head commit')
-  if (typeof expectedSession !== 'string' || !UUID.test(expectedSession)) {
-    fail('an explicit expected Copilot session UUID is required')
-  }
+  const authorized = expectAuthorizedSessions(authorizedSessions, 'owned commit range')
   if (!Array.isArray(deniedCampaignCommits)) fail('denied campaign commit list is required')
 
   const resolvedBase = runGit(['rev-parse', '--verify', `${base}^{commit}`], cwd).trim()
@@ -1457,7 +1482,7 @@ const validateCommitRange = (
     if (denied.has(commit)) fail(`${commit}: denied campaign commit is present in the owned range`)
     const parents = runGit(['rev-list', '--parents', '-n', '1', commit], cwd).trim().split(/\s+/)
     if (parents.length !== 2) fail(`${commit}: merge commits are not allowed in the owned range`)
-    const commitSession = sessionExceptions[commit] || expectedSession
+    const commitSession = sessionExceptions[commit] || authorized
     validateOwnedCommitMessage(commitMessage(commit, cwd), commitSession, cwd, commit)
   }
 
@@ -1505,7 +1530,7 @@ const validateAdmission = async (trustedRoot, candidateRepository, base, head, o
     const topology = validateCommitRange(
       base,
       head,
-      trustedPolicy.expectedCopilotSession,
+      trustedPolicy.authorizedSessions,
       trustedPolicy.deniedCampaignCommits,
       candidateRoot,
       {
@@ -1537,7 +1562,7 @@ const usage = () => [
   'usage:',
   '  node validate-arm64-governance.js admission <trusted> <candidate-repository> <base> <head>',
   '  node validate-arm64-governance.js workflows [repository-root]',
-  '  node validate-arm64-governance.js commits <base> <head> <expected-session> [policy.json]',
+  '  node validate-arm64-governance.js commits <base> <head> [policy.json]',
   '  node validate-arm64-governance.js provenance [policy.json]',
   '  node validate-arm64-governance.js ancestry offline <fixture.json>',
   '  node validate-arm64-governance.js ancestry live <candidate-commit>...',
@@ -1570,15 +1595,14 @@ const main = async () => {
     return
   }
   if (command === 'commits') {
-    if (args.length < 3 || args.length > 4) fail(usage())
-    const policyPath = args[3] || '.github/arm64-governance.json'
+    if (args.length < 2 || args.length > 3) fail(usage())
+    const policyPath = args[2] || '.github/arm64-governance.json'
     const source = createFileSource('.')
     const policy = validateGovernancePolicy(JSON.parse(fs.readFileSync(policyPath, 'utf8')))
-    if (args[2] !== policy.expectedCopilotSession) fail('expected session does not match the trusted policy')
     const result = validateCommitRange(
       args[0],
       args[1],
-      args[2],
+      policy.authorizedSessions,
       policy.deniedCampaignCommits,
       process.cwd(),
       {

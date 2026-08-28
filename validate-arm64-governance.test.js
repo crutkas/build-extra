@@ -610,7 +610,8 @@ rejects('protects release lock and digest evidence files as base sources', () =>
   }, lockedPolicy)
 })
 
-const session = policy.expectedCopilotSession
+const session = policy.authorizedSessions[0]
+const erratumSession = policy.authorizedSessions[1]
 
 test('reads candidate Git blobs without importing or executing them', () => {
   const repository = createRepository()
@@ -732,6 +733,112 @@ rejects('rejects a denied campaign commit in the range', () => {
   } finally {
     fs.rmSync(repository.directory, { recursive: true, force: true })
   }
+})
+
+test('candidate cannot authorize its own session by editing the trusted policy', () => {
+  assert.throws(() => {
+    withGovernanceMutation(({ directory }) => {
+      const widened = clone(policy)
+      widened.authorizedSessions = [
+        ...policy.authorizedSessions,
+        'ffffffff-ffff-ffff-ffff-ffffffffffff'
+      ].sort()
+      fs.writeFileSync(
+        path.join(directory, '.github', 'arm64-governance.json'),
+        `${JSON.stringify(widened, null, 2)}\n`
+      )
+      git(directory, ['add', '--', '.github/arm64-governance.json'])
+    })
+  }, /candidate governance source \.github\/arm64-governance\.json differs from protected base/)
+})
+
+test('accepts an erratum commit from a second authorized session', () => {
+  const repository = createRepository()
+  try {
+    repository.commit(ownedMessage(session, 'Original'))
+    const head = repository.commit(ownedMessage(erratumSession, 'Erratum'))
+    const result = validateCommitRange(
+      repository.base,
+      head,
+      policy.authorizedSessions,
+      [],
+      repository.directory
+    )
+    assert.strictEqual(result.commits.length, 2)
+  } finally {
+    fs.rmSync(repository.directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects a commit from a session outside the authorized set', () => {
+  const repository = createRepository()
+  try {
+    const head = repository.commit(
+      ownedMessage('ffffffff-ffff-ffff-ffff-ffffffffffff', 'Unauthorized')
+    )
+    assert.throws(
+      () => validateCommitRange(repository.base, head, policy.authorizedSessions, [], repository.directory),
+      /terminal Copilot-Session trailer must name a session authorized by the trusted policy/
+    )
+  } finally {
+    fs.rmSync(repository.directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects the bootstrap session on a commit other than the bootstrap commit', () => {
+  const repository = createRepository()
+  try {
+    const head = repository.commit(ownedMessage(policy.bootstrap.session, 'Reused bootstrap session'))
+    assert.throws(
+      () => validateCommitRange(repository.base, head, policy.authorizedSessions, [], repository.directory),
+      /terminal Copilot-Session trailer must name a session authorized by the trusted policy/
+    )
+  } finally {
+    fs.rmSync(repository.directory, { recursive: true, force: true })
+  }
+})
+
+test('rejects a policy that authorizes the bootstrap session for new commits', () => {
+  const widened = clone(policy)
+  widened.authorizedSessions = [...policy.authorizedSessions, policy.bootstrap.session].sort()
+  assert.throws(
+    () => validateGovernancePolicy(widened),
+    /must not authorize the bootstrap session for new commits/
+  )
+})
+
+test('rejects a duplicated authorized session', () => {
+  const duplicated = clone(policy)
+  duplicated.authorizedSessions = [policy.authorizedSessions[0], policy.authorizedSessions[0]]
+  assert.throws(() => validateGovernancePolicy(duplicated), /must be unique/)
+})
+
+test('rejects an unsorted authorized session list', () => {
+  const unsorted = clone(policy)
+  unsorted.authorizedSessions = [...policy.authorizedSessions].reverse()
+  assert.throws(() => validateGovernancePolicy(unsorted), /must be sorted ascending/)
+})
+
+test('rejects an empty authorized session list', () => {
+  const empty = clone(policy)
+  empty.authorizedSessions = []
+  assert.throws(
+    () => validateGovernancePolicy(empty),
+    /at least one authorized Copilot session UUID is required/
+  )
+})
+
+test('validates this branch against its own authorized session set', () => {
+  const head = git(process.cwd(), ['rev-parse', 'HEAD'])
+  const result = validateCommitRange(
+    '79f3c5fa9111e438b923222dd27392843a995995',
+    head,
+    policy.authorizedSessions,
+    policy.deniedCampaignCommits,
+    process.cwd(),
+    { sessionExceptions: { [policy.bootstrap.commit]: policy.bootstrap.session } }
+  )
+  assert.ok(result.commits.length >= 4)
 })
 
 const syntheticAncestryPolicy = () => {
