@@ -1,0 +1,5141 @@
+{
+  "accounting": {
+    "admittedPathReduction": 0,
+    "evidenceBackedCandidate": 114,
+    "modeledUnresolved": 46,
+    "releasedX64Paths": 432,
+    "residual": 272,
+    "schedulingOnly": true
+  },
+  "baseline": {
+    "ownershipMappingSha256": "e8a15c057e86f1c4bbfb08d061aeeee26f859d22038514ba2eb023d0cf9257e3",
+    "releaseAssetSha256": "7cc28b4431c9448c310d0093fbba5646517cd702690a9b965014d7df85319ad9",
+    "x64PathSha256": "efce93fd01bfe066e3e119b5c4459dcb2c72a1c00af339dc40fe8f81c7336eae"
+  },
+  "legacyOverlap": {
+    "activeRuleCount": 0,
+    "pathCount": 17,
+    "pathSha256": "6f02d6c4b836286c8f5a8b385eda84165df41c6805578f2da6b9295ebf1e4e9d",
+    "paths": [
+      "usr/bin/awk.exe",
+      "usr/bin/gawk-5.4.0.exe",
+      "usr/bin/gawk.exe",
+      "usr/lib/awk/grcat.exe",
+      "usr/lib/awk/pwcat.exe",
+      "usr/lib/gawk/filefuncs.dll",
+      "usr/lib/gawk/fnmatch.dll",
+      "usr/lib/gawk/fork.dll",
+      "usr/lib/gawk/inplace.dll",
+      "usr/lib/gawk/intdiv.dll",
+      "usr/lib/gawk/ordchr.dll",
+      "usr/lib/gawk/readdir.dll",
+      "usr/lib/gawk/readfile.dll",
+      "usr/lib/gawk/revoutput.dll",
+      "usr/lib/gawk/revtwoway.dll",
+      "usr/lib/gawk/rwarray.dll",
+      "usr/lib/gawk/time.dll"
+    ],
+    "resolution": "The active model assigns all gawk-owned paths only to candidate-gawk. BusyBox semantic-proof and gap rules contain none of these paths."
+  },
+  "notice": "This ledger is scheduling evidence only. Every listed path remains x64 in the released payload until immutable downstream native bytes are separately admitted.",
+  "paths": [
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/[.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/arch.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/bin/awk.exe",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/b2sum.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/base32.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/base64.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/basename.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/basenc.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "bash",
+      "path": "usr/bin/bash.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "5.3.015-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "bzip2",
+      "path": "usr/bin/bunzip2.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "bzip2",
+      "path": "usr/bin/bzcat.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "bzip2",
+      "path": "usr/bin/bzip2.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "bzip2",
+      "path": "usr/bin/bzip2recover.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/captoinfo.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/cat.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/chattr.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/chcon.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/chgrp.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/chmod.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/chown.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/chroot.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/cksum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/clear.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "diffutils",
+      "path": "usr/bin/cmp.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "3.12-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "util-linux",
+      "path": "usr/bin/column.exe",
+      "ruleId": "residual-unassigned",
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/comm.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/cp.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/csplit.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/cut.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/cygcheck.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/cygpath.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/cygwin-console-helper.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/d2u.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "dash",
+      "path": "usr/bin/dash.exe",
+      "ruleId": "residual-unassigned",
+      "version": "0.5.13.4-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/date.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/dd.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/df.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "diffutils",
+      "path": "usr/bin/diff.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "3.12-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "diffutils",
+      "path": "usr/bin/diff3.exe",
+      "ruleId": "residual-native-port",
+      "version": "3.12-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/dir.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/dircolors.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/dirmngr-client.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/dirmngr.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/dirname.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/dos2unix.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/du.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgcrypt",
+      "path": "usr/bin/dumpsexp.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.12.2-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/echo.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/env.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/ex.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/expand.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/expr.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/factor.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/false.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "file",
+      "path": "usr/bin/file.exe",
+      "ruleId": "residual-unassigned",
+      "version": "5.48-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "findutils",
+      "path": "usr/bin/find.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "4.10.0-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/fmt.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/fold.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "unzip",
+      "path": "usr/bin/funzip.exe",
+      "ruleId": "residual-native-port",
+      "version": "6.0-3"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/bin/gawk-5.4.0.exe",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/bin/gawk.exe",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gdbm",
+      "path": "usr/bin/gdbm_dump.exe",
+      "ruleId": "residual-native-port",
+      "version": "1.26-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gdbm",
+      "path": "usr/bin/gdbm_load.exe",
+      "ruleId": "residual-native-port",
+      "version": "1.26-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gdbm",
+      "path": "usr/bin/gdbmtool.exe",
+      "ruleId": "residual-native-port",
+      "version": "1.26-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/gencat.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/getconf.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/getfacl.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "util-linux",
+      "path": "usr/bin/getopt.exe",
+      "ruleId": "residual-unassigned",
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/gkill.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/gmondump.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-agent.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-card.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-connect-agent.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgpg-error",
+      "path": "usr/bin/gpg-error.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.61-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-mail-tube.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-wks-client.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg-wks-server.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpg.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgconf.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgparsemail.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgscm.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgsm.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgsplit.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgtar.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/gpgv.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "grep",
+      "path": "usr/bin/grep.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1~3.0-7"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/groups.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "gzip",
+      "path": "usr/bin/gzip.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1.14-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/head.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgcrypt",
+      "path": "usr/bin/hmac256.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.12.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/hostid.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/hostname.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "iconv",
+      "path": "usr/bin/iconv.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1.19-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/id.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/infocmp.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/infotocap.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/install.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/join.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/kbxutil.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/kill.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/ldd.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/ldh.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "less",
+      "path": "usr/bin/less.exe",
+      "ruleId": "residual-native-port",
+      "version": "704-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "less",
+      "path": "usr/bin/lesskey.exe",
+      "ruleId": "residual-native-port",
+      "version": "704-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/link.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/ln.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/locale.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "findutils",
+      "path": "usr/bin/locate.exe",
+      "ruleId": "residual-native-port",
+      "version": "4.10.0-3"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/logname.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/ls.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/lsattr.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/mac2unix.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/md5sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/minidumper.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "mintty",
+      "path": "usr/bin/mintty.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1~3.8.3-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/mkdir.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/mkfifo.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/mkgroup.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/mknod.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/mkpasswd.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/mktemp.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/mount.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgcrypt",
+      "path": "usr/bin/mpicalc.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.12.2-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/msys-2.0.dll",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "apr",
+      "path": "usr/bin/msys-apr-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.7.6-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "apr-util",
+      "path": "usr/bin/msys-aprutil-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.6.3-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-asn1-8.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libassuan",
+      "path": "usr/bin/msys-assuan-9.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.0.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libbz2",
+      "path": "usr/bin/msys-bz2-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "libcbor",
+      "path": "usr/bin/msys-cbor-0.11.dll",
+      "ruleId": "candidate-win32-openssh",
+      "version": "0.11.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-com_err-1.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libxcrypt",
+      "path": "usr/bin/msys-crypt-2.dll",
+      "ruleId": "residual-unassigned",
+      "version": "4.5.2-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libopenssl",
+      "path": "usr/bin/msys-crypto-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "libedit",
+      "path": "usr/bin/msys-edit-0.dll",
+      "ruleId": "candidate-win32-openssh",
+      "version": "20240808_3.1-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libexpat",
+      "path": "usr/bin/msys-expat-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "2.8.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libffi",
+      "path": "usr/bin/msys-ffi-8.dll",
+      "ruleId": "residual-unassigned",
+      "version": "3.6.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "libfido2",
+      "path": "usr/bin/msys-fido2-1.dll",
+      "ruleId": "candidate-win32-openssh",
+      "version": "1.15.0-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "gcc-libs",
+      "path": "usr/bin/msys-gcc_s-seh-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "15.3.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgcrypt",
+      "path": "usr/bin/msys-gcrypt-20.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.12.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libgdbm",
+      "path": "usr/bin/msys-gdbm-6.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.26-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libgdbm",
+      "path": "usr/bin/msys-gdbm_compat-4.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.26-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "gmp",
+      "path": "usr/bin/msys-gmp-10.dll",
+      "ruleId": "residual-unassigned",
+      "version": "6.3.0-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libgnutls",
+      "path": "usr/bin/msys-gnutls-30.dll",
+      "ruleId": "residual-unassigned",
+      "version": "3.8.13-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgpg-error",
+      "path": "usr/bin/msys-gpg-error-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.61-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-gssapi-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-hcrypto-4.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-heimbase-1.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-heimntlm-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libhogweed",
+      "path": "usr/bin/msys-hogweed-7.dll",
+      "ruleId": "residual-unassigned",
+      "version": "4.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-hx509-5.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libiconv",
+      "path": "usr/bin/msys-iconv-2.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.19-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libidn2",
+      "path": "usr/bin/msys-idn2-0.dll",
+      "ruleId": "residual-unassigned",
+      "version": "2.3.8-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libintl",
+      "path": "usr/bin/msys-intl-8.dll",
+      "ruleId": "residual-unassigned",
+      "version": "0.22.5-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-krb5-26.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libksba",
+      "path": "usr/bin/msys-ksba-8.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.8.0-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "liblz4",
+      "path": "usr/bin/msys-lz4-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.10.0-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "liblzma",
+      "path": "usr/bin/msys-lzma-5.dll",
+      "ruleId": "residual-unassigned",
+      "version": "5.8.3-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "file",
+      "path": "usr/bin/msys-magic-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "5.48-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "mpfr",
+      "path": "usr/bin/msys-mpfr-6.dll",
+      "ruleId": "residual-unassigned",
+      "version": "4.2.2-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/msys-ncursesw6.dll",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libnettle",
+      "path": "usr/bin/msys-nettle-9.dll",
+      "ruleId": "residual-unassigned",
+      "version": "4.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libnpth",
+      "path": "usr/bin/msys-npth-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.8-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libp11-kit",
+      "path": "usr/bin/msys-p11-kit-0.dll",
+      "ruleId": "residual-unassigned",
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libpcre",
+      "path": "usr/bin/msys-pcre-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "8.45-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libpcre2_8",
+      "path": "usr/bin/msys-pcre2-8-0.dll",
+      "ruleId": "residual-unassigned",
+      "version": "10.47-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/bin/msys-perl5_42.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libpsl",
+      "path": "usr/bin/msys-psl-5.dll",
+      "ruleId": "residual-unassigned",
+      "version": "0.21.5-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "libreadline",
+      "path": "usr/bin/msys-readline8.dll",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "8.3.003-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-roken-18.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/bin/msys-sasl2-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libserf",
+      "path": "usr/bin/msys-serf-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.3.10-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libutil-linux",
+      "path": "usr/bin/msys-smartcols-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libsqlite",
+      "path": "usr/bin/msys-sqlite3-0.dll",
+      "ruleId": "residual-unassigned",
+      "version": "3.53.3-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libopenssl",
+      "path": "usr/bin/msys-ssl-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_client-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_delta-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_diff-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_fs-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_fs_fs-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_fs_util-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_fs_x-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_ra-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_ra_local-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_ra_serf-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_ra_svn-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_repos-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_subr-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_swig_perl-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/bin/msys-svn_wc-1-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libtasn1",
+      "path": "usr/bin/msys-tasn1-6.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "4.21.0-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/msys-ticw6.dll",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libunistring",
+      "path": "usr/bin/msys-unistring-5.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.4.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libutil-linux",
+      "path": "usr/bin/msys-uuid-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "heimdal-libs",
+      "path": "usr/bin/msys-wind-0.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "zlib",
+      "path": "usr/bin/msys-z.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.3.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libzstd",
+      "path": "usr/bin/msys-zstd-1.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.5.7-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/mv.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "nano",
+      "path": "usr/bin/nano.exe",
+      "ruleId": "residual-native-port",
+      "version": "9.1-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "nettle",
+      "path": "usr/bin/nettle-hash.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "4.0-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "nettle",
+      "path": "usr/bin/nettle-lfib-stream.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "4.0-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "nettle",
+      "path": "usr/bin/nettle-pbkdf2.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "4.0-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/newgrp.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/nice.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/nl.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/nohup.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/nproc.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/numfmt.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/od.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "openssl",
+      "path": "usr/bin/openssl.exe",
+      "ruleId": "residual-unassigned",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "p11-kit",
+      "path": "usr/bin/p11-kit.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/passwd.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/paste.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "patch",
+      "path": "usr/bin/patch.exe",
+      "ruleId": "residual-unassigned",
+      "version": "2.7.6-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/pathchk.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/bin/perl.exe",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/bin/perl5.42.2.exe",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "pinentry",
+      "path": "usr/bin/pinentry-w32.exe",
+      "ruleId": "residual-native-port",
+      "version": "1.3.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "pinentry",
+      "path": "usr/bin/pinentry.exe",
+      "ruleId": "residual-native-port",
+      "version": "1.3.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/pinky.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "nettle",
+      "path": "usr/bin/pkcs1-conv.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "4.0-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/pldd.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/bin/pluginviewer.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/pr.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/printenv.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/printf.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/profiler.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/ps.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "libpsl",
+      "path": "usr/bin/psl.exe",
+      "ruleId": "residual-unassigned",
+      "version": "0.21.5-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/ptx.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/pwd.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/readlink.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/realpath.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "rebase",
+      "path": "usr/bin/rebase.exe",
+      "ruleId": "residual-unassigned",
+      "version": "4.5.0-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/regtool.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/reset.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/rm.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/rmdir.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "nano",
+      "path": "usr/bin/rnano.exe",
+      "ruleId": "residual-native-port",
+      "version": "9.1-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/runcon.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/rview.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/rvim.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/scp.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "diffutils",
+      "path": "usr/bin/sdiff.exe",
+      "ruleId": "residual-native-port",
+      "version": "3.12-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "sed",
+      "path": "usr/bin/sed.exe",
+      "ruleId": "residual-unassigned",
+      "version": "4.9-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/seq.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/setfacl.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/setmetamode.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "nettle",
+      "path": "usr/bin/sexp-conv.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/sftp.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "bash",
+      "path": "usr/bin/sh.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "5.3.015-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sha1sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/sha224sum.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sha256sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sha384sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sha512sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/shred.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/shuf.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/sleep.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sort.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/split.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/ssh-add.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/ssh-agent.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/ssh-keygen.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/ssh-keyscan.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "ssh-pageant",
+      "path": "usr/bin/ssh-pageant.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1.4.r15.gc804ba4-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/bin/ssh.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/ssp.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/stat.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/stdbuf.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/strace.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/stty.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/sum.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/sync.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/tabs.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/tac.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/tail.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "tar",
+      "path": "usr/bin/tar.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1.35-3"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/tee.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/test.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/tic.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "tig",
+      "path": "usr/bin/tig.exe",
+      "ruleId": "residual-unassigned",
+      "version": "2.6.1-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/timeout.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/toe.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/touch.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/tput.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/tr.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/true.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/truncate.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "p11-kit",
+      "path": "usr/bin/trust.exe",
+      "ruleId": "candidate-native-leaf-tools",
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "ncurses",
+      "path": "usr/bin/tset.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "6.6-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/tsort.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/tty.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/tzset.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/u2d.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/bin/umount.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/uname.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/unexpand.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/uniq.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/unix2dos.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "native-mingw-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "dos2unix",
+      "path": "usr/bin/unix2mac.exe",
+      "ruleId": "candidate-dos2unix",
+      "version": "7.5.6-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/unlink.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "unzip",
+      "path": "usr/bin/unzip.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "6.0-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "unzip",
+      "path": "usr/bin/unzipsfx.exe",
+      "ruleId": "residual-native-port",
+      "version": "6.0-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/users.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/vdir.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/view.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/vim.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/vimdiff.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/bin/watchgnupg.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/wc.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "which",
+      "path": "usr/bin/which.exe",
+      "ruleId": "residual-unassigned",
+      "version": "2.25-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/who.exe",
+      "ruleId": "residual-native-port",
+      "version": "8.32-5"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/bin/whoami.exe",
+      "ruleId": "residual-busybox-semantic-proof",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "winpty",
+      "path": "usr/bin/winpty-agent.exe",
+      "ruleId": "residual-native-port",
+      "version": "0.4.3-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "winpty",
+      "path": "usr/bin/winpty-debugserver.exe",
+      "ruleId": "residual-native-port",
+      "version": "0.4.3-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "winpty",
+      "path": "usr/bin/winpty.dll",
+      "ruleId": "residual-native-port",
+      "version": "0.4.3-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "winpty",
+      "path": "usr/bin/winpty.exe",
+      "ruleId": "residual-native-port",
+      "version": "0.4.3-3"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "findutils",
+      "path": "usr/bin/xargs.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "4.10.0-3"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "vim",
+      "path": "usr/bin/xxd.exe",
+      "ruleId": "candidate-vim",
+      "version": "9.2.0725-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libgpg-error",
+      "path": "usr/bin/yat2m.exe",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.61-1"
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "coreutils",
+      "path": "usr/bin/yes.exe",
+      "ruleId": "candidate-busybox-substitution",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "unzip",
+      "path": "usr/bin/zipinfo.exe",
+      "ruleId": "residual-native-port",
+      "version": "6.0-3"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/awk/grcat.exe",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/awk/pwcat.exe",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "coreutils",
+      "path": "usr/lib/coreutils/libstdbuf.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/filefuncs.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/fnmatch.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/fork.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/inplace.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/intdiv.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/ordchr.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/readdir.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/readfile.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/revoutput.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/revtwoway.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/rwarray.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "gawk",
+      "path": "usr/lib/gawk/time.dll",
+      "ruleId": "candidate-gawk",
+      "version": "5.4.0-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/gpg-auth.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/gpg-check-pattern.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/gpg-pair-tool.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/gpg-preset-passphrase.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/gpg-protect-tool.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/keyboxd.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "gnupg",
+      "path": "usr/lib/gnupg/scdaemon.exe",
+      "ruleId": "residual-native-port",
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libopenssl",
+      "path": "usr/lib/openssl/engines-3/capi.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libopenssl",
+      "path": "usr/lib/openssl/engines-3/loader_attic.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libopenssl",
+      "path": "usr/lib/openssl/engines-3/padlock.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/CORE/msys-perl5_42.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/B/B.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Compress/Raw/Bzip2/Bzip2.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Compress/Raw/Zlib/Zlib.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Cwd/Cwd.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Data/Dumper/Dumper.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Devel/Peek/Peek.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Digest/MD5/MD5.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Digest/SHA/SHA.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/Byte/Byte.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/CN/CN.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/EBCDIC/EBCDIC.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/Encode.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/JP/JP.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/KR/KR.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/Symbol/Symbol.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/TW/TW.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Encode/Unicode/Unicode.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Fcntl/Fcntl.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/File/DosGlob/DosGlob.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/File/Glob/Glob.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Filter/Util/Call/Call.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/GDBM_File/GDBM_File.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Hash/Util/FieldHash/FieldHash.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Hash/Util/Util.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/I18N/Langinfo/Langinfo.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/IO/IO.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/IPC/SysV/SysV.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/List/Util/Util.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/MIME/Base64/Base64.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Math/BigInt/FastCalc/FastCalc.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/NDBM_File/NDBM_File.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Opcode/Opcode.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/POSIX/POSIX.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/PerlIO/encoding/encoding.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/PerlIO/mmap/mmap.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/PerlIO/via/via.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/SDBM_File/SDBM_File.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Socket/Socket.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Storable/Storable.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Sys/Hostname/Hostname.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Sys/Syslog/Syslog.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Time/HiRes/HiRes.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Time/Piece/Piece.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Unicode/Collate/Collate.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Unicode/Normalize/Normalize.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Win32/Win32.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/Win32API/File/File.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/XS/APItest/APItest.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/XS/Typemap/Typemap.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/attributes/attributes.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/mro/mro.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/re/re.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/threads/shared/shared.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "perl",
+      "path": "usr/lib/perl5/core_perl/auto/threads/threads.dll",
+      "ruleId": "residual-native-port",
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "perl-Clone",
+      "path": "usr/lib/perl5/vendor_perl/auto/Clone/Clone.dll",
+      "ruleId": "residual-unassigned",
+      "version": "0.50-2"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "perl-HTML-Parser",
+      "path": "usr/lib/perl5/vendor_perl/auto/HTML/Parser/Parser.dll",
+      "ruleId": "residual-unassigned",
+      "version": "3.85-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "perl-Net-SSLeay",
+      "path": "usr/lib/perl5/vendor_perl/auto/Net/SSLeay/SSLeay.dll",
+      "ruleId": "residual-unassigned",
+      "version": "1.96-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Client/_Client.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Core/_Core.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Delta/_Delta.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Fs/_Fs.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Ra/_Ra.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Repos/_Repos.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "subversion",
+      "path": "usr/lib/perl5/vendor_perl/auto/SVN/_Wc/_Wc.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "perl-TermReadKey",
+      "path": "usr/lib/perl5/vendor_perl/auto/Term/ReadKey/ReadKey.dll",
+      "ruleId": "residual-unassigned",
+      "version": "2.38-8"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "p11-kit",
+      "path": "usr/lib/pkcs11/p11-kit-trust.dll",
+      "ruleId": "residual-unassigned",
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-anonymous-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-crammd5-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-digestmd5-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-gs2-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-gssapiv2-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-otp-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-plain-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "ledgerClass": "residual",
+      "owner": "libsasl",
+      "path": "usr/lib/sasl2/msys-scram-3.dll",
+      "ruleId": "residual-dependency-removal",
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/lib/ssh/sftp-server.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/lib/ssh/ssh-keysign.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/lib/ssh/ssh-pkcs11-helper.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "native-port-candidate",
+      "ledgerClass": "evidence-backed-candidate",
+      "owner": "openssh",
+      "path": "usr/lib/ssh/ssh-sk-helper.exe",
+      "ruleId": "candidate-win32-openssh",
+      "version": "10.3p1-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "tar",
+      "path": "usr/lib/tar/rmt.exe",
+      "ruleId": "residual-unassigned",
+      "version": "1.35-3"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "findutils",
+      "path": "usr/libexec/frcode.exe",
+      "ruleId": "residual-native-port",
+      "version": "4.10.0-3"
+    },
+    {
+      "action": "modeled-native-port",
+      "ledgerClass": "modeled-unresolved",
+      "owner": "msys2-runtime",
+      "path": "usr/libexec/getprocaddr64.exe",
+      "ruleId": "modeled-runtime-foundation",
+      "version": "3.6.9-2"
+    },
+    {
+      "action": "native-port",
+      "ledgerClass": "residual",
+      "owner": "less",
+      "path": "usr/libexec/lessecho.exe",
+      "ruleId": "residual-native-port",
+      "version": "704-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "p11-kit",
+      "path": "usr/libexec/p11-kit/p11-kit-remote.exe",
+      "ruleId": "residual-unassigned",
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "unassigned",
+      "ledgerClass": "residual",
+      "owner": "p11-kit",
+      "path": "usr/libexec/p11-kit/p11-kit-server.exe",
+      "ruleId": "residual-unassigned",
+      "version": "0.26.2-1"
+    }
+  ],
+  "products": [
+    {
+      "id": "installer",
+      "pathCount": 46,
+      "paths": [
+        "usr/bin/bash.exe",
+        "usr/bin/captoinfo.exe",
+        "usr/bin/chattr.exe",
+        "usr/bin/clear.exe",
+        "usr/bin/cygcheck.exe",
+        "usr/bin/cygpath.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/getconf.exe",
+        "usr/bin/getfacl.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/infocmp.exe",
+        "usr/bin/infotocap.exe",
+        "usr/bin/kill.exe",
+        "usr/bin/ldd.exe",
+        "usr/bin/ldh.exe",
+        "usr/bin/locale.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/minidumper.exe",
+        "usr/bin/mkgroup.exe",
+        "usr/bin/mkpasswd.exe",
+        "usr/bin/mount.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/msys-ncursesw6.dll",
+        "usr/bin/msys-readline8.dll",
+        "usr/bin/msys-ticw6.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/passwd.exe",
+        "usr/bin/pldd.exe",
+        "usr/bin/profiler.exe",
+        "usr/bin/ps.exe",
+        "usr/bin/regtool.exe",
+        "usr/bin/reset.exe",
+        "usr/bin/setfacl.exe",
+        "usr/bin/setmetamode.exe",
+        "usr/bin/sh.exe",
+        "usr/bin/ssp.exe",
+        "usr/bin/strace.exe",
+        "usr/bin/tabs.exe",
+        "usr/bin/tic.exe",
+        "usr/bin/toe.exe",
+        "usr/bin/tput.exe",
+        "usr/bin/tset.exe",
+        "usr/bin/tzset.exe",
+        "usr/bin/umount.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ],
+      "status": "projection-only-unresolved"
+    },
+    {
+      "id": "portable",
+      "pathCount": 46,
+      "paths": [
+        "usr/bin/bash.exe",
+        "usr/bin/captoinfo.exe",
+        "usr/bin/chattr.exe",
+        "usr/bin/clear.exe",
+        "usr/bin/cygcheck.exe",
+        "usr/bin/cygpath.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/getconf.exe",
+        "usr/bin/getfacl.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/infocmp.exe",
+        "usr/bin/infotocap.exe",
+        "usr/bin/kill.exe",
+        "usr/bin/ldd.exe",
+        "usr/bin/ldh.exe",
+        "usr/bin/locale.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/minidumper.exe",
+        "usr/bin/mkgroup.exe",
+        "usr/bin/mkpasswd.exe",
+        "usr/bin/mount.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/msys-ncursesw6.dll",
+        "usr/bin/msys-readline8.dll",
+        "usr/bin/msys-ticw6.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/passwd.exe",
+        "usr/bin/pldd.exe",
+        "usr/bin/profiler.exe",
+        "usr/bin/ps.exe",
+        "usr/bin/regtool.exe",
+        "usr/bin/reset.exe",
+        "usr/bin/setfacl.exe",
+        "usr/bin/setmetamode.exe",
+        "usr/bin/sh.exe",
+        "usr/bin/ssp.exe",
+        "usr/bin/strace.exe",
+        "usr/bin/tabs.exe",
+        "usr/bin/tic.exe",
+        "usr/bin/toe.exe",
+        "usr/bin/tput.exe",
+        "usr/bin/tset.exe",
+        "usr/bin/tzset.exe",
+        "usr/bin/umount.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ],
+      "status": "projection-only-unresolved"
+    },
+    {
+      "id": "mingit",
+      "pathCount": 13,
+      "paths": [
+        "usr/bin/chattr.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/getfacl.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/msys-ncursesw6.dll",
+        "usr/bin/msys-readline8.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/profiler.exe",
+        "usr/bin/sh.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ],
+      "status": "projection-only-unresolved"
+    },
+    {
+      "id": "busybox-mingit",
+      "pathCount": 9,
+      "paths": [
+        "usr/bin/chattr.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/profiler.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ],
+      "status": "projection-only-unresolved"
+    }
+  ],
+  "recommendations": [
+    {
+      "action": "native-port",
+      "owner": "perl",
+      "pathCount": 58,
+      "paths": [
+        "usr/bin/msys-perl5_42.dll",
+        "usr/bin/perl.exe",
+        "usr/bin/perl5.42.2.exe",
+        "usr/lib/perl5/core_perl/CORE/msys-perl5_42.dll",
+        "usr/lib/perl5/core_perl/auto/B/B.dll",
+        "usr/lib/perl5/core_perl/auto/Compress/Raw/Bzip2/Bzip2.dll",
+        "usr/lib/perl5/core_perl/auto/Compress/Raw/Zlib/Zlib.dll",
+        "usr/lib/perl5/core_perl/auto/Cwd/Cwd.dll",
+        "usr/lib/perl5/core_perl/auto/Data/Dumper/Dumper.dll",
+        "usr/lib/perl5/core_perl/auto/Devel/Peek/Peek.dll",
+        "usr/lib/perl5/core_perl/auto/Digest/MD5/MD5.dll",
+        "usr/lib/perl5/core_perl/auto/Digest/SHA/SHA.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Byte/Byte.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/CN/CN.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/EBCDIC/EBCDIC.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Encode.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/JP/JP.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/KR/KR.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Symbol/Symbol.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/TW/TW.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Unicode/Unicode.dll",
+        "usr/lib/perl5/core_perl/auto/Fcntl/Fcntl.dll",
+        "usr/lib/perl5/core_perl/auto/File/DosGlob/DosGlob.dll",
+        "usr/lib/perl5/core_perl/auto/File/Glob/Glob.dll",
+        "usr/lib/perl5/core_perl/auto/Filter/Util/Call/Call.dll",
+        "usr/lib/perl5/core_perl/auto/GDBM_File/GDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Hash/Util/FieldHash/FieldHash.dll",
+        "usr/lib/perl5/core_perl/auto/Hash/Util/Util.dll",
+        "usr/lib/perl5/core_perl/auto/I18N/Langinfo/Langinfo.dll",
+        "usr/lib/perl5/core_perl/auto/IO/IO.dll",
+        "usr/lib/perl5/core_perl/auto/IPC/SysV/SysV.dll",
+        "usr/lib/perl5/core_perl/auto/List/Util/Util.dll",
+        "usr/lib/perl5/core_perl/auto/MIME/Base64/Base64.dll",
+        "usr/lib/perl5/core_perl/auto/Math/BigInt/FastCalc/FastCalc.dll",
+        "usr/lib/perl5/core_perl/auto/NDBM_File/NDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Opcode/Opcode.dll",
+        "usr/lib/perl5/core_perl/auto/POSIX/POSIX.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/encoding/encoding.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/mmap/mmap.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/via/via.dll",
+        "usr/lib/perl5/core_perl/auto/SDBM_File/SDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Socket/Socket.dll",
+        "usr/lib/perl5/core_perl/auto/Storable/Storable.dll",
+        "usr/lib/perl5/core_perl/auto/Sys/Hostname/Hostname.dll",
+        "usr/lib/perl5/core_perl/auto/Sys/Syslog/Syslog.dll",
+        "usr/lib/perl5/core_perl/auto/Time/HiRes/HiRes.dll",
+        "usr/lib/perl5/core_perl/auto/Time/Piece/Piece.dll",
+        "usr/lib/perl5/core_perl/auto/Unicode/Collate/Collate.dll",
+        "usr/lib/perl5/core_perl/auto/Unicode/Normalize/Normalize.dll",
+        "usr/lib/perl5/core_perl/auto/Win32/Win32.dll",
+        "usr/lib/perl5/core_perl/auto/Win32API/File/File.dll",
+        "usr/lib/perl5/core_perl/auto/XS/APItest/APItest.dll",
+        "usr/lib/perl5/core_perl/auto/XS/Typemap/Typemap.dll",
+        "usr/lib/perl5/core_perl/auto/attributes/attributes.dll",
+        "usr/lib/perl5/core_perl/auto/mro/mro.dll",
+        "usr/lib/perl5/core_perl/auto/re/re.dll",
+        "usr/lib/perl5/core_perl/auto/threads/shared/shared.dll",
+        "usr/lib/perl5/core_perl/auto/threads/threads.dll"
+      ],
+      "rank": 1,
+      "version": "5.42.2-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "coreutils",
+      "pathCount": 29,
+      "paths": [
+        "usr/bin/b2sum.exe",
+        "usr/bin/basenc.exe",
+        "usr/bin/chcon.exe",
+        "usr/bin/chgrp.exe",
+        "usr/bin/chown.exe",
+        "usr/bin/chroot.exe",
+        "usr/bin/csplit.exe",
+        "usr/bin/dir.exe",
+        "usr/bin/dircolors.exe",
+        "usr/bin/fmt.exe",
+        "usr/bin/gkill.exe",
+        "usr/bin/hostid.exe",
+        "usr/bin/hostname.exe",
+        "usr/bin/mkfifo.exe",
+        "usr/bin/mknod.exe",
+        "usr/bin/nice.exe",
+        "usr/bin/nohup.exe",
+        "usr/bin/numfmt.exe",
+        "usr/bin/pathchk.exe",
+        "usr/bin/pinky.exe",
+        "usr/bin/pr.exe",
+        "usr/bin/ptx.exe",
+        "usr/bin/runcon.exe",
+        "usr/bin/sha224sum.exe",
+        "usr/bin/stdbuf.exe",
+        "usr/bin/tty.exe",
+        "usr/bin/users.exe",
+        "usr/bin/vdir.exe",
+        "usr/bin/who.exe"
+      ],
+      "rank": 2,
+      "version": "8.32-5"
+    },
+    {
+      "action": "native-port",
+      "owner": "gnupg",
+      "pathCount": 25,
+      "paths": [
+        "usr/bin/dirmngr-client.exe",
+        "usr/bin/dirmngr.exe",
+        "usr/bin/gpg-agent.exe",
+        "usr/bin/gpg-card.exe",
+        "usr/bin/gpg-connect-agent.exe",
+        "usr/bin/gpg-mail-tube.exe",
+        "usr/bin/gpg-wks-client.exe",
+        "usr/bin/gpg-wks-server.exe",
+        "usr/bin/gpg.exe",
+        "usr/bin/gpgconf.exe",
+        "usr/bin/gpgparsemail.exe",
+        "usr/bin/gpgscm.exe",
+        "usr/bin/gpgsm.exe",
+        "usr/bin/gpgsplit.exe",
+        "usr/bin/gpgtar.exe",
+        "usr/bin/gpgv.exe",
+        "usr/bin/kbxutil.exe",
+        "usr/bin/watchgnupg.exe",
+        "usr/lib/gnupg/gpg-auth.exe",
+        "usr/lib/gnupg/gpg-check-pattern.exe",
+        "usr/lib/gnupg/gpg-pair-tool.exe",
+        "usr/lib/gnupg/gpg-preset-passphrase.exe",
+        "usr/lib/gnupg/gpg-protect-tool.exe",
+        "usr/lib/gnupg/keyboxd.exe",
+        "usr/lib/gnupg/scdaemon.exe"
+      ],
+      "rank": 3,
+      "version": "2.4.9-1"
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "owner": "coreutils",
+      "pathCount": 24,
+      "paths": [
+        "usr/bin/chmod.exe",
+        "usr/bin/date.exe",
+        "usr/bin/dd.exe",
+        "usr/bin/df.exe",
+        "usr/bin/du.exe",
+        "usr/bin/factor.exe",
+        "usr/bin/groups.exe",
+        "usr/bin/id.exe",
+        "usr/bin/install.exe",
+        "usr/bin/link.exe",
+        "usr/bin/logname.exe",
+        "usr/bin/ls.exe",
+        "usr/bin/printenv.exe",
+        "usr/bin/pwd.exe",
+        "usr/bin/readlink.exe",
+        "usr/bin/realpath.exe",
+        "usr/bin/shred.exe",
+        "usr/bin/shuf.exe",
+        "usr/bin/sleep.exe",
+        "usr/bin/stat.exe",
+        "usr/bin/stty.exe",
+        "usr/bin/sync.exe",
+        "usr/bin/timeout.exe",
+        "usr/bin/whoami.exe"
+      ],
+      "rank": 4,
+      "version": "8.32-5"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "subversion",
+      "pathCount": 22,
+      "paths": [
+        "usr/bin/msys-svn_client-1-0.dll",
+        "usr/bin/msys-svn_delta-1-0.dll",
+        "usr/bin/msys-svn_diff-1-0.dll",
+        "usr/bin/msys-svn_fs-1-0.dll",
+        "usr/bin/msys-svn_fs_fs-1-0.dll",
+        "usr/bin/msys-svn_fs_util-1-0.dll",
+        "usr/bin/msys-svn_fs_x-1-0.dll",
+        "usr/bin/msys-svn_ra-1-0.dll",
+        "usr/bin/msys-svn_ra_local-1-0.dll",
+        "usr/bin/msys-svn_ra_serf-1-0.dll",
+        "usr/bin/msys-svn_ra_svn-1-0.dll",
+        "usr/bin/msys-svn_repos-1-0.dll",
+        "usr/bin/msys-svn_subr-1-0.dll",
+        "usr/bin/msys-svn_swig_perl-1-0.dll",
+        "usr/bin/msys-svn_wc-1-0.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Client/_Client.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Core/_Core.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Delta/_Delta.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Fs/_Fs.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Ra/_Ra.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Repos/_Repos.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Wc/_Wc.dll"
+      ],
+      "rank": 5,
+      "version": "1.14.5-3"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "heimdal-libs",
+      "pathCount": 10,
+      "paths": [
+        "usr/bin/msys-asn1-8.dll",
+        "usr/bin/msys-com_err-1.dll",
+        "usr/bin/msys-gssapi-3.dll",
+        "usr/bin/msys-hcrypto-4.dll",
+        "usr/bin/msys-heimbase-1.dll",
+        "usr/bin/msys-heimntlm-0.dll",
+        "usr/bin/msys-hx509-5.dll",
+        "usr/bin/msys-krb5-26.dll",
+        "usr/bin/msys-roken-18.dll",
+        "usr/bin/msys-wind-0.dll"
+      ],
+      "rank": 6,
+      "version": "7.8.0-5"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libsasl",
+      "pathCount": 10,
+      "paths": [
+        "usr/bin/msys-sasl2-3.dll",
+        "usr/bin/pluginviewer.exe",
+        "usr/lib/sasl2/msys-anonymous-3.dll",
+        "usr/lib/sasl2/msys-crammd5-3.dll",
+        "usr/lib/sasl2/msys-digestmd5-3.dll",
+        "usr/lib/sasl2/msys-gs2-3.dll",
+        "usr/lib/sasl2/msys-gssapiv2-3.dll",
+        "usr/lib/sasl2/msys-otp-3.dll",
+        "usr/lib/sasl2/msys-plain-3.dll",
+        "usr/lib/sasl2/msys-scram-3.dll"
+      ],
+      "rank": 7,
+      "version": "2.1.28-5"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libopenssl",
+      "pathCount": 5,
+      "paths": [
+        "usr/bin/msys-crypto-3.dll",
+        "usr/bin/msys-ssl-3.dll",
+        "usr/lib/openssl/engines-3/capi.dll",
+        "usr/lib/openssl/engines-3/loader_attic.dll",
+        "usr/lib/openssl/engines-3/padlock.dll"
+      ],
+      "rank": 8,
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libgcrypt",
+      "pathCount": 4,
+      "paths": [
+        "usr/bin/dumpsexp.exe",
+        "usr/bin/hmac256.exe",
+        "usr/bin/mpicalc.exe",
+        "usr/bin/msys-gcrypt-20.dll"
+      ],
+      "rank": 9,
+      "version": "1.12.2-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "winpty",
+      "pathCount": 4,
+      "paths": [
+        "usr/bin/winpty-agent.exe",
+        "usr/bin/winpty-debugserver.exe",
+        "usr/bin/winpty.dll",
+        "usr/bin/winpty.exe"
+      ],
+      "rank": 10,
+      "version": "0.4.3-3"
+    },
+    {
+      "action": "native-port",
+      "owner": "gdbm",
+      "pathCount": 3,
+      "paths": [
+        "usr/bin/gdbm_dump.exe",
+        "usr/bin/gdbm_load.exe",
+        "usr/bin/gdbmtool.exe"
+      ],
+      "rank": 11,
+      "version": "1.26-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "less",
+      "pathCount": 3,
+      "paths": [
+        "usr/bin/less.exe",
+        "usr/bin/lesskey.exe",
+        "usr/libexec/lessecho.exe"
+      ],
+      "rank": 12,
+      "version": "704-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libgpg-error",
+      "pathCount": 3,
+      "paths": [
+        "usr/bin/gpg-error.exe",
+        "usr/bin/msys-gpg-error-0.dll",
+        "usr/bin/yat2m.exe"
+      ],
+      "rank": 13,
+      "version": "1.61-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "p11-kit",
+      "pathCount": 3,
+      "paths": [
+        "usr/lib/pkcs11/p11-kit-trust.dll",
+        "usr/libexec/p11-kit/p11-kit-remote.exe",
+        "usr/libexec/p11-kit/p11-kit-server.exe"
+      ],
+      "rank": 14,
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "unzip",
+      "pathCount": 3,
+      "paths": [
+        "usr/bin/funzip.exe",
+        "usr/bin/unzipsfx.exe",
+        "usr/bin/zipinfo.exe"
+      ],
+      "rank": 15,
+      "version": "6.0-3"
+    },
+    {
+      "action": "native-port",
+      "owner": "diffutils",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/diff3.exe",
+        "usr/bin/sdiff.exe"
+      ],
+      "rank": 16,
+      "version": "3.12-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "file",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/file.exe",
+        "usr/bin/msys-magic-1.dll"
+      ],
+      "rank": 17,
+      "version": "5.48-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "findutils",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/locate.exe",
+        "usr/libexec/frcode.exe"
+      ],
+      "rank": 18,
+      "version": "4.10.0-3"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libgdbm",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/msys-gdbm-6.dll",
+        "usr/bin/msys-gdbm_compat-4.dll"
+      ],
+      "rank": 19,
+      "version": "1.26-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libpsl",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/msys-psl-5.dll",
+        "usr/bin/psl.exe"
+      ],
+      "rank": 20,
+      "version": "0.21.5-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libutil-linux",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/msys-smartcols-1.dll",
+        "usr/bin/msys-uuid-1.dll"
+      ],
+      "rank": 21,
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "native-port",
+      "owner": "nano",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/nano.exe",
+        "usr/bin/rnano.exe"
+      ],
+      "rank": 22,
+      "version": "9.1-1"
+    },
+    {
+      "action": "native-port",
+      "owner": "pinentry",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/pinentry-w32.exe",
+        "usr/bin/pinentry.exe"
+      ],
+      "rank": 23,
+      "version": "1.3.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "tar",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/tar.exe",
+        "usr/lib/tar/rmt.exe"
+      ],
+      "rank": 24,
+      "version": "1.35-3"
+    },
+    {
+      "action": "unassigned",
+      "owner": "util-linux",
+      "pathCount": 2,
+      "paths": [
+        "usr/bin/column.exe",
+        "usr/bin/getopt.exe"
+      ],
+      "rank": 25,
+      "version": "2.40.2-2"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "apr",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-apr-1-0.dll"
+      ],
+      "rank": 26,
+      "version": "1.7.6-2"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "apr-util",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-aprutil-1-0.dll"
+      ],
+      "rank": 27,
+      "version": "1.6.3-2"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "coreutils",
+      "pathCount": 1,
+      "paths": [
+        "usr/lib/coreutils/libstdbuf.dll"
+      ],
+      "rank": 28,
+      "version": "8.32-5"
+    },
+    {
+      "action": "unassigned",
+      "owner": "dash",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/dash.exe"
+      ],
+      "rank": 29,
+      "version": "0.5.13.4-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "gcc-libs",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-gcc_s-seh-1.dll"
+      ],
+      "rank": 30,
+      "version": "15.3.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "gmp",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-gmp-10.dll"
+      ],
+      "rank": 31,
+      "version": "6.3.0-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "grep",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/grep.exe"
+      ],
+      "rank": 32,
+      "version": "1~3.0-7"
+    },
+    {
+      "action": "unassigned",
+      "owner": "gzip",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/gzip.exe"
+      ],
+      "rank": 33,
+      "version": "1.14-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "iconv",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/iconv.exe"
+      ],
+      "rank": 34,
+      "version": "1.19-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libassuan",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-assuan-9.dll"
+      ],
+      "rank": 35,
+      "version": "3.0.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libbz2",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-bz2-1.dll"
+      ],
+      "rank": 36,
+      "version": "1.0.8-4"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libexpat",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-expat-1.dll"
+      ],
+      "rank": 37,
+      "version": "2.8.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libffi",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-ffi-8.dll"
+      ],
+      "rank": 38,
+      "version": "3.6.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libgnutls",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-gnutls-30.dll"
+      ],
+      "rank": 39,
+      "version": "3.8.13-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libhogweed",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-hogweed-7.dll"
+      ],
+      "rank": 40,
+      "version": "4.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libiconv",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-iconv-2.dll"
+      ],
+      "rank": 41,
+      "version": "1.19-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libidn2",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-idn2-0.dll"
+      ],
+      "rank": 42,
+      "version": "2.3.8-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libintl",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-intl-8.dll"
+      ],
+      "rank": 43,
+      "version": "0.22.5-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libksba",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-ksba-8.dll"
+      ],
+      "rank": 44,
+      "version": "1.8.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "liblz4",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-lz4-1.dll"
+      ],
+      "rank": 45,
+      "version": "1.10.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "liblzma",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-lzma-5.dll"
+      ],
+      "rank": 46,
+      "version": "5.8.3-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libnettle",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-nettle-9.dll"
+      ],
+      "rank": 47,
+      "version": "4.0-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libnpth",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-npth-0.dll"
+      ],
+      "rank": 48,
+      "version": "1.8-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libp11-kit",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-p11-kit-0.dll"
+      ],
+      "rank": 49,
+      "version": "0.26.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libpcre",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-pcre-1.dll"
+      ],
+      "rank": 50,
+      "version": "8.45-5"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libpcre2_8",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-pcre2-8-0.dll"
+      ],
+      "rank": 51,
+      "version": "10.47-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libserf",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-serf-1-0.dll"
+      ],
+      "rank": 52,
+      "version": "1.3.10-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libsqlite",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-sqlite3-0.dll"
+      ],
+      "rank": 53,
+      "version": "3.53.3-1"
+    },
+    {
+      "action": "dependency-removal",
+      "owner": "libtasn1",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-tasn1-6.dll"
+      ],
+      "rank": 54,
+      "version": "4.21.0-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libunistring",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-unistring-5.dll"
+      ],
+      "rank": 55,
+      "version": "1.4.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libxcrypt",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-crypt-2.dll"
+      ],
+      "rank": 56,
+      "version": "4.5.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "libzstd",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-zstd-1.dll"
+      ],
+      "rank": 57,
+      "version": "1.5.7-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "mintty",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/mintty.exe"
+      ],
+      "rank": 58,
+      "version": "1~3.8.3-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "mpfr",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-mpfr-6.dll"
+      ],
+      "rank": 59,
+      "version": "4.2.2-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "openssl",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/openssl.exe"
+      ],
+      "rank": 60,
+      "version": "3.5.7-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "patch",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/patch.exe"
+      ],
+      "rank": 61,
+      "version": "2.7.6-3"
+    },
+    {
+      "action": "unassigned",
+      "owner": "perl-Clone",
+      "pathCount": 1,
+      "paths": [
+        "usr/lib/perl5/vendor_perl/auto/Clone/Clone.dll"
+      ],
+      "rank": 62,
+      "version": "0.50-2"
+    },
+    {
+      "action": "unassigned",
+      "owner": "perl-HTML-Parser",
+      "pathCount": 1,
+      "paths": [
+        "usr/lib/perl5/vendor_perl/auto/HTML/Parser/Parser.dll"
+      ],
+      "rank": 63,
+      "version": "3.85-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "perl-Net-SSLeay",
+      "pathCount": 1,
+      "paths": [
+        "usr/lib/perl5/vendor_perl/auto/Net/SSLeay/SSLeay.dll"
+      ],
+      "rank": 64,
+      "version": "1.96-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "perl-TermReadKey",
+      "pathCount": 1,
+      "paths": [
+        "usr/lib/perl5/vendor_perl/auto/Term/ReadKey/ReadKey.dll"
+      ],
+      "rank": 65,
+      "version": "2.38-8"
+    },
+    {
+      "action": "unassigned",
+      "owner": "rebase",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/rebase.exe"
+      ],
+      "rank": 66,
+      "version": "4.5.0-5"
+    },
+    {
+      "action": "unassigned",
+      "owner": "sed",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/sed.exe"
+      ],
+      "rank": 67,
+      "version": "4.9-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "ssh-pageant",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/ssh-pageant.exe"
+      ],
+      "rank": 68,
+      "version": "1.4.r15.gc804ba4-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "tig",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/tig.exe"
+      ],
+      "rank": 69,
+      "version": "2.6.1-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "which",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/which.exe"
+      ],
+      "rank": 70,
+      "version": "2.25-1"
+    },
+    {
+      "action": "unassigned",
+      "owner": "zlib",
+      "pathCount": 1,
+      "paths": [
+        "usr/bin/msys-z.dll"
+      ],
+      "rank": 71,
+      "version": "1.3.2-1"
+    }
+  ],
+  "rules": [
+    {
+      "action": "native-mingw-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "39ffc22208aa99e287a9f433431fb9a56f443b62",
+        "pullRequest": 3,
+        "repository": "crutkas/build-extra",
+        "tree": "bdc84a726f6a21ac279900d18be4d0f7000b8066"
+      },
+      "id": "candidate-native-leaf-tools",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 11,
+      "paths": [
+        "usr/bin/bunzip2.exe",
+        "usr/bin/bzcat.exe",
+        "usr/bin/bzip2.exe",
+        "usr/bin/bzip2recover.exe",
+        "usr/bin/nettle-hash.exe",
+        "usr/bin/nettle-lfib-stream.exe",
+        "usr/bin/nettle-pbkdf2.exe",
+        "usr/bin/p11-kit.exe",
+        "usr/bin/pkcs1-conv.exe",
+        "usr/bin/sexp-conv.exe",
+        "usr/bin/trust.exe"
+      ]
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "50de8f12409d8cc8e16aef190629073db1a8606d",
+        "pullRequest": 4,
+        "repository": "crutkas/build-extra",
+        "tree": "228594c4a9a31d98f7d56b9e8c208168fb73cb94"
+      },
+      "id": "candidate-busybox-substitution",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 59,
+      "paths": [
+        "usr/bin/[.exe",
+        "usr/bin/arch.exe",
+        "usr/bin/base32.exe",
+        "usr/bin/base64.exe",
+        "usr/bin/basename.exe",
+        "usr/bin/cat.exe",
+        "usr/bin/cksum.exe",
+        "usr/bin/cmp.exe",
+        "usr/bin/comm.exe",
+        "usr/bin/cp.exe",
+        "usr/bin/cut.exe",
+        "usr/bin/diff.exe",
+        "usr/bin/dirname.exe",
+        "usr/bin/echo.exe",
+        "usr/bin/env.exe",
+        "usr/bin/expand.exe",
+        "usr/bin/expr.exe",
+        "usr/bin/false.exe",
+        "usr/bin/find.exe",
+        "usr/bin/fold.exe",
+        "usr/bin/head.exe",
+        "usr/bin/join.exe",
+        "usr/bin/ln.exe",
+        "usr/bin/md5sum.exe",
+        "usr/bin/mkdir.exe",
+        "usr/bin/mktemp.exe",
+        "usr/bin/mv.exe",
+        "usr/bin/nl.exe",
+        "usr/bin/nproc.exe",
+        "usr/bin/od.exe",
+        "usr/bin/paste.exe",
+        "usr/bin/printf.exe",
+        "usr/bin/rm.exe",
+        "usr/bin/rmdir.exe",
+        "usr/bin/seq.exe",
+        "usr/bin/sha1sum.exe",
+        "usr/bin/sha256sum.exe",
+        "usr/bin/sha384sum.exe",
+        "usr/bin/sha512sum.exe",
+        "usr/bin/sort.exe",
+        "usr/bin/split.exe",
+        "usr/bin/sum.exe",
+        "usr/bin/tac.exe",
+        "usr/bin/tail.exe",
+        "usr/bin/tee.exe",
+        "usr/bin/test.exe",
+        "usr/bin/touch.exe",
+        "usr/bin/tr.exe",
+        "usr/bin/true.exe",
+        "usr/bin/truncate.exe",
+        "usr/bin/tsort.exe",
+        "usr/bin/uname.exe",
+        "usr/bin/unexpand.exe",
+        "usr/bin/uniq.exe",
+        "usr/bin/unlink.exe",
+        "usr/bin/unzip.exe",
+        "usr/bin/wc.exe",
+        "usr/bin/xargs.exe",
+        "usr/bin/yes.exe"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "f5fc22b61661d339583cb1b64f714c211448e1ed",
+        "pullRequest": 6,
+        "repository": "crutkas/build-extra",
+        "tree": "0e5a9d01c3d1b20556423c6563129da2a8b6c773"
+      },
+      "id": "candidate-win32-openssh",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 14,
+      "paths": [
+        "usr/bin/msys-cbor-0.11.dll",
+        "usr/bin/msys-edit-0.dll",
+        "usr/bin/msys-fido2-1.dll",
+        "usr/bin/scp.exe",
+        "usr/bin/sftp.exe",
+        "usr/bin/ssh-add.exe",
+        "usr/bin/ssh-agent.exe",
+        "usr/bin/ssh-keygen.exe",
+        "usr/bin/ssh-keyscan.exe",
+        "usr/bin/ssh.exe",
+        "usr/lib/ssh/sftp-server.exe",
+        "usr/lib/ssh/ssh-keysign.exe",
+        "usr/lib/ssh/ssh-pkcs11-helper.exe",
+        "usr/lib/ssh/ssh-sk-helper.exe"
+      ]
+    },
+    {
+      "action": "native-mingw-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "bc3ec5555a95355dfc6832dcd5e38ada98ff6e45",
+        "pullRequest": 9,
+        "repository": "crutkas/build-extra",
+        "tree": "6a96f33c69718f425aa6f282259a0b63ea719760"
+      },
+      "id": "candidate-dos2unix",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 6,
+      "paths": [
+        "usr/bin/d2u.exe",
+        "usr/bin/dos2unix.exe",
+        "usr/bin/mac2unix.exe",
+        "usr/bin/u2d.exe",
+        "usr/bin/unix2dos.exe",
+        "usr/bin/unix2mac.exe"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829",
+        "pullRequest": 10,
+        "repository": "crutkas/build-extra",
+        "tree": "1469c06c647fe41a293c82171ffdfae166b75db7"
+      },
+      "id": "candidate-gawk",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 17,
+      "paths": [
+        "usr/bin/awk.exe",
+        "usr/bin/gawk-5.4.0.exe",
+        "usr/bin/gawk.exe",
+        "usr/lib/awk/grcat.exe",
+        "usr/lib/awk/pwcat.exe",
+        "usr/lib/gawk/filefuncs.dll",
+        "usr/lib/gawk/fnmatch.dll",
+        "usr/lib/gawk/fork.dll",
+        "usr/lib/gawk/inplace.dll",
+        "usr/lib/gawk/intdiv.dll",
+        "usr/lib/gawk/ordchr.dll",
+        "usr/lib/gawk/readdir.dll",
+        "usr/lib/gawk/readfile.dll",
+        "usr/lib/gawk/revoutput.dll",
+        "usr/lib/gawk/revtwoway.dll",
+        "usr/lib/gawk/rwarray.dll",
+        "usr/lib/gawk/time.dll"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "d012f9f8a8d05a3a51a40fe33668295a3e31c221",
+        "pullRequest": 7,
+        "repository": "crutkas/MINGW-packages",
+        "tree": "ecb252648ac26a6228a1327d139ca074df95e864"
+      },
+      "id": "candidate-vim",
+      "ledgerClass": "evidence-backed-candidate",
+      "pathCount": 7,
+      "paths": [
+        "usr/bin/ex.exe",
+        "usr/bin/rview.exe",
+        "usr/bin/rvim.exe",
+        "usr/bin/view.exe",
+        "usr/bin/vim.exe",
+        "usr/bin/vimdiff.exe",
+        "usr/bin/xxd.exe"
+      ]
+    },
+    {
+      "action": "modeled-native-port",
+      "evidence": null,
+      "id": "modeled-runtime-foundation",
+      "ledgerClass": "modeled-unresolved",
+      "pathCount": 46,
+      "paths": [
+        "usr/bin/bash.exe",
+        "usr/bin/captoinfo.exe",
+        "usr/bin/chattr.exe",
+        "usr/bin/clear.exe",
+        "usr/bin/cygcheck.exe",
+        "usr/bin/cygpath.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/getconf.exe",
+        "usr/bin/getfacl.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/infocmp.exe",
+        "usr/bin/infotocap.exe",
+        "usr/bin/kill.exe",
+        "usr/bin/ldd.exe",
+        "usr/bin/ldh.exe",
+        "usr/bin/locale.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/minidumper.exe",
+        "usr/bin/mkgroup.exe",
+        "usr/bin/mkpasswd.exe",
+        "usr/bin/mount.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/msys-ncursesw6.dll",
+        "usr/bin/msys-readline8.dll",
+        "usr/bin/msys-ticw6.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/passwd.exe",
+        "usr/bin/pldd.exe",
+        "usr/bin/profiler.exe",
+        "usr/bin/ps.exe",
+        "usr/bin/regtool.exe",
+        "usr/bin/reset.exe",
+        "usr/bin/setfacl.exe",
+        "usr/bin/setmetamode.exe",
+        "usr/bin/sh.exe",
+        "usr/bin/ssp.exe",
+        "usr/bin/strace.exe",
+        "usr/bin/tabs.exe",
+        "usr/bin/tic.exe",
+        "usr/bin/toe.exe",
+        "usr/bin/tput.exe",
+        "usr/bin/tset.exe",
+        "usr/bin/tzset.exe",
+        "usr/bin/umount.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ]
+    },
+    {
+      "action": "native-port",
+      "evidence": null,
+      "id": "residual-native-port",
+      "ledgerClass": "residual",
+      "pathCount": 133,
+      "paths": [
+        "usr/bin/b2sum.exe",
+        "usr/bin/basenc.exe",
+        "usr/bin/chcon.exe",
+        "usr/bin/chgrp.exe",
+        "usr/bin/chown.exe",
+        "usr/bin/chroot.exe",
+        "usr/bin/csplit.exe",
+        "usr/bin/diff3.exe",
+        "usr/bin/dir.exe",
+        "usr/bin/dircolors.exe",
+        "usr/bin/dirmngr-client.exe",
+        "usr/bin/dirmngr.exe",
+        "usr/bin/fmt.exe",
+        "usr/bin/funzip.exe",
+        "usr/bin/gdbm_dump.exe",
+        "usr/bin/gdbm_load.exe",
+        "usr/bin/gdbmtool.exe",
+        "usr/bin/gkill.exe",
+        "usr/bin/gpg-agent.exe",
+        "usr/bin/gpg-card.exe",
+        "usr/bin/gpg-connect-agent.exe",
+        "usr/bin/gpg-mail-tube.exe",
+        "usr/bin/gpg-wks-client.exe",
+        "usr/bin/gpg-wks-server.exe",
+        "usr/bin/gpg.exe",
+        "usr/bin/gpgconf.exe",
+        "usr/bin/gpgparsemail.exe",
+        "usr/bin/gpgscm.exe",
+        "usr/bin/gpgsm.exe",
+        "usr/bin/gpgsplit.exe",
+        "usr/bin/gpgtar.exe",
+        "usr/bin/gpgv.exe",
+        "usr/bin/hostid.exe",
+        "usr/bin/hostname.exe",
+        "usr/bin/kbxutil.exe",
+        "usr/bin/less.exe",
+        "usr/bin/lesskey.exe",
+        "usr/bin/locate.exe",
+        "usr/bin/mkfifo.exe",
+        "usr/bin/mknod.exe",
+        "usr/bin/msys-perl5_42.dll",
+        "usr/bin/nano.exe",
+        "usr/bin/nice.exe",
+        "usr/bin/nohup.exe",
+        "usr/bin/numfmt.exe",
+        "usr/bin/pathchk.exe",
+        "usr/bin/perl.exe",
+        "usr/bin/perl5.42.2.exe",
+        "usr/bin/pinentry-w32.exe",
+        "usr/bin/pinentry.exe",
+        "usr/bin/pinky.exe",
+        "usr/bin/pr.exe",
+        "usr/bin/ptx.exe",
+        "usr/bin/rnano.exe",
+        "usr/bin/runcon.exe",
+        "usr/bin/sdiff.exe",
+        "usr/bin/sha224sum.exe",
+        "usr/bin/stdbuf.exe",
+        "usr/bin/tty.exe",
+        "usr/bin/unzipsfx.exe",
+        "usr/bin/users.exe",
+        "usr/bin/vdir.exe",
+        "usr/bin/watchgnupg.exe",
+        "usr/bin/who.exe",
+        "usr/bin/winpty-agent.exe",
+        "usr/bin/winpty-debugserver.exe",
+        "usr/bin/winpty.dll",
+        "usr/bin/winpty.exe",
+        "usr/bin/zipinfo.exe",
+        "usr/lib/gnupg/gpg-auth.exe",
+        "usr/lib/gnupg/gpg-check-pattern.exe",
+        "usr/lib/gnupg/gpg-pair-tool.exe",
+        "usr/lib/gnupg/gpg-preset-passphrase.exe",
+        "usr/lib/gnupg/gpg-protect-tool.exe",
+        "usr/lib/gnupg/keyboxd.exe",
+        "usr/lib/gnupg/scdaemon.exe",
+        "usr/lib/perl5/core_perl/CORE/msys-perl5_42.dll",
+        "usr/lib/perl5/core_perl/auto/B/B.dll",
+        "usr/lib/perl5/core_perl/auto/Compress/Raw/Bzip2/Bzip2.dll",
+        "usr/lib/perl5/core_perl/auto/Compress/Raw/Zlib/Zlib.dll",
+        "usr/lib/perl5/core_perl/auto/Cwd/Cwd.dll",
+        "usr/lib/perl5/core_perl/auto/Data/Dumper/Dumper.dll",
+        "usr/lib/perl5/core_perl/auto/Devel/Peek/Peek.dll",
+        "usr/lib/perl5/core_perl/auto/Digest/MD5/MD5.dll",
+        "usr/lib/perl5/core_perl/auto/Digest/SHA/SHA.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Byte/Byte.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/CN/CN.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/EBCDIC/EBCDIC.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Encode.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/JP/JP.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/KR/KR.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Symbol/Symbol.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/TW/TW.dll",
+        "usr/lib/perl5/core_perl/auto/Encode/Unicode/Unicode.dll",
+        "usr/lib/perl5/core_perl/auto/Fcntl/Fcntl.dll",
+        "usr/lib/perl5/core_perl/auto/File/DosGlob/DosGlob.dll",
+        "usr/lib/perl5/core_perl/auto/File/Glob/Glob.dll",
+        "usr/lib/perl5/core_perl/auto/Filter/Util/Call/Call.dll",
+        "usr/lib/perl5/core_perl/auto/GDBM_File/GDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Hash/Util/FieldHash/FieldHash.dll",
+        "usr/lib/perl5/core_perl/auto/Hash/Util/Util.dll",
+        "usr/lib/perl5/core_perl/auto/I18N/Langinfo/Langinfo.dll",
+        "usr/lib/perl5/core_perl/auto/IO/IO.dll",
+        "usr/lib/perl5/core_perl/auto/IPC/SysV/SysV.dll",
+        "usr/lib/perl5/core_perl/auto/List/Util/Util.dll",
+        "usr/lib/perl5/core_perl/auto/MIME/Base64/Base64.dll",
+        "usr/lib/perl5/core_perl/auto/Math/BigInt/FastCalc/FastCalc.dll",
+        "usr/lib/perl5/core_perl/auto/NDBM_File/NDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Opcode/Opcode.dll",
+        "usr/lib/perl5/core_perl/auto/POSIX/POSIX.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/encoding/encoding.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/mmap/mmap.dll",
+        "usr/lib/perl5/core_perl/auto/PerlIO/via/via.dll",
+        "usr/lib/perl5/core_perl/auto/SDBM_File/SDBM_File.dll",
+        "usr/lib/perl5/core_perl/auto/Socket/Socket.dll",
+        "usr/lib/perl5/core_perl/auto/Storable/Storable.dll",
+        "usr/lib/perl5/core_perl/auto/Sys/Hostname/Hostname.dll",
+        "usr/lib/perl5/core_perl/auto/Sys/Syslog/Syslog.dll",
+        "usr/lib/perl5/core_perl/auto/Time/HiRes/HiRes.dll",
+        "usr/lib/perl5/core_perl/auto/Time/Piece/Piece.dll",
+        "usr/lib/perl5/core_perl/auto/Unicode/Collate/Collate.dll",
+        "usr/lib/perl5/core_perl/auto/Unicode/Normalize/Normalize.dll",
+        "usr/lib/perl5/core_perl/auto/Win32/Win32.dll",
+        "usr/lib/perl5/core_perl/auto/Win32API/File/File.dll",
+        "usr/lib/perl5/core_perl/auto/XS/APItest/APItest.dll",
+        "usr/lib/perl5/core_perl/auto/XS/Typemap/Typemap.dll",
+        "usr/lib/perl5/core_perl/auto/attributes/attributes.dll",
+        "usr/lib/perl5/core_perl/auto/mro/mro.dll",
+        "usr/lib/perl5/core_perl/auto/re/re.dll",
+        "usr/lib/perl5/core_perl/auto/threads/shared/shared.dll",
+        "usr/lib/perl5/core_perl/auto/threads/threads.dll",
+        "usr/libexec/frcode.exe",
+        "usr/libexec/lessecho.exe"
+      ]
+    },
+    {
+      "action": "dependency-removal",
+      "evidence": null,
+      "id": "residual-dependency-removal",
+      "ledgerClass": "residual",
+      "pathCount": 62,
+      "paths": [
+        "usr/bin/dumpsexp.exe",
+        "usr/bin/gpg-error.exe",
+        "usr/bin/hmac256.exe",
+        "usr/bin/mpicalc.exe",
+        "usr/bin/msys-apr-1-0.dll",
+        "usr/bin/msys-aprutil-1-0.dll",
+        "usr/bin/msys-asn1-8.dll",
+        "usr/bin/msys-assuan-9.dll",
+        "usr/bin/msys-com_err-1.dll",
+        "usr/bin/msys-crypto-3.dll",
+        "usr/bin/msys-gcrypt-20.dll",
+        "usr/bin/msys-gpg-error-0.dll",
+        "usr/bin/msys-gssapi-3.dll",
+        "usr/bin/msys-hcrypto-4.dll",
+        "usr/bin/msys-heimbase-1.dll",
+        "usr/bin/msys-heimntlm-0.dll",
+        "usr/bin/msys-hx509-5.dll",
+        "usr/bin/msys-krb5-26.dll",
+        "usr/bin/msys-ksba-8.dll",
+        "usr/bin/msys-npth-0.dll",
+        "usr/bin/msys-roken-18.dll",
+        "usr/bin/msys-sasl2-3.dll",
+        "usr/bin/msys-serf-1-0.dll",
+        "usr/bin/msys-ssl-3.dll",
+        "usr/bin/msys-svn_client-1-0.dll",
+        "usr/bin/msys-svn_delta-1-0.dll",
+        "usr/bin/msys-svn_diff-1-0.dll",
+        "usr/bin/msys-svn_fs-1-0.dll",
+        "usr/bin/msys-svn_fs_fs-1-0.dll",
+        "usr/bin/msys-svn_fs_util-1-0.dll",
+        "usr/bin/msys-svn_fs_x-1-0.dll",
+        "usr/bin/msys-svn_ra-1-0.dll",
+        "usr/bin/msys-svn_ra_local-1-0.dll",
+        "usr/bin/msys-svn_ra_serf-1-0.dll",
+        "usr/bin/msys-svn_ra_svn-1-0.dll",
+        "usr/bin/msys-svn_repos-1-0.dll",
+        "usr/bin/msys-svn_subr-1-0.dll",
+        "usr/bin/msys-svn_swig_perl-1-0.dll",
+        "usr/bin/msys-svn_wc-1-0.dll",
+        "usr/bin/msys-tasn1-6.dll",
+        "usr/bin/msys-wind-0.dll",
+        "usr/bin/pluginviewer.exe",
+        "usr/bin/yat2m.exe",
+        "usr/lib/coreutils/libstdbuf.dll",
+        "usr/lib/openssl/engines-3/capi.dll",
+        "usr/lib/openssl/engines-3/loader_attic.dll",
+        "usr/lib/openssl/engines-3/padlock.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Client/_Client.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Core/_Core.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Delta/_Delta.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Fs/_Fs.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Ra/_Ra.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Repos/_Repos.dll",
+        "usr/lib/perl5/vendor_perl/auto/SVN/_Wc/_Wc.dll",
+        "usr/lib/sasl2/msys-anonymous-3.dll",
+        "usr/lib/sasl2/msys-crammd5-3.dll",
+        "usr/lib/sasl2/msys-digestmd5-3.dll",
+        "usr/lib/sasl2/msys-gs2-3.dll",
+        "usr/lib/sasl2/msys-gssapiv2-3.dll",
+        "usr/lib/sasl2/msys-otp-3.dll",
+        "usr/lib/sasl2/msys-plain-3.dll",
+        "usr/lib/sasl2/msys-scram-3.dll"
+      ]
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "evidence": {
+        "admission": "unresolved",
+        "artifactDigest": "sha256:60d1511ff3d5af40136a0879abff0622d31efcec066157d236d3603a48a36ce4",
+        "artifactId": 9672860669,
+        "head": "7731cd019b7fa0c8e77b99cecced2a93c5962e4f",
+        "jobId": 98742752010,
+        "pullRequest": 15,
+        "repository": "crutkas/build-extra",
+        "tree": "438fcfe91c28c30507b9015c211a7f21c470b165",
+        "workflowRun": 33138152773
+      },
+      "id": "residual-busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "pathCount": 24,
+      "paths": [
+        "usr/bin/chmod.exe",
+        "usr/bin/date.exe",
+        "usr/bin/dd.exe",
+        "usr/bin/df.exe",
+        "usr/bin/du.exe",
+        "usr/bin/factor.exe",
+        "usr/bin/groups.exe",
+        "usr/bin/id.exe",
+        "usr/bin/install.exe",
+        "usr/bin/link.exe",
+        "usr/bin/logname.exe",
+        "usr/bin/ls.exe",
+        "usr/bin/printenv.exe",
+        "usr/bin/pwd.exe",
+        "usr/bin/readlink.exe",
+        "usr/bin/realpath.exe",
+        "usr/bin/shred.exe",
+        "usr/bin/shuf.exe",
+        "usr/bin/sleep.exe",
+        "usr/bin/stat.exe",
+        "usr/bin/stty.exe",
+        "usr/bin/sync.exe",
+        "usr/bin/timeout.exe",
+        "usr/bin/whoami.exe"
+      ]
+    },
+    {
+      "action": "unassigned",
+      "evidence": null,
+      "id": "residual-unassigned",
+      "ledgerClass": "residual",
+      "pathCount": 53,
+      "paths": [
+        "usr/bin/column.exe",
+        "usr/bin/dash.exe",
+        "usr/bin/file.exe",
+        "usr/bin/getopt.exe",
+        "usr/bin/grep.exe",
+        "usr/bin/gzip.exe",
+        "usr/bin/iconv.exe",
+        "usr/bin/mintty.exe",
+        "usr/bin/msys-bz2-1.dll",
+        "usr/bin/msys-crypt-2.dll",
+        "usr/bin/msys-expat-1.dll",
+        "usr/bin/msys-ffi-8.dll",
+        "usr/bin/msys-gcc_s-seh-1.dll",
+        "usr/bin/msys-gdbm-6.dll",
+        "usr/bin/msys-gdbm_compat-4.dll",
+        "usr/bin/msys-gmp-10.dll",
+        "usr/bin/msys-gnutls-30.dll",
+        "usr/bin/msys-hogweed-7.dll",
+        "usr/bin/msys-iconv-2.dll",
+        "usr/bin/msys-idn2-0.dll",
+        "usr/bin/msys-intl-8.dll",
+        "usr/bin/msys-lz4-1.dll",
+        "usr/bin/msys-lzma-5.dll",
+        "usr/bin/msys-magic-1.dll",
+        "usr/bin/msys-mpfr-6.dll",
+        "usr/bin/msys-nettle-9.dll",
+        "usr/bin/msys-p11-kit-0.dll",
+        "usr/bin/msys-pcre-1.dll",
+        "usr/bin/msys-pcre2-8-0.dll",
+        "usr/bin/msys-psl-5.dll",
+        "usr/bin/msys-smartcols-1.dll",
+        "usr/bin/msys-sqlite3-0.dll",
+        "usr/bin/msys-unistring-5.dll",
+        "usr/bin/msys-uuid-1.dll",
+        "usr/bin/msys-z.dll",
+        "usr/bin/msys-zstd-1.dll",
+        "usr/bin/openssl.exe",
+        "usr/bin/patch.exe",
+        "usr/bin/psl.exe",
+        "usr/bin/rebase.exe",
+        "usr/bin/sed.exe",
+        "usr/bin/ssh-pageant.exe",
+        "usr/bin/tar.exe",
+        "usr/bin/tig.exe",
+        "usr/bin/which.exe",
+        "usr/lib/perl5/vendor_perl/auto/Clone/Clone.dll",
+        "usr/lib/perl5/vendor_perl/auto/HTML/Parser/Parser.dll",
+        "usr/lib/perl5/vendor_perl/auto/Net/SSLeay/SSLeay.dll",
+        "usr/lib/perl5/vendor_perl/auto/Term/ReadKey/ReadKey.dll",
+        "usr/lib/pkcs11/p11-kit-trust.dll",
+        "usr/lib/tar/rmt.exe",
+        "usr/libexec/p11-kit/p11-kit-remote.exe",
+        "usr/libexec/p11-kit/p11-kit-server.exe"
+      ]
+    }
+  ],
+  "schemaVersion": 1,
+  "sourceRuleAudit": {
+    "consumedPathCount": 432,
+    "sourceOverlapCount": 0,
+    "unconsumedPathCount": 0
+  }
+}

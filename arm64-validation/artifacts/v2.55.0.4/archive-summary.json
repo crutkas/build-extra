@@ -1,0 +1,47 @@
+{
+  "architectureCounts": {
+    "anycpu": 90,
+    "arm64": 209,
+    "x64": 432,
+    "x86": 1
+  },
+  "hardlinkCount": 90,
+  "installedLinkPolicy": {
+    "absoluteTargetsAreExtractionPaths": false,
+    "description": "The five allowlisted POSIX absolute links are payload metadata. The scanner never resolves or materializes them.",
+    "links": [
+      {
+        "path": "dev/fd",
+        "target": "/proc/self/fd"
+      },
+      {
+        "path": "dev/stderr",
+        "target": "/proc/self/fd/2"
+      },
+      {
+        "path": "dev/stdin",
+        "target": "/proc/self/fd/0"
+      },
+      {
+        "path": "dev/stdout",
+        "target": "/proc/self/fd/1"
+      },
+      {
+        "path": "etc/mtab",
+        "target": "/proc/mounts"
+      }
+    ]
+  },
+  "linkCount": 95,
+  "memberCount": 7950,
+  "peCount": 732,
+  "tarSha256": "1287f5a8681042c53c7163aa9e3e5ec6f5c96cccab63b1c242969c25b57875f7",
+  "typeCounts": {
+    "directory": 9,
+    "file": 7846,
+    "hardlink": 90,
+    "symlink": 5
+  },
+  "x64PathSha256": "efce93fd01bfe066e3e119b5c4459dcb2c72a1c00af339dc40fe8f81c7336eae",
+  "zeroBlockCount": 13
+}
