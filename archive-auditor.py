@@ -24,6 +24,7 @@ SCHEMA = "git-for-windows.archive-audit/v1"
 COMPARISON_SCHEMA = "git-for-windows.archive-comparison/v1"
 SEVEN_ZIP_SIGNATURE = b"7z\xbc\xaf'\x1c"
 MAX_SFX_PREFIX_LENGTH = 16 * 1024 * 1024
+MAX_SFX_OVERLAY_SCAN_BYTES = 16 * 1024 * 1024
 MAX_SFX_SIGNATURE_OCCURRENCES = 4096
 MAX_SFX_SIGNATURE_CANDIDATES = 64
 MAX_ENVELOPE_WORK_BYTES = 256 * 1024 * 1024
@@ -41,6 +42,27 @@ WIN_CERTIFICATE_HEADER_LENGTH = 8
 WIN_CERTIFICATE_ALIGNMENT = 8
 WIN_CERTIFICATE_REVISIONS = (0x0100, 0x0200)
 WIN_CERTIFICATE_TYPES = (0x0001, 0x0002, 0x0003, 0x0004)
+S_IFMT = 0o170000
+S_IFIFO = 0o010000
+S_IFCHR = 0o020000
+S_IFDIR = 0o040000
+S_IFBLK = 0o060000
+S_IFREG = 0o100000
+S_IFLNK = 0o120000
+S_IFSOCK = 0o140000
+UNIX_FILE_TYPES = {
+    0: "unspecified",
+    S_IFIFO: "fifo",
+    S_IFCHR: "character-device",
+    S_IFDIR: "directory",
+    S_IFBLK: "block-device",
+    S_IFREG: "regular",
+    S_IFLNK: "symlink",
+    S_IFSOCK: "socket",
+}
+UNIX_SPECIAL_FILE_TYPES = (S_IFIFO, S_IFCHR, S_IFBLK, S_IFSOCK)
+ZIP_UNIX_CREATOR_SYSTEMS = (3, 19)
+SEVEN_ZIP_UNIX_EXTENSION = 0x8000
 WINDOWS_RESERVED = re.compile(
     r"^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|"
     r"com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])(?:\..*)?$",
@@ -247,6 +269,80 @@ def normalize_link_target(member_path, target, max_length, root_relative=False):
     return "/".join(base)
 
 
+def classify_unix_file_type(mode, code, surface, path):
+    """Decode S_IFMT explicitly and fail closed on every non-regular type.
+
+    Only a regular file, a directory, and a truly unspecified type are
+    representable as physical archive members. Symlinks and every special
+    device type are rejected rather than silently recorded as files, because
+    their payload bytes do not mean what a file's payload bytes mean.
+    """
+    file_type = mode & S_IFMT
+    name = UNIX_FILE_TYPES.get(file_type)
+    if name is None:
+        reject(
+            code,
+            f"{surface} declares an unknown Unix file type",
+            path=path,
+            unixMode=f"{mode:06o}",
+            unixFileType=f"{file_type:06o}",
+        )
+    if file_type in UNIX_SPECIAL_FILE_TYPES or file_type == S_IFLNK:
+        reject(
+            code,
+            f"{surface} declares an unsupported Unix file type",
+            path=path,
+            unixMode=f"{mode:06o}",
+            unixFileType=name,
+        )
+    return file_type, name
+
+
+def physical_partition(data, ranges, owner):
+    """Build an exact-once ordered partition of the containing bytes.
+
+    Every byte belongs to exactly one partition. The partitions are ordered,
+    non-overlapping, contiguous, and their lengths sum to the containing
+    length. Each carries its own digest, so a comparison binds each region
+    independently. The whole-bytes digest recorded elsewhere is overlapping
+    corroboration, not ownership.
+    """
+    partitions = []
+    cursor = 0
+    for role, start, end in ranges:
+        if start != cursor or end < start or end > len(data):
+            reject(
+                "PROVENANCE_PARTITION_INVALID",
+                "Physical provenance partitions are not an ordered exact cover",
+                owner=owner,
+                role=role,
+                expectedOffset=cursor,
+                offset=start,
+                end=end,
+                containerLength=len(data),
+            )
+        partitions.append({
+            "role": role,
+            "offset": start,
+            "length": end - start,
+            "sha256": sha256_range(data, start, end),
+        })
+        cursor = end
+    if cursor != len(data):
+        reject(
+            "PROVENANCE_PARTITION_INVALID",
+            "Physical provenance partitions do not cover the containing stream",
+            owner=owner,
+            coveredLength=cursor,
+            containerLength=len(data),
+        )
+    return {
+        "containerLength": len(data),
+        "coveredLength": sum(item["length"] for item in partitions),
+        "partitions": partitions,
+    }
+
+
 class PathRegistry:
     def __init__(self):
         self.raw = {}
@@ -283,6 +379,7 @@ class Limits:
     max_compression_ratio: float = 1000.0
     max_path_length: int = 4096
     max_sfx_prefix_bytes: int = MAX_SFX_PREFIX_LENGTH
+    max_sfx_overlay_scan_bytes: int = MAX_SFX_OVERLAY_SCAN_BYTES
     max_sfx_signature_occurrences: int = MAX_SFX_SIGNATURE_OCCURRENCES
     max_sfx_signature_candidates: int = MAX_SFX_SIGNATURE_CANDIDATES
     max_envelope_work_bytes: int = MAX_ENVELOPE_WORK_BYTES
@@ -298,6 +395,7 @@ class Limits:
             "maxCompressionRatio": values["max_compression_ratio"],
             "maxPathLength": values["max_path_length"],
             "maxSfxPrefixBytes": values["max_sfx_prefix_bytes"],
+            "maxSfxOverlayScanBytes": values["max_sfx_overlay_scan_bytes"],
             "maxSfxSignatureOccurrences": values["max_sfx_signature_occurrences"],
             "maxSfxSignatureCandidates": values["max_sfx_signature_candidates"],
             "maxEnvelopeWorkBytes": values["max_envelope_work_bytes"],
@@ -506,6 +604,7 @@ class ArchiveAuditor:
             "maxMembersTotal": self.limits.max_members_total,
             "maxPathLength": self.limits.max_path_length,
             "maxSfxPrefixBytes": self.limits.max_sfx_prefix_bytes,
+            "maxSfxOverlayScanBytes": self.limits.max_sfx_overlay_scan_bytes,
             "maxSfxSignatureOccurrences": self.limits.max_sfx_signature_occurrences,
             "maxSfxSignatureCandidates": self.limits.max_sfx_signature_candidates,
             "maxEnvelopeWorkBytes": self.limits.max_envelope_work_bytes,
@@ -894,24 +993,34 @@ class ArchiveAuditor:
             text = strict_decode(entry["nameRaw"], encoding)
             unix_mode = (entry["externalAttributes"] >> 16) & 0xffff
             dos_attributes = entry["externalAttributes"] & 0xffff
+            creator_system = (entry["versionMade"] >> 8) & 0xff
             if dos_attributes & 0x0400:
                 reject("UNSAFE_REPARSE_POINT", "ZIP member carries the Windows reparse-point attribute", path=text)
-            file_type = unix_mode & 0o170000
-            is_directory = text.endswith("/") or file_type == 0o040000 or bool(dos_attributes & 0x10)
-            is_symlink = file_type == 0o120000
-            if is_symlink and is_directory:
-                reject("AMBIGUOUS_MEMBER_TYPE", "ZIP member is both a directory and symlink", path=text)
+            declares_unix_mode = creator_system in ZIP_UNIX_CREATOR_SYSTEMS
+            if declares_unix_mode:
+                file_type, unix_type_name = classify_unix_file_type(
+                    unix_mode,
+                    "UNSUPPORTED_ZIP_MEMBER_TYPE",
+                    "ZIP member",
+                    text,
+                )
+            else:
+                file_type, unix_type_name = 0, "unspecified"
+            is_directory = text.endswith("/") or file_type == S_IFDIR or bool(dos_attributes & 0x10)
+            if file_type == S_IFREG and is_directory:
+                reject(
+                    "AMBIGUOUS_MEMBER_TYPE",
+                    "ZIP member declares a regular Unix mode but is structurally a directory",
+                    path=text,
+                    unixMode=f"{unix_mode:06o}",
+                )
             logical = normalize_path(text, is_directory, self.limits.max_path_length)
             registry.add(entry["nameRaw"], logical, ordinal)
             link_target = None
-            member_type = "directory" if is_directory else "symlink" if is_symlink else "file"
+            member_type = "directory" if is_directory else "file"
             content = expanded
             if is_directory and expanded:
                 reject("DIRECTORY_WITH_DATA", "ZIP directory carries file data", path=logical)
-            if is_symlink:
-                target_text = strict_decode(expanded, "utf-8", "INVALID_LINK_ENCODING")
-                link_target = normalize_link_target(logical, target_text, self.limits.max_path_length)
-                content = expanded
 
             self.state.charge_expansion(len(expanded), len(compressed), f"zip:{logical}")
             archive_count = self.state.add_member(archive_count)
@@ -938,6 +1047,9 @@ class ArchiveAuditor:
                     "externalAttributes": f"{entry['externalAttributes']:08x}",
                     "internalAttributes": f"{entry['internalAttributes']:04x}",
                     "unixMode": f"{unix_mode:06o}",
+                    "unixFileType": unix_type_name,
+                    "unixModeDeclared": declares_unix_mode,
+                    "creatorSystem": creator_system,
                     "dosAttributes": f"{dos_attributes:04x}",
                     "extraFieldIds": entry["extraIds"],
                 },
@@ -1585,10 +1697,25 @@ class ArchiveAuditor:
             windows_attributes = attributes or 0
             if windows_attributes & 0x0400:
                 reject("UNSAFE_REPARSE_POINT", "7z member carries the Windows reparse-point attribute", path=name_text)
+            declares_unix_mode = bool(windows_attributes & SEVEN_ZIP_UNIX_EXTENSION)
             unix_mode = (windows_attributes >> 16) & 0xffff
-            unix_type = unix_mode & 0o170000
-            if unix_type in (0o120000, 0o060000):
-                reject("UNSUPPORTED_7Z_LINK", "7z symlink or block-device member is unsupported", path=name_text)
+            if declares_unix_mode:
+                unix_type, unix_type_name = classify_unix_file_type(
+                    unix_mode,
+                    "UNSUPPORTED_7Z_MEMBER_TYPE",
+                    "7z member",
+                    name_text,
+                )
+            else:
+                if unix_mode:
+                    reject(
+                        "AMBIGUOUS_MEMBER_TYPE",
+                        "7z member carries Unix mode bits without the Unix extension attribute",
+                        path=name_text,
+                        unixMode=f"{unix_mode:06o}",
+                        windowsAttributes=f"{windows_attributes:08x}",
+                    )
+                unix_type, unix_type_name = 0, "unspecified"
 
             if empty_streams[ordinal]:
                 is_empty_file = empty_files[empty_index]
@@ -1613,7 +1740,7 @@ class ArchiveAuditor:
                     stream = next(stream_iter)
                 except StopIteration:
                     reject("SEVEN_ZIP_STREAM_COUNT_MISMATCH", "7z has fewer data streams than files")
-                is_directory = bool(windows_attributes & 0x10) or unix_type == 0o040000
+                is_directory = bool(windows_attributes & 0x10) or unix_type == S_IFDIR
                 if is_directory:
                     reject("DIRECTORY_WITH_DATA", "7z directory carries file data", path=name_text)
             logical = normalize_path(name_text, is_directory, self.limits.max_path_length)
@@ -1650,6 +1777,8 @@ class ArchiveAuditor:
                     "effectiveDictionarySize": stream["effectiveDictionarySize"],
                     "windowsAttributes": f"{windows_attributes:08x}",
                     "unixMode": f"{unix_mode:06o}",
+                    "unixFileType": unix_type_name,
+                    "unixModeDeclared": declares_unix_mode,
                     "creationTime": files.get("creationTimes", [None] * len(names))[ordinal],
                     "accessTime": files.get("accessTimes", [None] * len(names))[ordinal],
                     "modificationTime": files.get("modificationTimes", [None] * len(names))[ordinal],
@@ -1665,24 +1794,28 @@ class ArchiveAuditor:
         node["headerOffset"] = signature_offset
         node["dataOffset"] = signature_offset + 32
         node["members"] = members
+        if pe_layout is None:
+            partition_ranges = [("archive", 0, len(data))]
+        else:
+            partition_ranges = [
+                ("pe-image", 0, pe_layout.image_end),
+                ("overlay-gap", pe_layout.image_end, signature_offset),
+                ("archive", signature_offset, archive_end),
+            ]
+            if pe_layout.signed:
+                partition_ranges.append(
+                    ("certificate", pe_layout.certificate_offset, len(data))
+                )
         node["ownerDisposition"] = {
             "archiveVersion": f"{major}.{minor}",
             "signatureOffset": signature_offset,
-            "sfxPrefixLength": signature_offset,
-            "sfxPrefixSha256": sha256_range(data, 0, signature_offset) if signature_offset else None,
-            "overlayGapLength": (
-                signature_offset - pe_layout.image_end if pe_layout is not None else None
-            ),
-            "overlayGapSha256": (
-                sha256_range(data, pe_layout.image_end, signature_offset)
-                if pe_layout is not None
-                else None
-            ),
+            "archiveStart": signature_offset,
             "archiveEnd": archive_end,
             "nextHeaderOffset": next_start,
             "nextHeaderLength": next_size,
             "nextHeaderDisposition": header_disposition,
             "peLayout": pe_layout.manifest() if pe_layout is not None else None,
+            "provenance": physical_partition(data, partition_ranges, "7z"),
         }
 
     def _seven_parse_header(self, reader):
@@ -2417,7 +2550,11 @@ def seven_zip_start_header(data, signature_offset, archive_end=None):
     if major != 0 or minor > 4:
         reject("UNSUPPORTED_7Z_VERSION", "7z archive version is unsupported", major=major, minor=minor)
     if zlib.crc32(signature[12:32]) & 0xffffffff != struct.unpack_from("<I", signature, 8)[0]:
-        reject("SEVEN_ZIP_START_HEADER_CRC_MISMATCH", "7z start-header checksum is invalid")
+        reject(
+            "SEVEN_ZIP_START_HEADER_CRC_MISMATCH",
+            "7z start-header checksum is invalid",
+            offset=signature_offset,
+        )
 
     next_offset, next_size, next_crc = struct.unpack_from("<QQI", signature, 12)
     payload_start = signature_offset + 32
@@ -2466,7 +2603,13 @@ def verify_seven_zip_next_header(data, envelope):
     """Expensive phase: the caller must charge the work budget first."""
     next_end = envelope.next_start + envelope.next_size
     if crc32_range(data, envelope.next_start, next_end) != envelope.next_crc:
-        reject("SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH", "7z next-header checksum is invalid")
+        reject(
+            "SEVEN_ZIP_NEXT_HEADER_CRC_MISMATCH",
+            "7z next-header checksum is invalid",
+            offset=envelope.signature_offset,
+            nextHeaderOffset=envelope.next_start,
+            nextHeaderLength=envelope.next_size,
+        )
 
 
 def seven_zip_envelope(data, signature_offset, archive_end, state):
@@ -2521,14 +2664,6 @@ class PeLayout:
     @property
     def overlay_end(self):
         return self.certificate_offset if self.signed else self.container_length
-
-    def classify(self, offset):
-        """Classify a physical signature offset before ambiguity resolution."""
-        if offset < self.image_end:
-            return "image"
-        if self.signed and offset >= self.certificate_offset:
-            return "certificate"
-        return "overlay"
 
     def manifest(self):
         return {
@@ -2834,73 +2969,133 @@ class Detection:
     envelope: SevenZipEnvelope = None
 
 
+def describe_unclassified_overlay(data, layout, limits, nested):
+    """Diagnose an MZ/PE input whose overlay yields no usable 7z archive.
+
+    Runs only on the rejection path. The image and certificate regions are
+    inspected with a bounded scan so that a signature hidden inside them
+    still produces its specific structural error instead of a generic one.
+    """
+    allowance = limits.max_sfx_overlay_scan_bytes
+    image_scan_end = min(layout.image_end, allowance + len(SEVEN_ZIP_SIGNATURE))
+    inside_image = data.find(SEVEN_ZIP_SIGNATURE, 0, image_scan_end)
+    if inside_image >= 0:
+        reject(
+            "SFX_SIGNATURE_OVERLAPS_PE_IMAGE",
+            "Embedded 7z signature overlaps PE headers or section data",
+            signatureOffset=inside_image,
+            peImageEnd=layout.image_end,
+        )
+    if layout.signed:
+        certificate_scan_end = min(
+            layout.container_length,
+            layout.certificate_offset + allowance + len(SEVEN_ZIP_SIGNATURE),
+        )
+        inside_certificate = data.find(
+            SEVEN_ZIP_SIGNATURE,
+            layout.certificate_offset,
+            certificate_scan_end,
+        )
+        if inside_certificate >= 0:
+            reject(
+                "SFX_SIGNATURE_INSIDE_CERTIFICATE",
+                "Embedded 7z signature lies inside the declared PE certificate table",
+                signatureOffset=inside_certificate,
+                certificateOffset=layout.certificate_offset,
+                certificateLength=layout.certificate_length,
+            )
+    if layout.overlay_end > layout.overlay_start:
+        reject(
+            "UNCLASSIFIED_PE_OVERLAY",
+            "MZ/PE input carries overlay bytes that are not a 7z archive",
+            overlayStart=layout.overlay_start,
+            overlayLength=layout.overlay_end - layout.overlay_start,
+            nested=nested,
+        )
+    reject(
+        "MISSING_7Z_SFX_SIGNATURE",
+        "MZ/PE input contains no embedded 7z signature",
+        nested=nested,
+        peImageEnd=layout.image_end,
+    )
+
+
 def detect_sfx_7z(data, state, nested=False):
     """Locate the single legal 7z overlay in an MZ/PE input.
 
-    Every signature occurrence is charged against a bounded occurrence
-    budget, only occurrences that fall in the physical overlay window become
-    candidates, and the expensive next-header CRC is charged against a
-    bounded work budget before it runs. Budget exhaustion is a deliberate
-    rejection: a candidate is never silently skipped so that some other
-    candidate can be accepted in its place.
+    The PE layout is parsed exactly once, and the search for a 7z signature
+    starts at the end of the PE image rather than rescanning the image, so
+    the cost is proportional to the overlay rather than to a potentially
+    huge executable.
 
-    A nested member that carries no 7z signature at all is an ordinary PE
-    file rather than an SFX archive, so it is reported as an opaque leaf
-    instead of failing the whole audit. Once any signature is present the
-    strict path runs and every structural rejection is preserved.
+    Every signature occurrence is charged against a bounded occurrence
+    budget, each candidate against a bounded candidate budget, and each
+    declared next-header length against a bounded work budget before its CRC
+    runs. A candidate that reaches validation and is malformed fails the
+    whole input closed: a later valid candidate can never erase it, so
+    malformed signature-bearing bytes cannot masquerade as inert gap.
+
+    A nested member is reported as an opaque leaf only when every byte is
+    provably accounted for as PE image plus an optional validated terminal
+    certificate table, leaving no unclassified overlay. An unclassified
+    overlay is a rejection, not a leaf.
     """
     limits = state.limits
-    scan_end = min(len(data), limits.max_sfx_prefix_bytes + len(SEVEN_ZIP_SIGNATURE))
-    first_occurrence = data.find(SEVEN_ZIP_SIGNATURE, 0, scan_end)
-    if first_occurrence < 0:
+    try:
+        layout = parse_pe_layout(data, limits)
+    except AuditError:
+        if nested:
+            fallback_end = min(
+                len(data),
+                limits.max_sfx_overlay_scan_bytes + len(SEVEN_ZIP_SIGNATURE),
+            )
+            if data.find(SEVEN_ZIP_SIGNATURE, 0, fallback_end) < 0:
+                return Detection()
+        raise
+
+    overlay_start = layout.overlay_start
+    overlay_end = layout.overlay_end
+    if overlay_start == overlay_end:
         if nested:
             return Detection()
-        parse_pe_layout(data, limits)
-        if len(data) > limits.max_sfx_prefix_bytes:
-            reject(
-                "SFX_PREFIX_LIMIT",
-                "No 7z signature occurs within the configured physical scan ceiling",
-                limit=limits.max_sfx_prefix_bytes,
-            )
-        reject("MISSING_7Z_SFX_SIGNATURE", "MZ/PE input contains no embedded 7z signature")
+        describe_unclassified_overlay(data, layout, limits, nested)
 
-    layout = parse_pe_layout(data, limits)
+    scan_end = min(
+        overlay_end,
+        overlay_start + limits.max_sfx_overlay_scan_bytes + len(SEVEN_ZIP_SIGNATURE),
+    )
+    first_occurrence = data.find(SEVEN_ZIP_SIGNATURE, overlay_start, scan_end)
+    if first_occurrence < 0:
+        if overlay_end - overlay_start > limits.max_sfx_overlay_scan_bytes:
+            reject(
+                "SFX_OVERLAY_SCAN_LIMIT",
+                "No 7z signature occurs within the configured overlay scan allowance",
+                overlayStart=overlay_start,
+                overlayLength=overlay_end - overlay_start,
+                limit=limits.max_sfx_overlay_scan_bytes,
+            )
+        describe_unclassified_overlay(data, layout, limits, nested)
+    if first_occurrence > limits.max_sfx_prefix_bytes:
+        reject(
+            "SFX_PREFIX_LIMIT",
+            "Embedded 7z signature lies beyond the configured physical prefix ceiling",
+            signatureOffset=first_occurrence,
+            limit=limits.max_sfx_prefix_bytes,
+        )
+
     cursor = first_occurrence
-    first_candidate = None
-    second_candidate = None
-    first_error = None
-    first_rejected_placement = None
     valid_candidates = []
     valid_envelope = None
     while True:
-        candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, scan_end)
+        candidate = data.find(SEVEN_ZIP_SIGNATURE, cursor, overlay_end)
         if candidate < 0:
             break
         cursor = candidate + 1
         state.charge_signature_occurrence(candidate)
-        placement = layout.classify(candidate)
-        if placement != "overlay":
-            if first_rejected_placement is None:
-                first_rejected_placement = (candidate, placement)
-            continue
-        if first_candidate is None:
-            first_candidate = candidate
-        elif second_candidate is None:
-            second_candidate = candidate
         state.charge_signature_candidate(candidate)
-        try:
-            envelope = seven_zip_start_header(data, candidate, layout.overlay_end)
-        except AuditError as exc:
-            if first_error is None:
-                first_error = exc
-            continue
+        envelope = seven_zip_start_header(data, candidate, overlay_end)
         state.charge_envelope_work(envelope.next_size, candidate)
-        try:
-            verify_seven_zip_next_header(data, envelope)
-        except AuditError as exc:
-            if first_error is None:
-                first_error = exc
-            continue
+        verify_seven_zip_next_header(data, envelope)
         if len(valid_candidates) < 2:
             valid_candidates.append(candidate)
             if valid_envelope is None:
@@ -2913,34 +3108,7 @@ def detect_sfx_7z(data, state, nested=False):
                 secondOffset=valid_candidates[1],
             )
 
-    if valid_candidates:
-        return Detection("7z", valid_candidates[0], layout, valid_envelope)
-    if first_candidate is not None:
-        if second_candidate is not None:
-            reject(
-                "INVALID_7Z_SFX_CANDIDATES",
-                "SFX contains multiple overlay 7z signatures but none has a valid envelope",
-                firstOffset=first_candidate,
-                secondOffset=second_candidate,
-            )
-        raise first_error
-    if first_rejected_placement is not None:
-        offset, placement = first_rejected_placement
-        if placement == "certificate":
-            reject(
-                "SFX_SIGNATURE_INSIDE_CERTIFICATE",
-                "Embedded 7z signature lies inside the declared PE certificate table",
-                signatureOffset=offset,
-                certificateOffset=layout.certificate_offset,
-                certificateLength=layout.certificate_length,
-            )
-        reject(
-            "SFX_SIGNATURE_OVERLAPS_PE_IMAGE",
-            "Embedded 7z signature overlaps PE headers or section data",
-            signatureOffset=offset,
-            peImageEnd=layout.image_end,
-        )
-    reject("MISSING_7Z_SFX_SIGNATURE", "MZ/PE input contains no embedded 7z signature")
+    return Detection("7z", valid_candidates[0], layout, valid_envelope)
 
 
 def detect_format(data, tar_member_limit=Limits.max_members_per_archive, state=None, nested=False):
@@ -3052,6 +3220,11 @@ def add_limit_arguments(parser):
     parser.add_argument("--max-path-length", type=positive_int, default=Limits.max_path_length)
     parser.add_argument("--max-sfx-prefix-bytes", type=positive_int, default=Limits.max_sfx_prefix_bytes)
     parser.add_argument(
+        "--max-sfx-overlay-scan-bytes",
+        type=positive_int,
+        default=Limits.max_sfx_overlay_scan_bytes,
+    )
+    parser.add_argument(
         "--max-sfx-signature-occurrences",
         type=positive_int,
         default=Limits.max_sfx_signature_occurrences,
@@ -3078,6 +3251,7 @@ def limits_from_args(args):
         max_compression_ratio=args.max_compression_ratio,
         max_path_length=args.max_path_length,
         max_sfx_prefix_bytes=args.max_sfx_prefix_bytes,
+        max_sfx_overlay_scan_bytes=args.max_sfx_overlay_scan_bytes,
         max_sfx_signature_occurrences=args.max_sfx_signature_occurrences,
         max_sfx_signature_candidates=args.max_sfx_signature_candidates,
         max_envelope_work_bytes=args.max_envelope_work_bytes,
