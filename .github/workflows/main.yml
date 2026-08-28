@@ -8,8 +8,12 @@ env:
 jobs:
   test-arm64-sdk-bootstrap-source:
     runs-on: windows-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
       - name: test immutable ARM64 SDK bootstrap source
         shell: pwsh
         run: .github/actions/bootstrap-git-for-windows-sdk-arm64/tests/run.ps1

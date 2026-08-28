@@ -1,5 +1,5 @@
 name: Bootstrap pinned Git for Windows ARM64 SDK
-description: Verify an admitted ARM64 SDK snapshot on a protected non-admin runner
+description: Verify an admitted ARM64 SDK snapshot on an ephemeral native ARM64 runner
 
 inputs:
   matrix-discriminator:
@@ -11,6 +11,8 @@ outputs:
     description: Canonical path to the verified SDK worktree
     value: ${{ steps.bootstrap.outputs.sdk-root }}
 
+# Self-hosted runners are refused. On success, the private SDK root lives only
+# until GitHub discards the ephemeral hosted runner after the consuming job.
 runs:
   using: composite
   steps:
@@ -28,6 +30,7 @@ runs:
           -MatrixDiscriminator "$env:GFW_SDK_MATRIX_DISCRIMINATOR" `
           -RunnerOs "$env:RUNNER_OS" `
           -RunnerArch "$env:RUNNER_ARCH" `
+          -RunnerEnvironment "${{ runner.environment }}" `
           -GitHubPath "$env:GITHUB_PATH" `
           -GitHubEnv "$env:GITHUB_ENV" `
           -GitHubOutput "$env:GITHUB_OUTPUT"

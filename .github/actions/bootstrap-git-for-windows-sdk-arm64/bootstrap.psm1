@@ -23,11 +23,64 @@ using System.Text;
 
 public static class GfwSdkBootstrapNativeMethods
 {
+    public const int TokenElevation = 20;
+    public const uint TokenQuery = 0x0008;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct TokenElevationInfo
+    {
+        public int TokenIsElevated;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     public static extern uint GetLongPathName(
         string shortPath,
         StringBuilder longPath,
         uint bufferLength);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenProcessToken(
+        IntPtr processHandle,
+        uint desiredAccess,
+        out IntPtr tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetTokenInformation(
+        IntPtr tokenHandle,
+        int tokenInformationClass,
+        out TokenElevationInfo tokenInformation,
+        int tokenInformationLength,
+        out int returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetFileInformationByHandle(
+        Microsoft.Win32.SafeHandles.SafeFileHandle file,
+        out ByHandleFileInformation information);
 }
 '@
 }
@@ -41,11 +94,14 @@ function Get-Sha256Hex {
 
 function Assert-HexString {
 	param(
-		[Parameter(Mandatory = $true)][string]$Value,
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
 		[Parameter(Mandatory = $true)][int]$Length,
 		[Parameter(Mandatory = $true)][string]$Name
 	)
 
+	Assert-ExactStringValue $Value $Name
 	if ($Value -cnotmatch "^[0-9a-f]{$Length}$") {
 		throw "$Name must be exactly $Length lowercase hexadecimal characters"
 	}
@@ -53,11 +109,19 @@ function Assert-HexString {
 
 function Assert-ExactProperties {
 	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
 		[Parameter(Mandatory = $true)][object]$Value,
 		[Parameter(Mandatory = $true)][string[]]$Expected,
 		[Parameter(Mandatory = $true)][string]$Name
 	)
 
+	if (
+		$null -eq $Value -or
+		$Value.GetType() -ne [Management.Automation.PSCustomObject]
+	) {
+		throw "$Name must be an object"
+	}
 	$actual = @($Value.PSObject.Properties.Name)
 	if ($actual.Count -ne $Expected.Count) {
 		throw "$Name has an unexpected property count"
@@ -72,6 +136,163 @@ function Assert-ExactProperties {
 	if ($expectedSet.Count -ne 0) {
 		throw "$Name is missing required properties"
 	}
+}
+
+function Assert-ExactStringValue {
+	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
+		[Parameter(Mandatory = $true)][string]$Name,
+		[switch]$AllowEmpty
+	)
+
+	if ($null -eq $Value -or $Value.GetType() -ne [string]) {
+		throw "$Name must be a JSON string"
+	}
+	if (-not $AllowEmpty -and [string]::IsNullOrWhiteSpace($Value)) {
+		throw "$Name must be a nonempty JSON string"
+	}
+}
+
+function Assert-ExactInt64Value {
+	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if ($null -eq $Value -or $Value.GetType() -ne [long]) {
+		throw "$Name must be a JSON integer"
+	}
+}
+
+function Assert-ExactBooleanValue {
+	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if ($null -eq $Value -or $Value.GetType() -ne [bool]) {
+		throw "$Name must be a JSON boolean"
+	}
+}
+
+function Assert-ExactArrayValue {
+	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if ($null -eq $Value -or $Value.GetType() -ne [object[]]) {
+		throw "$Name must be a JSON array"
+	}
+}
+
+function Assert-JsonKind {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][Text.Json.JsonValueKind]$Kind,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if ($Element.ValueKind -ne $Kind) {
+		throw "$Name must be a JSON $($Kind.ToString().ToLowerInvariant())"
+	}
+}
+
+function Get-JsonProperty {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string]$Property,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	[Text.Json.JsonElement]$value = [Text.Json.JsonElement]::new()
+	if (-not $Element.TryGetProperty($Property, [ref]$value)) {
+		throw "$Name is missing required property '$Property'"
+	}
+	return $value
+}
+
+function Assert-ExactJsonProperties {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string[]]$Expected,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	Assert-JsonKind $Element ([Text.Json.JsonValueKind]::Object) $Name
+	$actual = [Collections.Generic.List[string]]::new()
+	foreach ($property in $Element.EnumerateObject()) {
+		$actual.Add($property.Name)
+	}
+	if ($actual.Count -ne $Expected.Count) {
+		throw "$Name has an unexpected property count"
+	}
+	$expectedSet = [Collections.Generic.HashSet[string]]::new(
+		$Expected, [StringComparer]::Ordinal)
+	foreach ($property in $actual) {
+		if (-not $expectedSet.Remove($property)) {
+			throw "$Name has unexpected property '$property'"
+		}
+	}
+	if ($expectedSet.Count -ne 0) {
+		throw "$Name is missing required properties"
+	}
+}
+
+function Get-JsonString {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	Assert-JsonKind $Element ([Text.Json.JsonValueKind]::String) $Name
+	return $Element.GetString()
+}
+
+function Get-JsonInt64 {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	Assert-JsonKind $Element ([Text.Json.JsonValueKind]::Number) $Name
+	$value = 0L
+	if (-not $Element.TryGetInt64([ref]$value)) {
+		throw "$Name must be a JSON integer"
+	}
+	return $value
+}
+
+function Get-JsonBoolean {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if (
+		$Element.ValueKind -ne [Text.Json.JsonValueKind]::True -and
+		$Element.ValueKind -ne [Text.Json.JsonValueKind]::False
+	) {
+		throw "$Name must be a JSON boolean"
+	}
+	return $Element.GetBoolean()
+}
+
+function Assert-JsonNull {
+	param(
+		[Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	Assert-JsonKind $Element ([Text.Json.JsonValueKind]::Null) $Name
 }
 
 function Assert-NoDuplicateJsonProperties {
@@ -105,10 +326,275 @@ function Assert-NoDuplicateJsonProperties {
 	}
 }
 
+function ConvertFrom-AdmissionEvidenceJson {
+	param([Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element)
+
+	Assert-ExactJsonProperties $Element @(
+		'authority_repository',
+		'authority_ref',
+		'protected_base_commit',
+		'reviewed_source_commit',
+		'reviewed_source_tree',
+		'base_protected',
+		'required_checks_passed',
+		'required_checks',
+		'native_runner'
+	) 'lock.admission.evidence'
+	$checksElement = Get-JsonProperty $Element 'required_checks' `
+		'lock.admission.evidence'
+	Assert-JsonKind $checksElement ([Text.Json.JsonValueKind]::Array) `
+		'lock.admission.evidence.required_checks'
+	$checks = [Collections.Generic.List[object]]::new()
+	foreach ($check in $checksElement.EnumerateArray()) {
+		$checks.Add((Get-JsonString $check `
+			'lock.admission.evidence.required_checks[]'))
+	}
+
+	$runnerElement = Get-JsonProperty $Element 'native_runner' `
+		'lock.admission.evidence'
+	Assert-ExactJsonProperties $runnerElement @(
+		'provider',
+		'image',
+		'os',
+		'os_architecture',
+		'process_architecture',
+		'evidence_uri'
+	) 'lock.admission.evidence.native_runner'
+
+	return [pscustomobject][ordered]@{
+		authority_repository = Get-JsonString (
+			Get-JsonProperty $Element 'authority_repository' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.authority_repository'
+		authority_ref = Get-JsonString (
+			Get-JsonProperty $Element 'authority_ref' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.authority_ref'
+		protected_base_commit = Get-JsonString (
+			Get-JsonProperty $Element 'protected_base_commit' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.protected_base_commit'
+		reviewed_source_commit = Get-JsonString (
+			Get-JsonProperty $Element 'reviewed_source_commit' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.reviewed_source_commit'
+		reviewed_source_tree = Get-JsonString (
+			Get-JsonProperty $Element 'reviewed_source_tree' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.reviewed_source_tree'
+		base_protected = Get-JsonBoolean (
+			Get-JsonProperty $Element 'base_protected' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.base_protected'
+		required_checks_passed = Get-JsonBoolean (
+			Get-JsonProperty $Element 'required_checks_passed' `
+				'lock.admission.evidence') `
+			'lock.admission.evidence.required_checks_passed'
+		required_checks = [object[]]$checks.ToArray()
+		native_runner = [pscustomobject][ordered]@{
+			provider = Get-JsonString (
+				Get-JsonProperty $runnerElement 'provider' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.provider'
+			image = Get-JsonString (
+				Get-JsonProperty $runnerElement 'image' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.image'
+			os = Get-JsonString (
+				Get-JsonProperty $runnerElement 'os' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.os'
+			os_architecture = Get-JsonString (
+				Get-JsonProperty $runnerElement 'os_architecture' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.os_architecture'
+			process_architecture = Get-JsonString (
+				Get-JsonProperty $runnerElement 'process_architecture' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.process_architecture'
+			evidence_uri = Get-JsonString (
+				Get-JsonProperty $runnerElement 'evidence_uri' `
+					'lock.admission.evidence.native_runner') `
+				'lock.admission.evidence.native_runner.evidence_uri'
+		}
+	}
+}
+
+function ConvertFrom-SdkLockJson {
+	param([Parameter(Mandatory = $true)][Text.Json.JsonElement]$Element)
+
+	Assert-ExactJsonProperties $Element @(
+		'format',
+		'repository',
+		'remote_url',
+		'commit',
+		'tree',
+		'parent',
+		'commit_metadata',
+		'manifest',
+		'package_database',
+		'admission'
+	) 'lock'
+	$metadataElement = Get-JsonProperty $Element 'commit_metadata' 'lock'
+	Assert-ExactJsonProperties $metadataElement @(
+		'author',
+		'committer',
+		'authored_at',
+		'committed_at',
+		'signature_status',
+		'subject'
+	) 'lock.commit_metadata'
+	$manifestElement = Get-JsonProperty $Element 'manifest' 'lock'
+	Assert-ExactJsonProperties $manifestElement @(
+		'canonicalization',
+		'sha256',
+		'entry_count',
+		'blob_count',
+		'tree_count',
+		'total_blob_bytes'
+	) 'lock.manifest'
+	$packageElement = Get-JsonProperty $Element 'package_database' 'lock'
+	Assert-ExactJsonProperties $packageElement @(
+		'scope',
+		'canonicalization',
+		'sha256',
+		'entry_count',
+		'blob_count',
+		'tree_count',
+		'total_blob_bytes'
+	) 'lock.package_database'
+	$scopeElement = Get-JsonProperty $packageElement 'scope' `
+		'lock.package_database'
+	Assert-JsonKind $scopeElement ([Text.Json.JsonValueKind]::Array) `
+		'lock.package_database.scope'
+	$scope = [Collections.Generic.List[object]]::new()
+	foreach ($path in $scopeElement.EnumerateArray()) {
+		$scope.Add((Get-JsonString $path 'lock.package_database.scope[]'))
+	}
+
+	$admissionElement = Get-JsonProperty $Element 'admission' 'lock'
+	Assert-ExactJsonProperties $admissionElement @(
+		'status',
+		'approved_by',
+		'approved_at',
+		'evidence'
+	) 'lock.admission'
+	$status = Get-JsonString (
+		Get-JsonProperty $admissionElement 'status' 'lock.admission') `
+		'lock.admission.status'
+	$approvedByElement = Get-JsonProperty $admissionElement 'approved_by' `
+		'lock.admission'
+	$approvedAtElement = Get-JsonProperty $admissionElement 'approved_at' `
+		'lock.admission'
+	$evidenceElement = Get-JsonProperty $admissionElement 'evidence' `
+		'lock.admission'
+	$approvedBy = $null
+	$approvedAt = $null
+	$evidence = $null
+	if ($status -ceq 'pending-independent-review') {
+		Assert-JsonNull $approvedByElement 'lock.admission.approved_by'
+		Assert-JsonNull $approvedAtElement 'lock.admission.approved_at'
+		Assert-JsonNull $evidenceElement 'lock.admission.evidence'
+	} elseif ($status -ceq 'approved') {
+		$approvedBy = Get-JsonString $approvedByElement `
+			'lock.admission.approved_by'
+		$approvedAt = Get-JsonString $approvedAtElement `
+			'lock.admission.approved_at'
+		$evidence = ConvertFrom-AdmissionEvidenceJson $evidenceElement
+	} else {
+		throw 'Unknown snapshot admission status'
+	}
+
+	return [pscustomobject][ordered]@{
+		format = Get-JsonString (
+			Get-JsonProperty $Element 'format' 'lock') 'lock.format'
+		repository = Get-JsonString (
+			Get-JsonProperty $Element 'repository' 'lock') 'lock.repository'
+		remote_url = Get-JsonString (
+			Get-JsonProperty $Element 'remote_url' 'lock') 'lock.remote_url'
+		commit = Get-JsonString (
+			Get-JsonProperty $Element 'commit' 'lock') 'lock.commit'
+		tree = Get-JsonString (
+			Get-JsonProperty $Element 'tree' 'lock') 'lock.tree'
+		parent = Get-JsonString (
+			Get-JsonProperty $Element 'parent' 'lock') 'lock.parent'
+		commit_metadata = [pscustomobject][ordered]@{
+			author = Get-JsonString (
+				Get-JsonProperty $metadataElement 'author' `
+					'lock.commit_metadata') 'lock.commit_metadata.author'
+			committer = Get-JsonString (
+				Get-JsonProperty $metadataElement 'committer' `
+					'lock.commit_metadata') 'lock.commit_metadata.committer'
+			authored_at = Get-JsonString (
+				Get-JsonProperty $metadataElement 'authored_at' `
+					'lock.commit_metadata') 'lock.commit_metadata.authored_at'
+			committed_at = Get-JsonString (
+				Get-JsonProperty $metadataElement 'committed_at' `
+					'lock.commit_metadata') 'lock.commit_metadata.committed_at'
+			signature_status = Get-JsonString (
+				Get-JsonProperty $metadataElement 'signature_status' `
+					'lock.commit_metadata') 'lock.commit_metadata.signature_status'
+			subject = Get-JsonString (
+				Get-JsonProperty $metadataElement 'subject' `
+					'lock.commit_metadata') 'lock.commit_metadata.subject'
+		}
+		manifest = [pscustomobject][ordered]@{
+			canonicalization = Get-JsonString (
+				Get-JsonProperty $manifestElement 'canonicalization' `
+					'lock.manifest') 'lock.manifest.canonicalization'
+			sha256 = Get-JsonString (
+				Get-JsonProperty $manifestElement 'sha256' `
+					'lock.manifest') 'lock.manifest.sha256'
+			entry_count = Get-JsonInt64 (
+				Get-JsonProperty $manifestElement 'entry_count' `
+					'lock.manifest') 'lock.manifest.entry_count'
+			blob_count = Get-JsonInt64 (
+				Get-JsonProperty $manifestElement 'blob_count' `
+					'lock.manifest') 'lock.manifest.blob_count'
+			tree_count = Get-JsonInt64 (
+				Get-JsonProperty $manifestElement 'tree_count' `
+					'lock.manifest') 'lock.manifest.tree_count'
+			total_blob_bytes = Get-JsonString (
+				Get-JsonProperty $manifestElement 'total_blob_bytes' `
+					'lock.manifest') 'lock.manifest.total_blob_bytes'
+		}
+		package_database = [pscustomobject][ordered]@{
+			scope = [object[]]$scope.ToArray()
+			canonicalization = Get-JsonString (
+				Get-JsonProperty $packageElement 'canonicalization' `
+					'lock.package_database') `
+				'lock.package_database.canonicalization'
+			sha256 = Get-JsonString (
+				Get-JsonProperty $packageElement 'sha256' `
+					'lock.package_database') 'lock.package_database.sha256'
+			entry_count = Get-JsonInt64 (
+				Get-JsonProperty $packageElement 'entry_count' `
+					'lock.package_database') 'lock.package_database.entry_count'
+			blob_count = Get-JsonInt64 (
+				Get-JsonProperty $packageElement 'blob_count' `
+					'lock.package_database') 'lock.package_database.blob_count'
+			tree_count = Get-JsonInt64 (
+				Get-JsonProperty $packageElement 'tree_count' `
+					'lock.package_database') 'lock.package_database.tree_count'
+			total_blob_bytes = Get-JsonString (
+				Get-JsonProperty $packageElement 'total_blob_bytes' `
+					'lock.package_database') `
+				'lock.package_database.total_blob_bytes'
+		}
+		admission = [pscustomobject][ordered]@{
+			status = $status
+			approved_by = $approvedBy
+			approved_at = $approvedAt
+			evidence = $evidence
+		}
+	}
+}
+
 function Read-SdkLock {
 	[CmdletBinding()]
-	param([Parameter(Mandatory = $true)][string]$Path)
+	param([Parameter(Mandatory = $true)][object]$Path)
 
+	Assert-ExactStringValue $Path 'SDK lock path'
 	$item = Get-Item -LiteralPath $Path -Force
 	if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
 		throw 'The SDK lock must be a regular, non-reparse file'
@@ -123,65 +609,79 @@ function Read-SdkLock {
 		$document = [Text.Json.JsonDocument]::Parse($stream)
 		try {
 			Assert-NoDuplicateJsonProperties -Element $document.RootElement
+			return ConvertFrom-SdkLockJson $document.RootElement
 		} finally {
 			$document.Dispose()
 		}
 	} finally {
 		$stream.Dispose()
 	}
-
-	$text = $script:Utf8.GetString($bytes)
-	return $text | ConvertFrom-Json -Depth 20
 }
 
 function Assert-PositiveInteger {
 	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
 		[Parameter(Mandatory = $true)][object]$Value,
 		[Parameter(Mandatory = $true)][string]$Name
 	)
 
-	$number = 0L
-	if (-not [long]::TryParse(
-		[string]$Value,
-		[Globalization.NumberStyles]::None,
-		[Globalization.CultureInfo]::InvariantCulture,
-		[ref]$number
-	) -or $number -le 0) {
+	Assert-ExactInt64Value $Value $Name
+	if ($Value -le 0) {
 		throw "$Name must be a positive integer"
+	}
+	return $Value
+}
+
+function Assert-PositiveDecimalString {
+	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Value,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	Assert-ExactStringValue $Value $Name
+	$number = 0UL
+	if (
+		-not [uint64]::TryParse(
+			$Value,
+			[Globalization.NumberStyles]::None,
+			[Globalization.CultureInfo]::InvariantCulture,
+			[ref]$number
+		) -or
+		$number -eq 0 -or
+		$number.ToString([Globalization.CultureInfo]::InvariantCulture) -cne
+			$Value
+	) {
+		throw "$Name must be a positive canonical decimal string"
 	}
 	return $number
 }
 
 function ConvertTo-LockTimestamp {
 	param(
+		[AllowNull()]
+		[AllowEmptyCollection()]
 		[Parameter(Mandatory = $true)][object]$Value,
 		[Parameter(Mandatory = $true)][string]$Name
 	)
 
-	if ($Value -is [DateTime]) {
-		return $Value.ToUniversalTime().ToString(
-			'yyyy-MM-ddTHH:mm:ssZ',
-			[Globalization.CultureInfo]::InvariantCulture)
-	}
-	if ($Value -is [DateTimeOffset]) {
-		return $Value.UtcDateTime.ToString(
-			'yyyy-MM-ddTHH:mm:ssZ',
-			[Globalization.CultureInfo]::InvariantCulture)
-	}
-
+	Assert-ExactStringValue $Value $Name
 	$timestamp = [DateTimeOffset]::MinValue
 	if (-not [DateTimeOffset]::TryParseExact(
-		[string]$Value,
+		$Value,
 		'yyyy-MM-ddTHH:mm:ssZ',
 		[Globalization.CultureInfo]::InvariantCulture,
-		[Globalization.DateTimeStyles]::AssumeUniversal,
+		[Globalization.DateTimeStyles]::AssumeUniversal -bor
+			[Globalization.DateTimeStyles]::AdjustToUniversal,
 		[ref]$timestamp
-	)) {
+	) -or $timestamp.ToString(
+		'yyyy-MM-ddTHH:mm:ssZ',
+		[Globalization.CultureInfo]::InvariantCulture) -cne $Value) {
 		throw "$Name must be an exact UTC timestamp"
 	}
-	return $timestamp.UtcDateTime.ToString(
-		'yyyy-MM-ddTHH:mm:ssZ',
-		[Globalization.CultureInfo]::InvariantCulture)
+	return $Value
 }
 
 function Assert-SdkLockSchema {
@@ -231,6 +731,108 @@ function Assert-SdkLockSchema {
 		'evidence'
 	) 'lock.admission'
 
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $Lock.format; Name = 'lock.format' },
+		[pscustomobject]@{
+			Value = $Lock.repository
+			Name = 'lock.repository'
+		},
+		[pscustomobject]@{
+			Value = $Lock.remote_url
+			Name = 'lock.remote_url'
+		},
+		[pscustomobject]@{ Value = $Lock.commit; Name = 'lock.commit' },
+		[pscustomobject]@{ Value = $Lock.tree; Name = 'lock.tree' },
+		[pscustomobject]@{ Value = $Lock.parent; Name = 'lock.parent' },
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.author
+			Name = 'lock.commit_metadata.author'
+		},
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.committer
+			Name = 'lock.commit_metadata.committer'
+		},
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.authored_at
+			Name = 'lock.commit_metadata.authored_at'
+		},
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.committed_at
+			Name = 'lock.commit_metadata.committed_at'
+		},
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.signature_status
+			Name = 'lock.commit_metadata.signature_status'
+		},
+		[pscustomobject]@{
+			Value = $Lock.commit_metadata.subject
+			Name = 'lock.commit_metadata.subject'
+		},
+		[pscustomobject]@{
+			Value = $Lock.manifest.canonicalization
+			Name = 'lock.manifest.canonicalization'
+		},
+		[pscustomobject]@{
+			Value = $Lock.manifest.sha256
+			Name = 'lock.manifest.sha256'
+		},
+		[pscustomobject]@{
+			Value = $Lock.manifest.total_blob_bytes
+			Name = 'lock.manifest.total_blob_bytes'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.canonicalization
+			Name = 'lock.package_database.canonicalization'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.sha256
+			Name = 'lock.package_database.sha256'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.total_blob_bytes
+			Name = 'lock.package_database.total_blob_bytes'
+		},
+		[pscustomobject]@{
+			Value = $Lock.admission.status
+			Name = 'lock.admission.status'
+		}
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
+	}
+	foreach ($entry in @(
+		[pscustomobject]@{
+			Value = $Lock.manifest.entry_count
+			Name = 'lock.manifest.entry_count'
+		},
+		[pscustomobject]@{
+			Value = $Lock.manifest.blob_count
+			Name = 'lock.manifest.blob_count'
+		},
+		[pscustomobject]@{
+			Value = $Lock.manifest.tree_count
+			Name = 'lock.manifest.tree_count'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.entry_count
+			Name = 'lock.package_database.entry_count'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.blob_count
+			Name = 'lock.package_database.blob_count'
+		},
+		[pscustomobject]@{
+			Value = $Lock.package_database.tree_count
+			Name = 'lock.package_database.tree_count'
+		}
+	)) {
+		Assert-ExactInt64Value $entry.Value $entry.Name
+	}
+	Assert-ExactArrayValue $Lock.package_database.scope `
+		'lock.package_database.scope'
+	foreach ($scopePath in $Lock.package_database.scope) {
+		Assert-ExactStringValue $scopePath 'lock.package_database.scope[]'
+	}
+
 	if ($Lock.format -cne 'git-for-windows-sdk-git-tree-lock-v1') {
 		throw 'Unexpected SDK lock format'
 	}
@@ -247,7 +849,7 @@ function Assert-SdkLockSchema {
 		$Lock.manifest.blob_count 'lock.manifest.blob_count'
 	$manifestTrees = Assert-PositiveInteger `
 		$Lock.manifest.tree_count 'lock.manifest.tree_count'
-	[void](Assert-PositiveInteger `
+	[void](Assert-PositiveDecimalString `
 		$Lock.manifest.total_blob_bytes 'lock.manifest.total_blob_bytes')
 	if ($manifestEntries -ne $manifestBlobs + $manifestTrees) {
 		throw 'The complete manifest entry counts are inconsistent'
@@ -262,14 +864,14 @@ function Assert-SdkLockSchema {
 	$packageTrees = Assert-PositiveInteger `
 		$Lock.package_database.tree_count `
 		'lock.package_database.tree_count'
-	[void](Assert-PositiveInteger `
+	[void](Assert-PositiveDecimalString `
 		$Lock.package_database.total_blob_bytes `
 		'lock.package_database.total_blob_bytes')
 	if ($packageEntries -ne $packageBlobs + $packageTrees) {
 		throw 'The package database manifest entry counts are inconsistent'
 	}
 
-	$scope = @($Lock.package_database.scope)
+	$scope = $Lock.package_database.scope
 	if (
 		$scope.Count -ne 2 -or
 		$scope[0] -cne 'var/lib/pacman/local' -or
@@ -278,28 +880,145 @@ function Assert-SdkLockSchema {
 		throw 'Unexpected package database scope'
 	}
 
-	switch ($Lock.admission.status) {
-		'pending-independent-review' {
+	if ($Lock.admission.status -ceq 'pending-independent-review') {
+		if (
+			$null -ne $Lock.admission.approved_by -or
+			$null -ne $Lock.admission.approved_at -or
+			$null -ne $Lock.admission.evidence
+		) {
+			throw 'A pending snapshot cannot contain approval evidence'
+		}
+	} elseif ($Lock.admission.status -ceq 'approved') {
+		Assert-ExactStringValue $Lock.admission.approved_by `
+			'lock.admission.approved_by'
+		[void](ConvertTo-LockTimestamp `
+			$Lock.admission.approved_at 'lock.admission.approved_at')
+		Assert-ExactProperties $Lock.admission.evidence @(
+			'authority_repository',
+			'authority_ref',
+			'protected_base_commit',
+			'reviewed_source_commit',
+			'reviewed_source_tree',
+			'base_protected',
+			'required_checks_passed',
+			'required_checks',
+			'native_runner'
+		) 'lock.admission.evidence'
+		$evidence = $Lock.admission.evidence
+		foreach ($entry in @(
+			[pscustomobject]@{
+				Value = $evidence.authority_repository
+				Name = 'lock.admission.evidence.authority_repository'
+			},
+			[pscustomobject]@{
+				Value = $evidence.authority_ref
+				Name = 'lock.admission.evidence.authority_ref'
+			},
+			[pscustomobject]@{
+				Value = $evidence.protected_base_commit
+				Name = 'lock.admission.evidence.protected_base_commit'
+			},
+			[pscustomobject]@{
+				Value = $evidence.reviewed_source_commit
+				Name = 'lock.admission.evidence.reviewed_source_commit'
+			},
+			[pscustomobject]@{
+				Value = $evidence.reviewed_source_tree
+				Name = 'lock.admission.evidence.reviewed_source_tree'
+			}
+		)) {
+			Assert-ExactStringValue $entry.Value $entry.Name
+		}
+		Assert-HexString $evidence.protected_base_commit 40 `
+			'lock.admission.evidence.protected_base_commit'
+		Assert-HexString $evidence.reviewed_source_commit 40 `
+			'lock.admission.evidence.reviewed_source_commit'
+		Assert-HexString $evidence.reviewed_source_tree 40 `
+			'lock.admission.evidence.reviewed_source_tree'
+		if (
+			$evidence.authority_repository -cne 'crutkas/build-extra' -or
+			$evidence.authority_ref -cne 'refs/heads/main'
+		) {
+			throw 'Admission evidence is not anchored to the protected base'
+		}
+		Assert-ExactBooleanValue $evidence.base_protected `
+			'lock.admission.evidence.base_protected'
+		Assert-ExactBooleanValue $evidence.required_checks_passed `
+			'lock.admission.evidence.required_checks_passed'
+		if (-not $evidence.base_protected -or -not $evidence.required_checks_passed) {
+			throw 'Admission evidence does not prove protected-base governance'
+		}
+		Assert-ExactArrayValue $evidence.required_checks `
+			'lock.admission.evidence.required_checks'
+		if (
+			$evidence.required_checks.Count -ne 1 -or
+			$evidence.required_checks[0] -cne 'source-lock-validation'
+		) {
+			throw 'Admission evidence must name the protected required check'
+		}
+		$checks = [Collections.Generic.HashSet[string]]::new(
+			[StringComparer]::Ordinal)
+		foreach ($check in $evidence.required_checks) {
+			Assert-ExactStringValue $check `
+				'lock.admission.evidence.required_checks[]'
 			if (
-				$null -ne $Lock.admission.approved_by -or
-				$null -ne $Lock.admission.approved_at -or
-				$null -ne $Lock.admission.evidence
+				$check.Length -gt 128 -or
+				$check -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._ /-]*$' -or
+				-not $checks.Add($check)
 			) {
-				throw 'A pending snapshot cannot contain approval evidence'
+				throw 'Admission evidence contains an invalid required check'
 			}
 		}
-		'approved' {
-			foreach ($name in 'approved_by', 'approved_at', 'evidence') {
-				if ([string]::IsNullOrWhiteSpace([string]$Lock.admission.$name)) {
-					throw "An approved snapshot requires admission.$name"
-				}
-			}
-			[void](ConvertTo-LockTimestamp `
-				$Lock.admission.approved_at 'admission.approved_at')
+		Assert-ExactProperties $evidence.native_runner @(
+			'provider',
+			'image',
+			'os',
+			'os_architecture',
+			'process_architecture',
+			'evidence_uri'
+		) 'lock.admission.evidence.native_runner'
+		foreach ($property in @(
+			'provider',
+			'image',
+			'os',
+			'os_architecture',
+			'process_architecture',
+			'evidence_uri'
+		)) {
+			Assert-ExactStringValue $evidence.native_runner.$property `
+				"lock.admission.evidence.native_runner.$property"
 		}
-		default {
-			throw 'Unknown snapshot admission status'
+		if (
+			$evidence.native_runner.provider -cne 'github-hosted' -or
+			$evidence.native_runner.image -cne 'windows-11-arm' -or
+			$evidence.native_runner.os -cne 'Windows' -or
+			$evidence.native_runner.os_architecture -cne 'Arm64' -or
+			$evidence.native_runner.process_architecture -cne 'Arm64'
+		) {
+			throw 'Admission evidence does not identify a native ARM64 runner'
 		}
+		$evidenceUri = $null
+		if (
+			-not [Uri]::TryCreate(
+				$evidence.native_runner.evidence_uri,
+				[UriKind]::Absolute,
+				[ref]$evidenceUri
+			) -or
+			$evidenceUri.Scheme -cne 'https' -or
+			$evidenceUri.AbsoluteUri -cne
+				$evidence.native_runner.evidence_uri -or
+			$evidence.native_runner.evidence_uri -cnotmatch
+				'^https://github\.com/crutkas/build-extra/actions/runs/[1-9][0-9]*$' -or
+			-not [string]::IsNullOrEmpty($evidenceUri.UserInfo) -or
+			-not [string]::IsNullOrEmpty($evidenceUri.Fragment)
+		) {
+			throw 'Admission native-runner evidence URI must be immutable HTTPS'
+		}
+		if ($Lock.admission.approved_by -cne 'protected-base-governance') {
+			throw 'Admission approver is not the protected-base authority'
+		}
+	} else {
+		throw 'Unknown snapshot admission status'
 	}
 }
 
@@ -313,6 +1032,7 @@ function Assert-ProductionSdkLock {
 	Assert-SdkLockSchema $Lock
 
 	$expectedStrings = [ordered]@{
+		format = 'git-for-windows-sdk-git-tree-lock-v1'
 		repository = $script:Repository
 		remote_url = $script:RemoteUrl
 		commit = $script:Commit
@@ -343,10 +1063,10 @@ function Assert-ProductionSdkLock {
 	if (
 		$Lock.manifest.canonicalization -cne $script:CanonicalManifest -or
 		$Lock.manifest.sha256 -cne $script:ManifestSha256 -or
-		[long]$Lock.manifest.entry_count -ne 88249 -or
-		[long]$Lock.manifest.blob_count -ne 83648 -or
-		[long]$Lock.manifest.tree_count -ne 4601 -or
-		[string]$Lock.manifest.total_blob_bytes -cne '3615514045'
+		$Lock.manifest.entry_count -ne 88249L -or
+		$Lock.manifest.blob_count -ne 83648L -or
+		$Lock.manifest.tree_count -ne 4601L -or
+		$Lock.manifest.total_blob_bytes -cne '3615514045'
 	) {
 		throw 'Unexpected production complete-tree manifest metadata'
 	}
@@ -354,10 +1074,10 @@ function Assert-ProductionSdkLock {
 		$Lock.package_database.canonicalization -cne
 			$script:PackageCanonicalization -or
 		$Lock.package_database.sha256 -cne $script:PackageDatabaseSha256 -or
-		[long]$Lock.package_database.entry_count -ne 1309 -or
-		[long]$Lock.package_database.blob_count -ne 995 -or
-		[long]$Lock.package_database.tree_count -ne 314 -or
-		[string]$Lock.package_database.total_blob_bytes -cne '43600841'
+		$Lock.package_database.entry_count -ne 1309L -or
+		$Lock.package_database.blob_count -ne 995L -or
+		$Lock.package_database.tree_count -ne 314L -or
+		$Lock.package_database.total_blob_bytes -cne '43600841'
 	) {
 		throw 'Unexpected production package database manifest metadata'
 	}
@@ -366,19 +1086,122 @@ function Assert-ProductionSdkLock {
 	}
 }
 
+function Assert-RunnerPlatformFacts {
+	param(
+		[Parameter(Mandatory = $true)][object]$WindowsPlatform,
+		[Parameter(Mandatory = $true)][object]$OSArchitecture,
+		[Parameter(Mandatory = $true)][object]$ProcessArchitecture,
+		[Parameter(Mandatory = $true)][object]$IsElevated
+	)
+
+	Assert-ExactBooleanValue $WindowsPlatform 'runner Windows fact'
+	Assert-ExactStringValue $OSArchitecture 'runner OS architecture fact'
+	Assert-ExactStringValue $ProcessArchitecture `
+		'runner process architecture fact'
+	Assert-ExactBooleanValue $IsElevated 'runner elevation fact'
+	if (
+		-not $WindowsPlatform -or
+		$OSArchitecture -cne 'Arm64' -or
+		$ProcessArchitecture -cne 'Arm64'
+	) {
+		throw 'The pinned SDK requires a native Windows ARM64 process'
+	}
+	if ($IsElevated) {
+		throw 'The pinned SDK refuses an elevated runner token'
+	}
+}
+
+function Test-TokenElevation {
+	$token = [IntPtr]::Zero
+	if (-not [GfwSdkBootstrapNativeMethods]::OpenProcessToken(
+		[GfwSdkBootstrapNativeMethods]::GetCurrentProcess(),
+		[GfwSdkBootstrapNativeMethods]::TokenQuery,
+		[ref]$token
+	)) {
+		$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+		throw "Cannot inspect runner token elevation (Win32 error $errorCode)"
+	}
+	try {
+		$elevation =
+			[GfwSdkBootstrapNativeMethods+TokenElevationInfo]::new()
+		$returnLength = 0
+		$size = [Runtime.InteropServices.Marshal]::SizeOf($elevation)
+		if (-not [GfwSdkBootstrapNativeMethods]::GetTokenInformation(
+			$token,
+			[GfwSdkBootstrapNativeMethods]::TokenElevation,
+			[ref]$elevation,
+			$size,
+			[ref]$returnLength
+		)) {
+			$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+			throw "Cannot inspect runner token elevation (Win32 error $errorCode)"
+		}
+		return $elevation.TokenIsElevated -ne 0
+	} finally {
+		if (
+			$token -ne [IntPtr]::Zero -and
+			-not [GfwSdkBootstrapNativeMethods]::CloseHandle($token)
+		) {
+			$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+			throw "Cannot close runner token handle (Win32 error $errorCode)"
+		}
+	}
+}
+
+function Assert-NativeRunnerPolicy {
+	param(
+		[Parameter(Mandatory = $true)][object]$RunnerOs,
+		[Parameter(Mandatory = $true)][object]$RunnerArch,
+		[Parameter(Mandatory = $true)][object]$RunnerEnvironment
+	)
+
+	Assert-ExactStringValue $RunnerOs 'runner.os'
+	Assert-ExactStringValue $RunnerArch 'runner.arch'
+	Assert-ExactStringValue $RunnerEnvironment 'runner.environment'
+	if (
+		$RunnerOs -cne 'Windows' -or
+		$RunnerArch -cne 'ARM64' -or
+		$RunnerEnvironment -cne 'github-hosted'
+	) {
+		throw 'The pinned SDK requires an ephemeral GitHub-hosted ARM64 runner'
+	}
+
+	$windowsPlatform =
+		[Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
+		[Runtime.InteropServices.OSPlatform]::Windows)
+	if (-not $windowsPlatform) {
+		Assert-RunnerPlatformFacts $false `
+			([Runtime.InteropServices.RuntimeInformation]::OSArchitecture).ToString() `
+			([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture).ToString() `
+			$false
+	}
+	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+	$principal = [Security.Principal.WindowsPrincipal]::new($identity)
+	$isElevated = $principal.IsInRole(
+		[Security.Principal.WindowsBuiltInRole]::Administrator) -or
+		(Test-TokenElevation)
+	Assert-RunnerPlatformFacts `
+		$windowsPlatform `
+		([Runtime.InteropServices.RuntimeInformation]::OSArchitecture).ToString() `
+		([Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture).ToString() `
+		$isElevated
+}
+
 function Assert-LocalPathSyntax {
 	param(
-		[Parameter(Mandatory = $true)][string]$Path,
+		[Parameter(Mandatory = $true)][object]$Path,
 		[Parameter(Mandatory = $true)][string]$Name
 	)
 
+	Assert-ExactStringValue $Path $Name
 	if (
 		[string]::IsNullOrWhiteSpace($Path) -or
 		-not [IO.Path]::IsPathFullyQualified($Path) -or
 		$Path -notmatch '^[A-Za-z]:\\' -or
 		$Path -match '^(\\\\[?.]\\|\\\?\?\\)' -or
 		$Path.Contains('/') -or
-		$Path.Substring(2).Contains(':')
+		$Path.Substring(2).Contains(':') -or
+		$Path -match '[*?]'
 	) {
 		throw "$Name must be a drive-qualified canonical local path"
 	}
@@ -460,7 +1283,7 @@ function Assert-NoReparseAncestors {
 function Assert-SafeExistingDirectory {
 	[CmdletBinding()]
 	param(
-		[Parameter(Mandatory = $true)][string]$Path,
+		[Parameter(Mandatory = $true)][object]$Path,
 		[string]$Name = 'path'
 	)
 
@@ -491,10 +1314,12 @@ function Assert-SafeExistingDirectory {
 function Assert-ContainedPath {
 	[CmdletBinding()]
 	param(
-		[Parameter(Mandatory = $true)][string]$Parent,
-		[Parameter(Mandatory = $true)][string]$Child
+		[Parameter(Mandatory = $true)][object]$Parent,
+		[Parameter(Mandatory = $true)][object]$Child
 	)
 
+	Assert-ExactStringValue $Parent 'parent path'
+	Assert-ExactStringValue $Child 'child path'
 	$relative = [IO.Path]::GetRelativePath($Parent, $Child)
 	if (
 		$relative -eq '.' -or
@@ -506,75 +1331,12 @@ function Assert-ContainedPath {
 	}
 }
 
-function New-PrivateSdkRoot {
-	[CmdletBinding()]
-	param(
-		[Parameter(Mandatory = $true)][string]$RunnerTemp,
-		[Parameter(Mandatory = $true)][string]$RunId,
-		[Parameter(Mandatory = $true)][string]$RunAttempt,
-		[Parameter(Mandatory = $true)][string]$Job,
-		[Parameter(Mandatory = $true)][string]$MatrixDiscriminator,
-		[string]$Nonce
-	)
+function Assert-PrivateRootAcl {
+	param([Parameter(Mandatory = $true)][object]$Path)
 
-	$runnerRoot = Assert-SafeExistingDirectory $RunnerTemp 'runner.temp'
-	if ($RunId -notmatch '^[0-9]+$' -or $RunAttempt -notmatch '^[0-9]+$') {
-		throw 'Run ID and run attempt must be decimal integers'
-	}
-	if (
-		[string]::IsNullOrWhiteSpace($Job) -or
-		$Job.Length -gt 1024 -or
-		[string]::IsNullOrWhiteSpace($MatrixDiscriminator) -or
-		$MatrixDiscriminator.Length -gt 16384
-	) {
-		throw 'Job and matrix discriminators must be nonempty and bounded'
-	}
-
-	$binding = "$RunId`0$RunAttempt`0$Job`0$MatrixDiscriminator"
-	$bindingHash = Get-Sha256Hex $script:Utf8.GetBytes($binding)
-	if ([string]::IsNullOrEmpty($Nonce)) {
-		$Nonce = [Guid]::NewGuid().ToString('N')
-	}
-	Assert-HexString $Nonce 32 'root nonce'
-
-	$leaf = "gfw-sdk-arm64-$RunId-$RunAttempt-$($bindingHash.Substring(0, 20))-$Nonce"
-	$candidate = [IO.Path]::GetFullPath((Join-Path $runnerRoot $leaf))
-	Assert-ContainedPath $runnerRoot $candidate
-	if (Test-Path -LiteralPath $candidate) {
-		throw 'The unique SDK root already exists'
-	}
-
-	$item = New-Item -ItemType Directory -Path $candidate -ErrorAction Stop
-	if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-		throw 'The newly created SDK root is a reparse point'
-	}
-
+	Assert-ExactStringValue $Path 'SDK root'
 	$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-	$security = [Security.AccessControl.DirectorySecurity]::new()
-	$security.SetAccessRuleProtection($true, $false)
-	$security.SetOwner($identity.User)
-	$inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit `
-		-bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
-	$rule = [Security.AccessControl.FileSystemAccessRule]::new(
-		$identity.User,
-		[Security.AccessControl.FileSystemRights]::FullControl,
-		$inheritance,
-		[Security.AccessControl.PropagationFlags]::None,
-		[Security.AccessControl.AccessControlType]::Allow)
-	[void]$security.AddAccessRule($rule)
-	Set-Acl -LiteralPath $candidate -AclObject $security
-
-	Assert-NoReparseAncestors $candidate 'SDK root'
-	$longPath = Get-LongPath $candidate
-	if (-not [string]::Equals(
-		$candidate,
-		$longPath,
-		[StringComparison]::OrdinalIgnoreCase
-	)) {
-		throw 'The SDK root resolved through a path alias'
-	}
-
-	$actualAcl = Get-Acl -LiteralPath $candidate
+	$actualAcl = Get-Acl -LiteralPath $Path
 	$actualOwner = $actualAcl.GetOwner(
 		[Security.Principal.SecurityIdentifier])
 	if ($actualOwner.Value -cne $identity.User.Value) {
@@ -598,8 +1360,166 @@ function New-PrivateSdkRoot {
 			throw 'The SDK root ACL is not private to the runner identity'
 		}
 	}
-	$script:PrivateTempPath = $candidate
-	return $candidate
+}
+
+function New-PrivateSdkRoot {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)][object]$RunnerTemp,
+		[Parameter(Mandatory = $true)][object]$RunId,
+		[Parameter(Mandatory = $true)][object]$RunAttempt,
+		[Parameter(Mandatory = $true)][object]$Job,
+		[Parameter(Mandatory = $true)][object]$MatrixDiscriminator,
+		[AllowNull()][object]$Nonce
+	)
+
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $RunId; Name = 'run ID' },
+		[pscustomobject]@{ Value = $RunAttempt; Name = 'run attempt' },
+		[pscustomobject]@{ Value = $Job; Name = 'job' },
+		[pscustomobject]@{
+			Value = $MatrixDiscriminator
+			Name = 'matrix discriminator'
+		}
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
+	}
+	$runnerRoot = Assert-SafeExistingDirectory $RunnerTemp 'runner.temp'
+	if ($RunId -notmatch '^[0-9]+$' -or $RunAttempt -notmatch '^[0-9]+$') {
+		throw 'Run ID and run attempt must be decimal integers'
+	}
+	if (
+		[string]::IsNullOrWhiteSpace($Job) -or
+		$Job.Length -gt 1024 -or
+		[string]::IsNullOrWhiteSpace($MatrixDiscriminator) -or
+		$MatrixDiscriminator.Length -gt 16384
+	) {
+		throw 'Job and matrix discriminators must be nonempty and bounded'
+	}
+
+	$binding = "$RunId`0$RunAttempt`0$Job`0$MatrixDiscriminator"
+	$bindingHash = Get-Sha256Hex $script:Utf8.GetBytes($binding)
+	if ($null -eq $Nonce) {
+		$Nonce = [Guid]::NewGuid().ToString('N')
+	}
+	Assert-HexString $Nonce 32 'root nonce'
+
+	$leaf = "gfw-sdk-arm64-$RunId-$RunAttempt-$($bindingHash.Substring(0, 20))-$Nonce"
+	$candidate = [IO.Path]::GetFullPath((Join-Path $runnerRoot $leaf))
+	Assert-ContainedPath $runnerRoot $candidate
+	if (Test-Path -LiteralPath $candidate) {
+		throw 'The unique SDK root already exists'
+	}
+
+	$sentinelValue = "gfw-sdk-arm64-root-v1`n$bindingHash`n$Nonce`n"
+	$sentinelPath = Join-Path $candidate '.gfw-sdk-bootstrap-owner'
+	$item = [IO.Directory]::CreateDirectory($candidate)
+	try {
+		if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+			throw 'The newly created SDK root is a reparse point'
+		}
+
+		$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+		$security = [Security.AccessControl.DirectorySecurity]::new()
+		$security.SetAccessRuleProtection($true, $false)
+		$security.SetOwner($identity.User)
+		$inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit `
+			-bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+		$rule = [Security.AccessControl.FileSystemAccessRule]::new(
+			$identity.User,
+			[Security.AccessControl.FileSystemRights]::FullControl,
+			$inheritance,
+			[Security.AccessControl.PropagationFlags]::None,
+			[Security.AccessControl.AccessControlType]::Allow)
+		[void]$security.AddAccessRule($rule)
+		Set-Acl -LiteralPath $candidate -AclObject $security
+		[IO.File]::WriteAllText(
+			$sentinelPath,
+			$sentinelValue,
+			[Text.UTF8Encoding]::new($false))
+
+		Assert-NoReparseAncestors $candidate 'SDK root'
+		$longPath = Get-LongPath $candidate
+		if (-not [string]::Equals(
+			$candidate,
+			$longPath,
+			[StringComparison]::OrdinalIgnoreCase
+		)) {
+			throw 'The SDK root resolved through a path alias'
+		}
+		Assert-PrivateRootAcl $candidate
+		$script:PrivateTempPath = $candidate
+		return [pscustomobject][ordered]@{
+			Path = $candidate
+			RunnerRoot = $runnerRoot
+			SentinelValue = $sentinelValue
+		}
+	} catch {
+		$initializationError = $_.Exception.Message
+		try {
+			if (Test-Path -LiteralPath $sentinelPath) {
+				Remove-OwnedSdkRoot ([pscustomobject][ordered]@{
+					Path = $candidate
+					RunnerRoot = $runnerRoot
+					SentinelValue = $sentinelValue
+				})
+			} else {
+				$createdItem = Get-Item -LiteralPath $candidate -Force
+				if (
+					-not $createdItem.PSIsContainer -or
+					($createdItem.Attributes -band
+						[IO.FileAttributes]::ReparsePoint)
+				) {
+					throw 'Created root changed type during initialization'
+				}
+				Assert-PrivateRootAcl $candidate
+				if (@(Get-ChildItem -LiteralPath $candidate -Force).Count -ne 0) {
+					throw 'Created root is not empty during initialization cleanup'
+				}
+				Remove-Item -LiteralPath $candidate -Force -ErrorAction Stop
+			}
+		} catch {
+			throw "$initializationError; SDK root cleanup also failed: $($_.Exception.Message)"
+		}
+		throw $initializationError
+	}
+}
+
+function Remove-OwnedSdkRoot {
+	param([Parameter(Mandatory = $true)][object]$OwnedRoot)
+
+	Assert-ExactProperties $OwnedRoot @(
+		'Path',
+		'RunnerRoot',
+		'SentinelValue'
+	) 'owned SDK root'
+	Assert-ExactStringValue $OwnedRoot.Path 'owned SDK root path'
+	Assert-ExactStringValue $OwnedRoot.RunnerRoot 'owned SDK runner root'
+	Assert-ExactStringValue $OwnedRoot.SentinelValue 'owned SDK root sentinel'
+	$runnerRoot = Assert-SafeExistingDirectory `
+		$OwnedRoot.RunnerRoot 'runner.temp'
+	$root = Assert-SafeExistingDirectory $OwnedRoot.Path 'SDK root'
+	Assert-ContainedPath $runnerRoot $root
+	Assert-PrivateRootAcl $root
+	foreach ($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
+		if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+			throw "SDK root cleanup encountered a reparse point at '$($item.FullName)'"
+		}
+	}
+	$sentinelPath = Join-Path $root '.gfw-sdk-bootstrap-owner'
+	$sentinel = Get-Item -LiteralPath $sentinelPath -Force
+	if (
+		$sentinel.PSIsContainer -or
+		($sentinel.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+		[IO.File]::ReadAllText($sentinel.FullName, $script:Utf8) -cne
+			$OwnedRoot.SentinelValue
+	) {
+		throw 'SDK root cleanup sentinel does not match'
+	}
+	Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
+	if (Test-Path -LiteralPath $root) {
+		throw 'SDK root cleanup did not remove the owned root'
+	}
 }
 
 function Assert-CanonicalGitPath {
@@ -621,6 +1541,7 @@ function Assert-CanonicalGitPath {
 	foreach ($segment in $segments) {
 		if (
 			$segment -in '.', '..' -or
+			$segment.Length -gt 255 -or
 			$segment -match '[<>:"|?*]' -or
 			$segment.EndsWith('.', [StringComparison]::Ordinal) -or
 			$segment.EndsWith(' ', [StringComparison]::Ordinal) -or
@@ -664,6 +1585,9 @@ function Get-TreeManifestFromBytes {
 	[CmdletBinding()]
 	param([Parameter(Mandatory = $true)][byte[]]$Bytes)
 
+	if ($Bytes.LongLength -gt 67108864) {
+		throw 'The Git tree record stream is unexpectedly large'
+	}
 	$text = $script:Utf8.GetString($Bytes)
 	$records = $text.Split(
 		@([char]0),
@@ -688,9 +1612,13 @@ function Get-TreeManifestFromBytes {
 	$packageBlobCount = 0L
 	$packageTreeCount = 0L
 	$packageBlobBytes = [uint64]0
+	$entries = [Collections.Generic.List[object]]::new()
 
 	try {
 		for ($index = 0; $index -lt $records.Count - 1; $index++) {
+			if ($entryCount -ge 100000L) {
+				throw 'The Git tree contains too many entries'
+			}
 			$fields = $records[$index].Split(
 				@([char]9),
 				5,
@@ -701,6 +1629,9 @@ function Get-TreeManifestFromBytes {
 			$mode, $type, $oid, $size, $path = $fields
 			Assert-HexString $oid 40 "object ID for '$path'"
 			Assert-CanonicalGitPath $path
+			if ($path.Length -gt 32760) {
+				throw "Git path is too long at '$path'"
+			}
 
 			if (-not $exactPaths.Add($path)) {
 				throw "Duplicate Git path '$path'"
@@ -746,6 +1677,12 @@ function Get-TreeManifestFromBytes {
 				)) {
 					throw "Missing authoritative blob size for '$path'"
 				}
+				if (
+					$blobSize -gt 5368709120L -or
+					$totalBlobBytes -gt 5368709120L - $blobSize
+				) {
+					throw 'The Git tree exceeds the materialization byte limit'
+				}
 				$totalBlobBytes += $blobSize
 			}
 
@@ -753,6 +1690,17 @@ function Get-TreeManifestFromBytes {
 			$line = "$mode`t$type`t$oid`t$canonicalSize`t$canonicalPath`n"
 			$lineBytes = $script:Utf8.GetBytes($line)
 			$manifestHash.AppendData($lineBytes)
+			$entries.Add([pscustomobject][ordered]@{
+				Mode = $mode
+				Type = $type
+				Oid = $oid
+				Size = if ($type -ceq 'blob') {
+					[uint64]$blobSize
+				} else {
+					$null
+				}
+				Path = $path
+			})
 			$entryCount++
 
 			$isPackageDatabase = (
@@ -792,6 +1740,7 @@ function Get-TreeManifestFromBytes {
 			PackageDatabaseBlobCount = $packageBlobCount
 			PackageDatabaseTreeCount = $packageTreeCount
 			PackageDatabaseTotalBlobBytes = [string]$packageBlobBytes
+			Entries = [object[]]$entries.ToArray()
 		}
 	} finally {
 		$manifestHash.Dispose()
@@ -1220,10 +2169,10 @@ function Assert-ManifestMatchesLock {
 
 	if (
 		$Manifest.Sha256 -cne $Lock.manifest.sha256 -or
-		$Manifest.EntryCount -ne [long]$Lock.manifest.entry_count -or
-		$Manifest.BlobCount -ne [long]$Lock.manifest.blob_count -or
-		$Manifest.TreeCount -ne [long]$Lock.manifest.tree_count -or
-		$Manifest.TotalBlobBytes -cne [string]$Lock.manifest.total_blob_bytes
+		$Manifest.EntryCount -ne $Lock.manifest.entry_count -or
+		$Manifest.BlobCount -ne $Lock.manifest.blob_count -or
+		$Manifest.TreeCount -ne $Lock.manifest.tree_count -or
+		$Manifest.TotalBlobBytes -cne $Lock.manifest.total_blob_bytes
 	) {
 		throw 'The complete Git tree manifest does not match the lock'
 	}
@@ -1231,13 +2180,13 @@ function Assert-ManifestMatchesLock {
 		$Manifest.PackageDatabaseSha256 -cne
 			$Lock.package_database.sha256 -or
 		$Manifest.PackageDatabaseEntryCount -ne
-			[long]$Lock.package_database.entry_count -or
+			$Lock.package_database.entry_count -or
 		$Manifest.PackageDatabaseBlobCount -ne
-			[long]$Lock.package_database.blob_count -or
+			$Lock.package_database.blob_count -or
 		$Manifest.PackageDatabaseTreeCount -ne
-			[long]$Lock.package_database.tree_count -or
+			$Lock.package_database.tree_count -or
 		$Manifest.PackageDatabaseTotalBlobBytes -cne
-			[string]$Lock.package_database.total_blob_bytes
+			$Lock.package_database.total_blob_bytes
 	) {
 		throw 'The package database metadata does not match the lock'
 	}
@@ -1339,20 +2288,300 @@ function Add-GitHubCommandValue {
 	[IO.File]::AppendAllText($Path, "$Value`n", [Text.UTF8Encoding]::new($false))
 }
 
-function New-VerifiedSdkWorktree {
-	[CmdletBinding()]
+function Get-GitBlobHash {
 	param(
-		[Parameter(Mandatory = $true)][string]$GitPath,
-		[Parameter(Mandatory = $true)][string]$GitDir,
-		[Parameter(Mandatory = $true)][string]$Commit,
-		[Parameter(Mandatory = $true)][string]$SdkRoot,
+		[Parameter(Mandatory = $true)][object]$Path,
+		[Parameter(Mandatory = $true)][object]$ExpectedSize,
+		[AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)]
+		[Collections.Generic.HashSet[string]]$FileIdentities
+	)
+
+	Assert-ExactStringValue $Path 'materialized file path'
+	if (
+		$null -eq $ExpectedSize -or
+		$ExpectedSize.GetType() -ne [uint64]
+	) {
+		throw 'Expected materialized file size must be an unsigned integer'
+	}
+	$stream = [IO.FileStream]::new(
+		$Path,
+		[IO.FileMode]::Open,
+		[IO.FileAccess]::Read,
+		[IO.FileShare]::Read,
+		1048576,
+		[IO.FileOptions]::SequentialScan)
+	$hash = [Security.Cryptography.IncrementalHash]::CreateHash(
+		[Security.Cryptography.HashAlgorithmName]::SHA1)
+	$buffer = [Buffers.ArrayPool[byte]]::Shared.Rent(1048576)
+	try {
+		if ([uint64]$stream.Length -ne $ExpectedSize) {
+			throw "Materialized file size differs at '$Path'"
+		}
+		$information =
+			[GfwSdkBootstrapNativeMethods+ByHandleFileInformation]::new()
+		if (-not [GfwSdkBootstrapNativeMethods]::GetFileInformationByHandle(
+			$stream.SafeFileHandle,
+			[ref]$information
+		)) {
+			$errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+			throw "Cannot inspect materialized file '$Path' (Win32 error $errorCode)"
+		}
+		if ($information.NumberOfLinks -ne 1) {
+			throw "Materialized file is a hardlink alias at '$Path'"
+		}
+		$fileIdentity = '{0:x8}:{1:x8}:{2:x8}' -f
+			$information.VolumeSerialNumber,
+			$information.FileIndexHigh,
+			$information.FileIndexLow
+		if (-not $FileIdentities.Add($fileIdentity)) {
+			throw "Materialized files alias the same file at '$Path'"
+		}
+
+		$header = [Text.Encoding]::ASCII.GetBytes(
+			"blob $ExpectedSize`0")
+		$hash.AppendData($header)
+		while (($read = $stream.Read($buffer, 0, $buffer.Length)) -ne 0) {
+			$hash.AppendData($buffer, 0, $read)
+		}
+		if ([uint64]$stream.Position -ne $ExpectedSize) {
+			throw "Materialized file changed while hashing at '$Path'"
+		}
+		return [Convert]::ToHexString(
+			$hash.GetHashAndReset()).ToLowerInvariant()
+	} finally {
+		[Buffers.ArrayPool[byte]]::Shared.Return($buffer, $true)
+		$hash.Dispose()
+		$stream.Dispose()
+	}
+}
+
+function Assert-MaterializedSdkIndex {
+	param(
+		[Parameter(Mandatory = $true)][object]$GitPath,
+		[Parameter(Mandatory = $true)][object]$GitDir,
+		[Parameter(Mandatory = $true)][object]$SdkRoot,
+		[Parameter(Mandatory = $true)]
+		[Collections.Generic.Dictionary[string, object]]$ExpectedBlobs
+	)
+
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $GitPath; Name = 'Git path' },
+		[pscustomobject]@{ Value = $GitDir; Name = 'Git directory' },
+		[pscustomobject]@{ Value = $SdkRoot; Name = 'SDK root' }
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
+	}
+	$result = New-SafeGitProcess $GitPath @(
+		"--git-dir=$GitDir",
+		"--work-tree=$SdkRoot",
+		'ls-files',
+		'--stage',
+		'-z'
+	)
+	$text = $script:Utf8.GetString($result.Stdout)
+	$records = $text.Split(@([char]0), [StringSplitOptions]::None)
+	if ($records.Count -lt 2 -or $records[-1] -cne '') {
+		throw 'The materialized SDK index record stream is truncated'
+	}
+	$seen = [Collections.Generic.HashSet[string]]::new(
+		[StringComparer]::Ordinal)
+	for ($index = 0; $index -lt $records.Count - 1; $index++) {
+		$match = [regex]::Match(
+			$records[$index],
+			'^(100644|100755) ([0-9a-f]{40}) 0\t(.+)$',
+			[Text.RegularExpressions.RegexOptions]::CultureInvariant)
+		if (-not $match.Success) {
+			throw 'The materialized SDK index contains a malformed entry'
+		}
+		$mode = $match.Groups[1].Value
+		$oid = $match.Groups[2].Value
+		$path = $match.Groups[3].Value
+		Assert-CanonicalGitPath $path
+		if (-not $seen.Add($path)) {
+			throw "The materialized SDK index duplicates '$path'"
+		}
+		$expected = $null
+		if (-not $ExpectedBlobs.TryGetValue($path, [ref]$expected)) {
+			throw "The materialized SDK index contains extra path '$path'"
+		}
+		if ($mode -cne $expected.Mode -or $oid -cne $expected.Oid) {
+			throw "The materialized SDK index differs at '$path'"
+		}
+	}
+	if ($seen.Count -ne $ExpectedBlobs.Count) {
+		throw 'The materialized SDK index is missing locked paths'
+	}
+
+	$flagResult = New-SafeGitProcess $GitPath @(
+		"--git-dir=$GitDir",
+		"--work-tree=$SdkRoot",
+		'ls-files',
+		'-v',
+		'-z'
+	)
+	$flagText = $script:Utf8.GetString($flagResult.Stdout)
+	$flagRecords = $flagText.Split(
+		@([char]0),
+		[StringSplitOptions]::None)
+	if (
+		$flagRecords.Count -ne $ExpectedBlobs.Count + 1 -or
+		$flagRecords[-1] -cne ''
+	) {
+		throw 'The materialized SDK index flags are incomplete'
+	}
+	foreach ($record in $flagRecords[0..($flagRecords.Count - 2)]) {
+		if (
+			-not $record.StartsWith('H ', [StringComparison]::Ordinal) -or
+			-not $ExpectedBlobs.ContainsKey($record.Substring(2))
+		) {
+			throw 'The materialized SDK index contains unexpected flags'
+		}
+	}
+}
+
+function Assert-MaterializedSdkTree {
+	param(
+		[Parameter(Mandatory = $true)][object]$GitPath,
+		[Parameter(Mandatory = $true)][object]$GitDir,
+		[Parameter(Mandatory = $true)][object]$SdkRoot,
 		[Parameter(Mandatory = $true)][object]$Manifest
 	)
 
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $GitPath; Name = 'Git path' },
+		[pscustomobject]@{ Value = $GitDir; Name = 'Git directory' },
+		[pscustomobject]@{ Value = $SdkRoot; Name = 'SDK root' }
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
+	}
+	if (
+		$null -eq $Manifest -or
+		$Manifest.GetType() -ne [Management.Automation.PSCustomObject] -or
+		$null -eq $Manifest.Entries -or
+		$Manifest.Entries.GetType() -ne [object[]]
+	) {
+		throw 'The verified manifest does not contain exact tree entries'
+	}
+	if (
+		$Manifest.Entries.Count -gt 100000 -or
+		$Manifest.EntryCount -ne [long]$Manifest.Entries.Count -or
+		[uint64]$Manifest.TotalBlobBytes -gt 5368709120L
+	) {
+		throw 'The verified manifest exceeds materialization bounds'
+	}
+
+	$expectedBlobs =
+		[Collections.Generic.Dictionary[string, object]]::new(
+			[StringComparer]::Ordinal)
+	$expectedTrees =
+		[Collections.Generic.HashSet[string]]::new(
+			[StringComparer]::Ordinal)
+	foreach ($entry in $Manifest.Entries) {
+		Assert-ExactProperties $entry @(
+			'Mode',
+			'Type',
+			'Oid',
+			'Size',
+			'Path'
+		) 'manifest entry'
+		foreach ($property in 'Mode', 'Type', 'Oid', 'Path') {
+			Assert-ExactStringValue $entry.$property "manifest entry $property"
+		}
+		Assert-CanonicalGitPath $entry.Path
+		if ($entry.Type -ceq 'blob') {
+			if (
+				$entry.Size.GetType() -ne [uint64] -or
+				-not $expectedBlobs.TryAdd($entry.Path, $entry)
+			) {
+				throw "Invalid locked blob entry '$($entry.Path)'"
+			}
+		} elseif ($entry.Type -ceq 'tree') {
+			if ($null -ne $entry.Size -or -not $expectedTrees.Add($entry.Path)) {
+				throw "Invalid locked tree entry '$($entry.Path)'"
+			}
+		} else {
+			throw "Unexpected locked entry type '$($entry.Type)'"
+		}
+	}
+	Assert-MaterializedSdkIndex `
+		$GitPath $GitDir $SdkRoot $expectedBlobs
+
+	$seenBlobs = [Collections.Generic.HashSet[string]]::new(
+		[StringComparer]::Ordinal)
+	$seenTrees = [Collections.Generic.HashSet[string]]::new(
+		[StringComparer]::Ordinal)
+	$fileIdentities = [Collections.Generic.HashSet[string]]::new(
+		[StringComparer]::Ordinal)
+	foreach ($item in Get-ChildItem -LiteralPath $SdkRoot -Recurse -Force) {
+		if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+			throw "The materialized SDK contains a reparse point at '$($item.FullName)'"
+		}
+		$relativePath = [IO.Path]::GetRelativePath(
+			$SdkRoot, $item.FullName).Replace('\', '/')
+		Assert-CanonicalGitPath $relativePath
+		if ($item.PSIsContainer) {
+			if (-not $expectedTrees.Contains($relativePath)) {
+				throw "The materialized SDK contains extra directory '$relativePath'"
+			}
+			[void]$seenTrees.Add($relativePath)
+			continue
+		}
+
+		$expected = $null
+		if (-not $expectedBlobs.TryGetValue($relativePath, [ref]$expected)) {
+			throw "The materialized SDK contains extra file '$relativePath'"
+		}
+		$streams = @(Get-Item -LiteralPath $item.FullName -Stream * `
+			-ErrorAction Stop)
+		if (
+			$streams.Count -ne 1 -or
+			$streams[0].Stream -notin ':$DATA', '$DATA'
+		) {
+			throw "The materialized SDK contains an alternate data stream at '$relativePath'"
+		}
+		$oid = Get-GitBlobHash `
+			$item.FullName $expected.Size $fileIdentities
+		if ($oid -cne $expected.Oid) {
+			throw "The materialized SDK bytes differ at '$relativePath'"
+		}
+		[void]$seenBlobs.Add($relativePath)
+	}
+	if (
+		$seenBlobs.Count -ne $expectedBlobs.Count -or
+		$seenTrees.Count -ne $expectedTrees.Count
+	) {
+		throw 'The materialized SDK is missing locked filesystem entries'
+	}
+}
+
+function New-VerifiedSdkWorktree {
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)][object]$GitPath,
+		[Parameter(Mandatory = $true)][object]$GitDir,
+		[Parameter(Mandatory = $true)][object]$Commit,
+		[Parameter(Mandatory = $true)][object]$SdkRoot,
+		[Parameter(Mandatory = $true)][object]$Manifest
+	)
+
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $GitPath; Name = 'Git path' },
+		[pscustomobject]@{ Value = $GitDir; Name = 'Git directory' },
+		[pscustomobject]@{ Value = $Commit; Name = 'SDK commit' },
+		[pscustomobject]@{ Value = $SdkRoot; Name = 'SDK root' }
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
+	}
+	Assert-HexString $Commit 40 'SDK commit'
 	if (Test-Path -LiteralPath $SdkRoot) {
 		throw 'The SDK worktree destination already exists'
 	}
-	[void](New-Item -ItemType Directory -Path $SdkRoot)
+	$indexPath = Join-Path $GitDir 'index'
+	if (Test-Path -LiteralPath $indexPath) {
+		throw 'The SDK Git directory contains an unexpected checkout index'
+	}
+	[void][IO.Directory]::CreateDirectory($SdkRoot)
 	[void](New-SafeGitProcess $GitPath @(
 		'-c', 'core.autocrlf=false',
 		'-c', 'core.longpaths=true',
@@ -1368,158 +2597,212 @@ function New-VerifiedSdkWorktree {
 		':/'
 	))
 
-	$files = 0L
-	$directories = 0L
-	foreach ($item in Get-ChildItem -LiteralPath $SdkRoot -Recurse -Force) {
-		if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-			throw "The materialized SDK contains a reparse point at '$($item.FullName)'"
-		}
-		if ($item.PSIsContainer) {
-			$directories++
-		} else {
-			$files++
-		}
-	}
-	if (
-		$files -ne $Manifest.BlobCount -or
-		$directories -ne $Manifest.TreeCount
-	) {
-		throw 'The materialized SDK entry counts do not match the verified tree'
-	}
+	Assert-MaterializedSdkTree $GitPath $GitDir $SdkRoot $Manifest
 	return $SdkRoot
 }
 
-function Invoke-LockedSdkBootstrap {
+function Invoke-LockedSdkBootstrapCore {
 	[CmdletBinding()]
 	param(
-		[Parameter(Mandatory = $true)][string]$LockPath,
-		[Parameter(Mandatory = $true)][string]$RunnerTemp,
-		[Parameter(Mandatory = $true)][string]$RunId,
-		[Parameter(Mandatory = $true)][string]$RunAttempt,
-		[Parameter(Mandatory = $true)][string]$Job,
-		[Parameter(Mandatory = $true)][string]$MatrixDiscriminator,
-		[Parameter(Mandatory = $true)][string]$RunnerOs,
-		[Parameter(Mandatory = $true)][string]$RunnerArch,
-		[Parameter(Mandatory = $true)][string]$GitHubPath,
-		[Parameter(Mandatory = $true)][string]$GitHubEnv,
-		[Parameter(Mandatory = $true)][string]$GitHubOutput
+		[Parameter(Mandatory = $true)][object]$LockPath,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerTemp,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunId,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunAttempt,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Job,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$MatrixDiscriminator,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerOs,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerArch,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerEnvironment,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubPath,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubEnv,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubOutput
 	)
 
 	$lock = Read-SdkLock $LockPath
 	Assert-ProductionSdkLock $lock -RequireApproval
 
-	if (
-		$RunnerOs -cne 'Windows' -or
-		$RunnerArch -cne 'ARM64' -or
-		[Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
-			[Runtime.InteropServices.Architecture]::Arm64
-	) {
-		throw 'The pinned SDK requires a native Windows ARM64 runner'
+	foreach ($entry in @(
+		[pscustomobject]@{ Value = $RunnerTemp; Name = 'runner.temp' },
+		[pscustomobject]@{ Value = $RunId; Name = 'run ID' },
+		[pscustomobject]@{ Value = $RunAttempt; Name = 'run attempt' },
+		[pscustomobject]@{ Value = $Job; Name = 'job' },
+		[pscustomobject]@{
+			Value = $MatrixDiscriminator
+			Name = 'matrix discriminator'
+		},
+		[pscustomobject]@{ Value = $RunnerOs; Name = 'runner.os' },
+		[pscustomobject]@{ Value = $RunnerArch; Name = 'runner.arch' },
+		[pscustomobject]@{
+			Value = $RunnerEnvironment
+			Name = 'runner.environment'
+		},
+		[pscustomobject]@{ Value = $GitHubPath; Name = 'GITHUB_PATH' },
+		[pscustomobject]@{ Value = $GitHubEnv; Name = 'GITHUB_ENV' },
+		[pscustomobject]@{ Value = $GitHubOutput; Name = 'GITHUB_OUTPUT' }
+	)) {
+		Assert-ExactStringValue $entry.Value $entry.Name
 	}
+	Assert-NativeRunnerPolicy $RunnerOs $RunnerArch $RunnerEnvironment
 
 	$runnerRoot = Assert-SafeExistingDirectory $RunnerTemp 'runner.temp'
-	$root = New-PrivateSdkRoot `
+	$ownedRoot = New-PrivateSdkRoot `
 		-RunnerTemp $runnerRoot `
 		-RunId $RunId `
 		-RunAttempt $RunAttempt `
 		-Job $Job `
 		-MatrixDiscriminator $MatrixDiscriminator
-	$gitPath = Get-SystemGitPath $runnerRoot
-	$gitDir = Join-Path $root 'repository.git'
-	$sdkRoot = Join-Path $root 'sdk'
-	$templateDir = Join-Path $root 'empty-git-template'
-	[void](New-Item -ItemType Directory -Path $templateDir)
+	$succeeded = $false
+	$bootstrapError = $null
+	try {
+		$root = $ownedRoot.Path
+		$gitPath = Get-SystemGitPath $runnerRoot
+		$gitDir = Join-Path $root 'repository.git'
+		$sdkRoot = Join-Path $root 'sdk'
+		$templateDir = Join-Path $root 'empty-git-template'
+		[void][IO.Directory]::CreateDirectory($templateDir)
 
-	[void](New-SafeGitProcess $gitPath @(
-		'init',
-		'--bare',
-		'--object-format=sha1',
-		"--template=$templateDir",
-		$gitDir
-	))
-	[void](New-SafeGitProcess $gitPath @(
-		"--git-dir=$gitDir",
-		'remote',
-		'add',
-		'origin',
-		$lock.remote_url
-	))
-	[void](New-SafeGitProcess $gitPath @(
-		"--git-dir=$gitDir",
-		'config',
-		'--local',
-		'--unset-all',
-		'remote.origin.fetch'
-	) @(0, 5))
-	Assert-RepositoryOrigin $gitPath $gitDir $lock.remote_url
+		[void](New-SafeGitProcess $gitPath @(
+			'init',
+			'--bare',
+			'--object-format=sha1',
+			"--template=$templateDir",
+			$gitDir
+		))
+		[void](New-SafeGitProcess $gitPath @(
+			"--git-dir=$gitDir",
+			'remote',
+			'add',
+			'origin',
+			$lock.remote_url
+		))
+		[void](New-SafeGitProcess $gitPath @(
+			"--git-dir=$gitDir",
+			'config',
+			'--local',
+			'--unset-all',
+			'remote.origin.fetch'
+		) @(0, 5))
+		Assert-RepositoryOrigin $gitPath $gitDir $lock.remote_url
 
-	[void](New-SafeGitProcess $gitPath @(
-		'-c', 'protocol.version=2',
-		'-c', 'fetch.fsckObjects=true',
-		'-c', 'transfer.fsckObjects=true',
-		'-c', 'http.followRedirects=false',
-		'-c', 'protocol.https.allow=always',
-		"--git-dir=$gitDir",
-		'fetch',
-		'--force',
-		'--no-tags',
-		'--no-recurse-submodules',
-		'--depth=1',
-		'--no-write-fetch-head',
-		'origin',
-		"+$($lock.commit):refs/gfw-sdk/locked"
-	))
+		[void](New-SafeGitProcess $gitPath @(
+			'-c', 'protocol.version=2',
+			'-c', 'fetch.fsckObjects=true',
+			'-c', 'transfer.fsckObjects=true',
+			'-c', 'http.followRedirects=false',
+			'-c', 'protocol.https.allow=always',
+			"--git-dir=$gitDir",
+			'fetch',
+			'--force',
+			'--no-tags',
+			'--no-recurse-submodules',
+			'--depth=1',
+			'--no-write-fetch-head',
+			'origin',
+			"+$($lock.commit):refs/gfw-sdk/locked"
+		))
 
-	Assert-RepositoryOrigin $gitPath $gitDir $lock.remote_url
-	Assert-GitObjectIdentity $gitPath $gitDir $lock
-	$manifest = Get-GitTreeManifest $gitPath $gitDir $lock.commit
-	Assert-ManifestMatchesLock $manifest $lock
-	Assert-NoLfsPointers $gitPath $gitDir $lock.commit
+		Assert-RepositoryOrigin $gitPath $gitDir $lock.remote_url
+		Assert-GitObjectIdentity $gitPath $gitDir $lock
+		$manifest = Get-GitTreeManifest $gitPath $gitDir $lock.commit
+		Assert-ManifestMatchesLock $manifest $lock
+		Assert-NoLfsPointers $gitPath $gitDir $lock.commit
 
-	[void](New-VerifiedSdkWorktree `
-		-GitPath $gitPath `
-		-GitDir $gitDir `
-		-Commit $lock.commit `
-		-SdkRoot $sdkRoot `
-		-Manifest $manifest)
+		[void](New-VerifiedSdkWorktree `
+			-GitPath $gitPath `
+			-GitDir $gitDir `
+			-Commit $lock.commit `
+			-SdkRoot $sdkRoot `
+			-Manifest $manifest)
 
-	$pathEntries = @(
-		(Join-Path $sdkRoot 'usr\bin\core_perl'),
-		(Join-Path $sdkRoot 'usr\bin'),
-		(Join-Path $sdkRoot 'clangarm64\bin')
-	)
-	foreach ($pathEntry in $pathEntries) {
-		[void](Assert-SafeExistingDirectory $pathEntry 'SDK PATH entry')
-		Assert-ContainedPath $sdkRoot $pathEntry
+		$pathEntries = @(
+			(Join-Path $sdkRoot 'usr\bin\core_perl'),
+			(Join-Path $sdkRoot 'usr\bin'),
+			(Join-Path $sdkRoot 'clangarm64\bin')
+		)
+		foreach ($pathEntry in $pathEntries) {
+			[void](Assert-SafeExistingDirectory $pathEntry 'SDK PATH entry')
+			Assert-ContainedPath $sdkRoot $pathEntry
+		}
+
+		$githubPathFile = Assert-SafeCommandFile `
+			$GitHubPath $runnerRoot 'GITHUB_PATH'
+		$githubEnvFile = Assert-SafeCommandFile `
+			$GitHubEnv $runnerRoot 'GITHUB_ENV'
+		$githubOutputFile = Assert-SafeCommandFile `
+			$GitHubOutput $runnerRoot 'GITHUB_OUTPUT'
+		foreach ($pathEntry in $pathEntries) {
+			Add-GitHubCommandValue $githubPathFile $pathEntry
+		}
+		Add-GitHubCommandValue $githubEnvFile 'MSYSTEM=CLANGARM64'
+		Add-GitHubCommandValue $githubEnvFile "GFW_SDK_ROOT=$sdkRoot"
+		Add-GitHubCommandValue $githubOutputFile "sdk-root=$sdkRoot"
+		$succeeded = $true
+	} catch {
+		$bootstrapError = $_.Exception.Message
+		throw
+	} finally {
+		if (-not $succeeded) {
+			try {
+				Remove-OwnedSdkRoot $ownedRoot
+			} catch {
+				throw "$bootstrapError; SDK root cleanup also failed: $($_.Exception.Message)"
+			}
+			$script:PrivateTempPath = $null
+		}
 	}
-
-	$githubPathFile = Assert-SafeCommandFile `
-		$GitHubPath $runnerRoot 'GITHUB_PATH'
-	$githubEnvFile = Assert-SafeCommandFile `
-		$GitHubEnv $runnerRoot 'GITHUB_ENV'
-	$githubOutputFile = Assert-SafeCommandFile `
-		$GitHubOutput $runnerRoot 'GITHUB_OUTPUT'
-	foreach ($pathEntry in $pathEntries) {
-		Add-GitHubCommandValue $githubPathFile $pathEntry
-	}
-	Add-GitHubCommandValue $githubEnvFile 'MSYSTEM=CLANGARM64'
-	Add-GitHubCommandValue $githubEnvFile "GFW_SDK_ROOT=$sdkRoot"
-	Add-GitHubCommandValue $githubOutputFile "sdk-root=$sdkRoot"
 }
 
-Export-ModuleMember -Function @(
-	'Assert-ContainedPath',
-	'Assert-GitObjectIdentity',
-	'Assert-LockedRefs',
-	'Assert-ManifestMatchesLock',
-	'Assert-NoLfsPointers',
-	'Assert-ProductionSdkLock',
-	'Assert-SafeExistingDirectory',
-	'Get-GitTreeManifest',
-	'Get-SystemGitPath',
-	'Get-TreeManifestFromBytes',
-	'Invoke-LockedSdkBootstrap',
-	'New-PrivateSdkRoot',
-	'New-VerifiedSdkWorktree',
-	'Read-SdkLock'
-)
+function Invoke-LockedSdkBootstrap {
+	[CmdletBinding()]
+	param(
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerTemp,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunId,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunAttempt,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$Job,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$MatrixDiscriminator,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerOs,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerArch,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$RunnerEnvironment,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubPath,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubEnv,
+		[AllowNull()][AllowEmptyCollection()]
+		[Parameter(Mandatory = $true)][object]$GitHubOutput
+	)
+
+	Invoke-LockedSdkBootstrapCore `
+		-LockPath (Join-Path $PSScriptRoot 'sdk-lock.json') `
+		-RunnerTemp $RunnerTemp `
+		-RunId $RunId `
+		-RunAttempt $RunAttempt `
+		-Job $Job `
+		-MatrixDiscriminator $MatrixDiscriminator `
+		-RunnerOs $RunnerOs `
+		-RunnerArch $RunnerArch `
+		-RunnerEnvironment $RunnerEnvironment `
+		-GitHubPath $GitHubPath `
+		-GitHubEnv $GitHubEnv `
+		-GitHubOutput $GitHubOutput
+}
+
+Export-ModuleMember -Function 'Invoke-LockedSdkBootstrap'

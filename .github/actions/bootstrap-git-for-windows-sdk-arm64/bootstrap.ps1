@@ -1,34 +1,59 @@
 [CmdletBinding()]
 param(
 	[Parameter(Mandatory = $true)]
-	[string]$RunnerTemp,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunnerTemp,
 
 	[Parameter(Mandatory = $true)]
-	[string]$RunId,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunId,
 
 	[Parameter(Mandatory = $true)]
-	[string]$RunAttempt,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunAttempt,
 
 	[Parameter(Mandatory = $true)]
-	[string]$Job,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$Job,
 
 	[Parameter(Mandatory = $true)]
-	[string]$MatrixDiscriminator,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$MatrixDiscriminator,
 
 	[Parameter(Mandatory = $true)]
-	[string]$RunnerOs,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunnerOs,
 
 	[Parameter(Mandatory = $true)]
-	[string]$RunnerArch,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunnerArch,
 
 	[Parameter(Mandatory = $true)]
-	[string]$GitHubPath,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$RunnerEnvironment,
 
 	[Parameter(Mandatory = $true)]
-	[string]$GitHubEnv,
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$GitHubPath,
 
 	[Parameter(Mandatory = $true)]
-	[string]$GitHubOutput
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$GitHubEnv,
+
+	[Parameter(Mandatory = $true)]
+	[AllowNull()]
+	[AllowEmptyCollection()]
+	[object]$GitHubOutput
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,7 +62,6 @@ Set-StrictMode -Version Latest
 Import-Module "$PSScriptRoot/bootstrap.psm1" -Force
 
 Invoke-LockedSdkBootstrap `
-	-LockPath "$PSScriptRoot/sdk-lock.json" `
 	-RunnerTemp $RunnerTemp `
 	-RunId $RunId `
 	-RunAttempt $RunAttempt `
@@ -45,6 +69,7 @@ Invoke-LockedSdkBootstrap `
 	-MatrixDiscriminator $MatrixDiscriminator `
 	-RunnerOs $RunnerOs `
 	-RunnerArch $RunnerArch `
+	-RunnerEnvironment $RunnerEnvironment `
 	-GitHubPath $GitHubPath `
 	-GitHubEnv $GitHubEnv `
 	-GitHubOutput $GitHubOutput
