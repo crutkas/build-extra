@@ -2290,24 +2290,51 @@ class ArchiveAuditorTests(unittest.TestCase):
                 self.assertEqual("OUT_OF_RANGE_RECORD", context.exception.code)
 
     def test_mutations_always_produce_a_structured_outcome(self):
+        """Mutation control covering all eight third-audit findings.
+
+        Sweeps seed families that reach every remediated path and limit
+        configurations including extreme and overflowing values, so a
+        traceback anywhere in configuration, PE parsing, overlay scanning,
+        member classification, or provenance surfaces as a failure here.
+        """
         archive = make_7z([{"name": "payload.dat", "content": b"content-bytes"}])
         image, signed = signed_sfx(archive, [win_certificate(b"pkcs7-placeholder")])
+        image_end = len(build_pe())
+        unix = AUDITOR.SEVEN_ZIP_UNIX_EXTENSION
         seeds = {
             "signed-sfx": signed,
             "unsigned-sfx": image + archive,
             "bare-7z": archive,
             "decoy-sfx": make_decoy_sfx(16, 1 << 14),
+            "plain-pe": build_pe(sections=((".text", 0x400, 0x400),)),
+            "gapped-sfx": build_pe(image_length=image_end + 512) + archive,
+            "zip-modes": make_zip([
+                {"name": "a", "content": b"x", "external": 0o100644 << 16},
+                {"name": "b/", "external": (0o040755 << 16) | 0x10},
+            ]),
+            "7z-modes": make_7z(
+                [{"name": "m", "content": b"x"}],
+                attributes=[(0o100644 << 16) | unix],
+            ),
         }
-        limits = AUDITOR.Limits(max_envelope_work_bytes=8 << 20, max_sfx_signature_candidates=32)
+        limit_sets = [
+            AUDITOR.Limits(max_envelope_work_bytes=8 << 20, max_sfx_signature_candidates=32),
+            AUDITOR.Limits(max_compression_ratio=1),
+            AUDITOR.Limits(max_compression_ratio=AUDITOR.MAX_COMPRESSION_RATIO),
+            AUDITOR.Limits(max_sfx_overlay_scan_bytes=16),
+            AUDITOR.Limits(max_sfx_overlay_scan_bytes=AUDITOR.MAX_LIMIT_VALUE),
+            AUDITOR.Limits(max_total_expanded_bytes=1),
+        ]
         generator = random.Random(20260828)
         codes = set()
         for label, seed in seeds.items():
-            for iteration in range(60):
+            for iteration in range(40):
                 data = bytearray(seed)
                 for _ in range(generator.randint(1, 6)):
                     data[generator.randrange(len(data))] = generator.randrange(256)
                 if not generator.randrange(10):
                     data = data[:generator.randrange(1, len(data) + 1)]
+                limits = limit_sets[iteration % len(limit_sets)]
                 with self.subTest(seed=label, iteration=iteration):
                     try:
                         AUDITOR.ArchiveAuditor(limits).audit_bytes(bytes(data), "fuzz.bin")
@@ -2315,7 +2342,56 @@ class ArchiveAuditorTests(unittest.TestCase):
                         self.assertIsInstance(exc.code, str)
                         self.assertTrue(exc.code)
                         codes.add(exc.code)
-        self.assertGreater(len(codes), 4)
+        self.assertGreater(len(codes), 6)
+
+        extreme = (1e308, float("inf"), float("nan"), 10 ** 400, "8", True, 0, -1)
+        for label, seed in seeds.items():
+            for value in extreme:
+                with self.subTest(seed=label, ratio=repr(value)):
+                    with self.assertRaises(AUDITOR.AuditError) as context:
+                        AUDITOR.ArchiveAuditor(
+                            AUDITOR.Limits(max_compression_ratio=value)
+                        ).audit_bytes(seed, "fuzz.bin")
+                    self.assertEqual("INVALID_LIMIT", context.exception.code)
+
+    def test_overlay_work_does_not_scale_with_overlay_length(self):
+        """Discovery cost follows the configured bound, not the overlay size."""
+        image_end = len(build_pe())
+        allowance = AUDITOR.Limits(max_sfx_overlay_scan_bytes=64)
+
+        charged = {}
+        for payload in (128, 1 << 12, 1 << 16, 1 << 20):
+            archive = make_7z([{"name": "clean", "content": b"x" * payload}])
+            data = build_pe() + archive
+            manifest = self.audit(data, "sfx.bin", allowance)
+            self.assertEqual("7z-sfx", manifest["archive"]["format"])
+            charged[len(data)] = manifest["totals"]["sfxOverlayScanBytes"]
+
+        self.assertGreater(max(charged) // min(charged), 100)
+        self.assertEqual(
+            1,
+            len(set(charged.values())),
+            f"overlay scan work must not vary with overlay length: {charged}",
+        )
+        self.assertLessEqual(max(charged.values()), 64)
+
+        # A gap wider than the allowance is rejected rather than fully scanned.
+        for gap in (1 << 12, 1 << 20):
+            with self.subTest(gap=gap):
+                wide = build_pe(image_length=image_end + gap) + make_7z(
+                    [{"name": "clean", "content": b"x" * 128}]
+                )
+                self.assert_rejected("SFX_OVERLAY_SCAN_LIMIT", wide, "sfx.bin", allowance)
+
+        default_totals = self.audit(
+            build_pe(image_length=image_end + (1 << 20))
+            + make_7z([{"name": "clean", "content": b"x" * 128}]),
+            "sfx.bin",
+        )["totals"]
+        self.assertLessEqual(
+            default_totals["sfxOverlayScanBytes"],
+            AUDITOR.Limits().max_sfx_overlay_scan_bytes,
+        )
 
     def test_nested_ordinary_pe_members_are_opaque_leaves(self):
         executable = build_pe(sections=((".text", 0x400, 0x200),))
