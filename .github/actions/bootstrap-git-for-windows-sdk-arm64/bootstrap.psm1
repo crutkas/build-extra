@@ -21,6 +21,19 @@ $script:Utf8 = [Text.UTF8Encoding]::new($false, $true)
 # create a root it can no longer canonicalize, identity-check or delete.
 $script:MaxUsablePathLength = 259
 $script:RootSentinelName = '.gfw-sdk-bootstrap-owner'
+# The bootstrap creates its bare mirror at <root>\repository.git and fetches
+# into it long before the worktree gate can read the locked manifest, so the
+# root has to be budgeted for Git's own control paths as well. The deepest of
+# those is a pack file: the object-id is 40 hexadecimal characters and
+# '.promisor' is the longest suffix Git appends to a pack name.
+$script:GitDirectoryName = 'repository.git'
+$script:SdkDirectoryName = 'sdk'
+$script:GitTemplateDirectoryName = 'empty-git-template'
+$script:GitControlReserve =
+	1 + $script:GitDirectoryName.Length +
+	1 + 'objects'.Length +
+	1 + 'pack'.Length +
+	1 + 'pack-'.Length + 40 + '.promisor'.Length
 $script:TrustedGitExecPath = $null
 $script:TrustedGitRuntimePath = $null
 $script:PrivateTempPath = $null
@@ -2716,10 +2729,16 @@ function Invoke-LockedSdkBootstrapCore {
 	$bootstrapError = $null
 	try {
 		$root = $ownedRoot.Path
+		# Budget the root for Git's own control paths before creating the
+		# template directory or initializing the bare mirror, so an
+		# unusable root is refused while its only content is the sentinel
+		# and the owned-root cleanup below can still remove exactly it.
+		Assert-UsablePathLength `
+			$root $script:GitControlReserve 'private SDK root'
 		$gitPath = Get-SystemGitPath $runnerRoot
-		$gitDir = Join-Path $root 'repository.git'
-		$sdkRoot = Join-Path $root 'sdk'
-		$templateDir = Join-Path $root 'empty-git-template'
+		$gitDir = Join-Path $root $script:GitDirectoryName
+		$sdkRoot = Join-Path $root $script:SdkDirectoryName
+		$templateDir = Join-Path $root $script:GitTemplateDirectoryName
 		[void][IO.Directory]::CreateDirectory($templateDir)
 
 		[void](New-SafeGitProcess $gitPath @(

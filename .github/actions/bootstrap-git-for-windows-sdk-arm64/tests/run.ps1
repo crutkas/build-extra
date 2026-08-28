@@ -199,6 +199,31 @@ function Get-LongPath {
 	} $Path
 }
 
+function Assert-UsablePathLength {
+	param(
+		[Parameter(Mandatory = $true)][object]$Path,
+		[Parameter(Mandatory = $true)][int]$ReservedChildLength,
+		[Parameter(Mandatory = $true)][object]$Name
+	)
+	& $script:bootstrapModule {
+		param($Path, $ReservedChildLength, $Name)
+		Assert-UsablePathLength $Path $ReservedChildLength $Name
+	} $Path $ReservedChildLength $Name
+}
+
+function Get-ProductionPathBudget {
+	return & $script:bootstrapModule {
+		[pscustomobject]@{
+			Limit = $script:MaxUsablePathLength
+			Sentinel = $script:RootSentinelName
+			GitDirectory = $script:GitDirectoryName
+			SdkDirectory = $script:SdkDirectoryName
+			TemplateDirectory = $script:GitTemplateDirectoryName
+			GitControlReserve = $script:GitControlReserve
+		}
+	}
+}
+
 function New-PrivateSdkRoot {
 	param(
 		[Parameter(Mandatory = $true)][object]$RunnerTemp,
@@ -648,12 +673,20 @@ $script:WidestPrivateRootLeaf =
 $script:PrivateRootReserve =
 	1 + $script:WidestPrivateRootLeaf.Length +
 	1 + $script:TestRootSentinelName.Length
+# Production budgets a private SDK root for Git's own control paths before it
+# initializes the bare mirror, so any directory the suite hands to
+# Invoke-LockedSdkBootstrapCore has to satisfy that deeper chain too.
+$script:ProductionGitControlReserve = 83
+$script:CoreRootReserve =
+	1 + $script:WidestPrivateRootLeaf.Length +
+	$script:ProductionGitControlReserve
 # Deepest intermediate directory the suite interposes between $testRoot and a
 # private SDK root. The startup gate has to account for it, otherwise a base
 # it admits still produces late failures part way through the run.
 $script:DeepestTestHolder = 'cleanup-failure'
-$script:TestRootReserve =
-	1 + $script:DeepestTestHolder.Length + $script:PrivateRootReserve
+$script:TestRootReserve = [Math]::Max(
+	$script:CoreRootReserve,
+	1 + $script:DeepestTestHolder.Length + $script:PrivateRootReserve)
 $script:BaseReserve =
 	1 + $script:TestRootLeafSample.Length + $script:TestRootReserve
 
@@ -2191,16 +2224,22 @@ try {
 	Invoke-Test 'usable path length bound is derived, not assumed' {
 		Assert-Equal $script:WidestPrivateRootLeaf.Length 73
 		Assert-Equal $script:PrivateRootReserve 99
-		Assert-Equal $script:TestRootReserve 115
-		Assert-Equal $script:BaseReserve 172
-		$probe = & $bootstrapModule {
-			[pscustomobject]@{
-				Limit = $script:MaxUsablePathLength
-				Sentinel = $script:RootSentinelName
-			}
-		}
+		Assert-Equal $script:CoreRootReserve 157
+		Assert-Equal $script:TestRootReserve 157
+		Assert-Equal $script:BaseReserve 214
+		$probe = Get-ProductionPathBudget
 		Assert-Equal $probe.Limit $script:MaxUsablePathLength
 		Assert-Equal $probe.Sentinel $script:TestRootSentinelName
+		Assert-Equal $probe.GitDirectory 'repository.git'
+		Assert-Equal $probe.SdkDirectory 'sdk'
+		Assert-Equal $probe.TemplateDirectory 'empty-git-template'
+		# Rederive the Git control reserve from the deepest control path the
+		# bootstrap itself creates, rather than trusting the constant.
+		$deepestGitPath = '{0}\objects\pack\pack-{1}.promisor' -f `
+			$probe.GitDirectory, ('0' * 40)
+		Assert-Equal $probe.GitControlReserve (1 + $deepestGitPath.Length)
+		Assert-Equal $probe.GitControlReserve `
+			$script:ProductionGitControlReserve
 		# Only a holder that itself hosts a private SDK root feeds the
 		# reserve. Holders that host a worktree instead are bounded by the
 		# manifest headroom check, which is exercised separately.
@@ -2211,6 +2250,122 @@ try {
 			}
 		}
 		Assert-Equal $deepest $script:DeepestTestHolder
+	}
+
+	Invoke-Test 'path syntax refuses a canonical path over the limit' {
+		# Kills the removal of the length check inside production
+		# Assert-LocalPathSyntax: without it these paths validate cleanly.
+		$limit = $script:MaxUsablePathLength
+		$atLimit = 'C:\' + ('a' * ($limit - 3))
+		Assert-Equal $atLimit.Length $limit
+		Assert-Equal (Assert-LocalPathSyntax $atLimit 'probe') $atLimit
+		foreach ($over in @(($limit + 1), ($limit + 40))) {
+			$path = 'C:\' + ('a' * ($over - 3))
+			Assert-Equal $path.Length $over
+			Assert-Throws {
+				Assert-LocalPathSyntax $path 'probe'
+			} -ExpectedMessage 'probe exceeds the usable Windows path length'
+		}
+		# The same rejection has to reach the public directory validator.
+		Assert-Throws {
+			Assert-SafeExistingDirectory (
+				'C:\' + ('a' * ($limit - 2))) 'probe'
+		} -ExpectedMessage 'probe exceeds the usable Windows path length'
+	}
+
+	Invoke-Test 'usable length check refuses a negative reservation' {
+		# Kills the removal of the negative-reservation branch.
+		foreach ($negative in @(-1, -25, [int]::MinValue)) {
+			Assert-Throws {
+				Assert-UsablePathLength $testRoot $negative 'probe'
+			} -ExpectedMessage 'probe cannot reserve a negative child length'
+		}
+		Assert-UsablePathLength $testRoot 0 'probe'
+		$headroom = $script:MaxUsablePathLength - $testRoot.Length
+		Assert-UsablePathLength $testRoot $headroom 'probe'
+		Assert-Throws {
+			Assert-UsablePathLength $testRoot ($headroom + 1) 'probe'
+		} -ExpectedMessage 'probe exceeds the usable Windows path length'
+	}
+
+	Invoke-Test 'core budgets the Git control paths before any Git work' {
+		$approvedPath = Write-LockFixture $approvedLock 'git-budget-lock'
+		# Use single-character run identifiers so the generated root leaf is
+		# as short as production ever makes it; that keeps the exact boundary
+		# constructible even when $testRoot itself sits at the admitted max.
+		$leafLength = "gfw-sdk-arm64-1-1-$('0' * 20)-$('0' * 32)".Length
+		$rootLength = $script:MaxUsablePathLength -
+			$script:ProductionGitControlReserve
+		foreach ($offset in @(0, 1)) {
+			$target = $rootLength - $leafLength - 1 + $offset
+			$room = $target - $testRoot.Length - 1
+			if ($room -lt 1) {
+				throw "The test root leaves no room to probe a $target parent"
+			}
+			$runnerTemp = Join-Path $testRoot ('g' * $room)
+			[void][IO.Directory]::CreateDirectory($runnerTemp)
+			Assert-Equal $runnerTemp.Length $target
+			$canary = Join-Path $runnerTemp 'canary.txt'
+			[IO.File]::WriteAllText(
+				$canary, "canary`n", [Text.UTF8Encoding]::new($false))
+			$message = & $bootstrapModule {
+				param($ApprovedPath, $RunnerTemp)
+				$nativePolicy = (Get-Item -LiteralPath `
+					'Function:Assert-NativeRunnerPolicy').ScriptBlock
+				$systemGit = (Get-Item -LiteralPath `
+					'Function:Get-SystemGitPath').ScriptBlock
+				try {
+					Set-Item -LiteralPath `
+						'Function:Assert-NativeRunnerPolicy' -Value {}
+					Set-Item -LiteralPath 'Function:Get-SystemGitPath' `
+						-Value { throw 'past-the-budget-sentinel' }
+					try {
+						Invoke-LockedSdkBootstrapCore `
+							-LockPath $ApprovedPath `
+							-RunnerTemp $RunnerTemp `
+							-RunId '1' `
+							-RunAttempt '1' `
+							-Job 'g' `
+							-MatrixDiscriminator 'a' `
+							-RunnerOs 'Windows' `
+							-RunnerArch 'ARM64' `
+							-RunnerEnvironment 'github-hosted' `
+							-GitHubPath (Join-Path $RunnerTemp 'p') `
+							-GitHubEnv (Join-Path $RunnerTemp 'e') `
+							-GitHubOutput (Join-Path $RunnerTemp 'o')
+						throw 'Expected the budgeted bootstrap to fail'
+					} catch {
+						return $_.Exception.Message
+					}
+				} finally {
+					Set-Item -LiteralPath `
+						'Function:Assert-NativeRunnerPolicy' `
+						-Value $nativePolicy
+					Set-Item -LiteralPath 'Function:Get-SystemGitPath' `
+						-Value $systemGit
+				}
+			} $approvedPath $runnerTemp
+			$expected = if ($offset -eq 0) {
+				'past-the-budget-sentinel'
+			} else {
+				'private SDK root exceeds the usable Windows path length'
+			}
+			if (-not [string]::Equals(
+				$message, $expected, [StringComparison]::Ordinal
+			)) {
+				throw "Expected exactly '$expected', got '$message'"
+			}
+			$residue = @(Get-ChildItem -LiteralPath $runnerTemp -Force |
+				Where-Object {
+					$_.Name.StartsWith(
+						'gfw-sdk-arm64-', [StringComparison]::Ordinal)
+				})
+			Assert-Equal $residue.Count 0
+			if (-not (Test-Path -LiteralPath $canary -PathType Leaf)) {
+				throw 'Cleanup removed the canary beside the private root'
+			}
+			Remove-Item -LiteralPath $runnerTemp -Recurse -Force
+		}
 	}
 
 	Invoke-Test 'Win32 canonicalization fails exactly at MAX_PATH' {
