@@ -71,3 +71,8 @@ The Git for Windows project aims to provide three different types of installers:
 ## Support scripts/files
 
 The `build-extra` repository is also the home of other resources necessary to develop and maintain Git for Windows. For example, it contains the [Git garden shears](https://github.com/git-for-windows/build-extra/blob/main/shears.sh) that help with updating Git for Windows' source code whenever new upstream Git versions are released ("merging rebase").
+
+The source-only [recursive archive auditor](archive-auditor.md) can produce
+deterministic physical manifests for payload and package archives. It is an
+offline audit primitive and is not connected to release or consumption
+workflows.
