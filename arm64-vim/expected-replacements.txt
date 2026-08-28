@@ -1,0 +1,7 @@
+usr/bin/ex.exe
+usr/bin/rview.exe
+usr/bin/rvim.exe
+usr/bin/view.exe
+usr/bin/vim.exe
+usr/bin/vimdiff.exe
+usr/bin/xxd.exe

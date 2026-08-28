@@ -66,6 +66,7 @@ jobs:
 
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
             arm64-busybox/ \
+            arm64-vim/ \
             check-for-missing-dlls.sh \
             post-install.bat \
             t/check-arm64-busybox.sh \
@@ -74,6 +75,11 @@ jobs:
             t/check-arm64-busybox-distributions.ps1 \
             t/check-arm64-native-tools.sh \
             t/check-arm64-native-tools.ps1 \
+            t/check-arm64-vim-integration.ps1 \
+            t/check-arm64-vim-integration.sh \
+            t/check-arm64-vim-architecture.ps1 \
+            t/check-arm64-vim-distributions.ps1 \
+            t/check-arm64-vim-smoke.ps1 \
             t/check-arm64-openssh-integration.sh \
             t/check-arm64-openssh-installer.ps1 \
             t/check-arm64-openssh-package.ps1)" ||
@@ -573,6 +579,18 @@ jobs:
           cygpath -aw "$PWD/sdk-artifact/${{ matrix.arch.mingw-prefix }}/bin" >>$GITHUB_PATH &&
           echo "MSYSTEM=${{ matrix.arch.msystem }}" >>$GITHUB_ENV &&
           cat $GITHUB_PATH
+      - name: check ARM64 Vim immutable input and package safety
+        if: matrix.arch.name == 'aarch64'
+        shell: pwsh
+        run: ./t/check-arm64-vim-integration.ps1
+      - name: check ARM64 Vim integration wiring
+        if: matrix.arch.name == 'aarch64'
+        shell: bash
+        run: ./t/check-arm64-vim-integration.sh
+      - name: smoke test native ARM64 Vim when admitted
+        if: matrix.arch.name == 'aarch64'
+        shell: pwsh
+        run: ./t/check-arm64-vim-smoke.ps1 -Root (Convert-Path sdk-artifact)
       - name: check for missing DLLs
         shell: bash
         run: sh -x ./check-for-missing-dlls.sh
@@ -639,6 +657,8 @@ jobs:
             39ffc22208aa99e287a9f433431fb9a56f443b62 &&
           git worktree add --detach busybox-source \
             50de8f12409d8cc8e16aef190629073db1a8606d &&
+          test be0217cb572704f27ea04c9abde8bb992b8ef0c0 = \
+            "$(git merge-base HEAD be0217cb572704f27ea04c9abde8bb992b8ef0c0)" &&
           echo '30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84 *release-source/pe-imports.ps1' |
             sha256sum -c - &&
           echo 'ae1e311fd81258150c2300d02c58655f30b190a15bcbe3ea8bbaccc1ce8c1c9a *release-source/arm64-payload-architecture-v2.55.0.4.tsv' |
@@ -662,6 +682,12 @@ jobs:
           ./please.sh create-sdk-artifact \
             --architecture=aarch64 \
             --sdk=.sdk \
+            --out=sdk-combined \
+            --arm64-vim-baseline \
+            build-installers &&
+          ./please.sh create-sdk-artifact \
+            --architecture=aarch64 \
+            --sdk=.sdk \
             --out=sdk-integrated \
             build-installers
       - name: scan exact payload architecture stages
@@ -673,8 +699,11 @@ jobs:
             --leaf-source=base-source \
             --busybox-root=sdk-busybox \
             --busybox-source=busybox-source \
-            --combined-root=sdk-integrated \
+            --combined-root=sdk-combined \
             --combined-source=. \
+            --vim-root=sdk-integrated \
+            --vim-source=. \
+            --vim-lock=arm64-vim/input-lock.json \
             --scanner=release-source/pe-imports.ps1
       - name: download the verified ARM64 OpenSSH package
         shell: pwsh
@@ -732,6 +761,7 @@ jobs:
           }
           root=$PWD &&
           build_products "$root/sdk-base" "$root/base-source" "$root/impact/base" &&
+          build_products "$root/sdk-combined" "$root" "$root/impact/vim-base" &&
           build_products "$root/sdk-integrated" "$root" "$root/impact/integrated"
       - name: measure distributions and lifecycle
         shell: pwsh
@@ -751,6 +781,30 @@ jobs:
             -OpenSshPackage "$env:RUNNER_TEMP\win32-openssh.pkg.tar.zst" `
             -Scanner release-source/pe-imports.ps1 `
             -OutputDirectory impact/measurements
+      - name: verify native ARM64 Vim distribution deltas
+        shell: pwsh
+        run: |
+          ./t/check-arm64-vim-distributions.ps1 `
+            -Lock arm64-vim/input-lock.json `
+            -BaseInstaller impact/vim-base/Git-0-test-arm64.exe `
+            -IntegratedInstaller impact/integrated/Git-0-test-arm64.exe `
+            -BasePortable impact/vim-base/PortableGit-0-test-arm64.7z.exe `
+            -IntegratedPortable impact/integrated/PortableGit-0-test-arm64.7z.exe `
+            -BaseMinGit impact/vim-base/MinGit-0-test-arm64.zip `
+            -IntegratedMinGit impact/integrated/MinGit-0-test-arm64.zip `
+            -BaseBusyBoxMinGit impact/vim-base/mingit-busybox/MinGit-0-test-arm64.zip `
+            -IntegratedBusyBoxMinGit impact/integrated/mingit-busybox/MinGit-0-test-arm64.zip `
+            -SevenZip sdk-integrated/clangarm64/bin/7z.exe `
+            -Output impact/measurements/arm64-vim-distribution-impact.json
+      - name: check native ARM64 Vim payload contract
+        shell: pwsh
+        run: |
+          ./t/check-arm64-vim-architecture.ps1 `
+            -Lock arm64-vim/input-lock.json `
+            -Root sdk-integrated `
+            -Scanner release-source/pe-imports.ps1 `
+            -DistributionReport impact/measurements/arm64-vim-distribution-impact.json `
+            -OutputDirectory impact/measurements
       - uses: actions/upload-artifact@v7
         with:
           name: arm64-combined-payload-impact
@@ -758,3 +812,6 @@ jobs:
             arm64-combined-architecture-report.txt
             impact/measurements/arm64-combined-distribution-impact.json
             impact/measurements/arm64-combined-distribution-impact.md
+            impact/measurements/arm64-vim-impact.json
+            impact/measurements/arm64-vim-impact.md
+            impact/measurements/arm64-vim-distribution-impact.json

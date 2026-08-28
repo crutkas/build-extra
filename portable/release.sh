@@ -124,6 +124,8 @@ LIST="$(ARCH=$ARCH ETC_GITCONFIG="$etc_gitconfig" \
 	sh "$SCRIPT_PATH"/../make-file-list.sh "$@" |
 	grep -v "^$etc_gitconfig$")" ||
 die "Could not generate file list"
+LIST="$(printf '%s\n' "$LIST" | sort -u)" ||
+die "Could not normalize file list"
 
 mkdir -p "$SCRIPT_PATH/root/${etc_gitconfig%/*}" &&
 cp /"$etc_gitconfig" "$SCRIPT_PATH/root/$etc_gitconfig" &&
@@ -150,7 +152,9 @@ then
 else
 	ln_or_cp=cp
 fi &&
-$ln_or_cp $(echo "$LIST" | sed -n "s|^$MSYSTEM_LOWER/bin/[^/]*\.dll$|/&|p") "$git_core" ||
+$ln_or_cp $(echo "$LIST" |
+	sed -n "s|^$MSYSTEM_LOWER/bin/[^/]*\.dll$|/&|p" |
+	sort -u) "$git_core" ||
 die "Could not copy .dll files into libexec/git-core/"
 
 test -z "$include_pdbs" || {

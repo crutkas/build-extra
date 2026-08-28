@@ -445,19 +445,26 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	cp "$archive_cache" "$root/tmp/$archive" ||
 	die "Could not stage %s in the target SDK\n" "$archive"
 	package_path=$root/tmp/$archive
+	pacman_config=$root/tmp/arm64-openssh-pacman.conf
+	printf '%s\n' \
+		'[options]' \
+		'Architecture = auto' \
+		'SigLevel = Never' >"$pacman_config" ||
+	die "Could not create ARM64 OpenSSH pacman configuration\n"
 
 	run_arm64_openssh_pacman () {
 		if test / = "$root"
 		then
 			pacman "$@"
 		else
-			"$root/usr/bin/pacman.exe" --root "$root" "$@"
+			"$root/usr/bin/pacman.exe" \
+				--config "$pacman_config" --root "$root" "$@"
 		fi
 	}
 
 	test "$package $version" = "$(run_arm64_openssh_pacman -Qp "$package_path")" ||
 	{
-		rm -f "$root/tmp/$archive"
+		rm -f "$root/tmp/$archive" "$pacman_config"
 		die "Unexpected package metadata in %s\n" "$archive_cache"
 	}
 	has_msys_openssh=
@@ -486,7 +493,7 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	test "$package $version" = "$(run_arm64_openssh_pacman -Q "$package")" &&
 	run_arm64_openssh_pacman -Qkk "$package"
 	res=$?
-	rm -f "$root/tmp/$archive" ||
+	rm -f "$root/tmp/$archive" "$pacman_config" ||
 	die "Could not remove staged package %s\n" "$archive"
 	test $res = 0 ||
 	die "Could not install and verify %s\n" "$package"
@@ -518,13 +525,14 @@ use_arm64_native_openssh () { # [--root=<directory>]
 	die "Could not configure Azure SSH compatibility\n"
 }
 
-create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] <name>
+create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--architecture=(x86_64|i686|aarch64|ucrt64|auto)] [--bitness=(32|64)] [--force] [--arm64-vim-baseline] <name>
 	git_sdk_path=/
 	output_path=
 	force=
 	architecture=auto
 	bitness=
 	keep_worktree=
+	arm64_vim_baseline=
 	while case "$1" in
 	--out|-o)
 		shift
@@ -572,6 +580,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		;;
 	--no-keep-worktree)
 		keep_worktree=
+		;;
+	--arm64-vim-baseline)
+		arm64_vim_baseline=t
 		;;
 	-*) die "Unknown option: %s\n" "$1";;
 	*) break;;
@@ -651,6 +662,9 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 	minimal-sdk|makepkg-git|build-installers|full-sdk) mode=$1;;
 	*) die "Unhandled artifact: '%s'\n" "$1";;
 	esac
+	test -z "$arm64_vim_baseline" ||
+	{ test aarch64 = "$architecture" && test build-installers = "$mode"; } ||
+	die "--arm64-vim-baseline requires an aarch64 build-installers artifact\n"
 
 	test ! -d "$output_path" ||
 	if test -z "$force"
@@ -815,9 +829,15 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 			printf '\n# markdown, to render the release notes\n/usr/bin/markdown\n\n' >>"$sparse_checkout_file" &&
 			{ test aarch64 != "$architecture" ||
 				use_arm64_native_openssh --root="$output_path"; } &&
+			{ test -n "$arm64_vim_baseline" ||
+				test aarch64 != "$architecture" ||
+				ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
+					--stage --root="$output_path"; } &&
 			GFW_ARM64_BUSYBOX_DEFER=1 ARCH=$architecture \
 			"$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
-			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file"
+			"${this_script_path%/*}/make-file-list.sh" | sed -e 's|[][]|\\&|g' -e 's|^|/|' >>"$sparse_checkout_file" &&
+			{ test ! -f "$output_path/var/cache/arm64-vim/stage.json" ||
+				printf '/clangarm64/bin/*.dll\n' >>"$sparse_checkout_file"; }
 			;;
 		esac &&
 		rm "$output_path/etc/profile" &&
@@ -859,6 +879,11 @@ create_sdk_artifact () { # [--out=<directory>] [--git-sdk=<directory>] [--archit
 		ARCH=aarch64 "$output_path/git-cmd.exe" --command=usr\\bin\\sh.exe -l \
 			"${this_script_path%/*}/arm64-busybox/install.sh"
 	fi &&
+	{ test -n "$arm64_vim_baseline" ||
+		test build-installers != "$mode" ||
+		test aarch64 != "$architecture" ||
+		ARCH=aarch64 "${this_script_path%/*}/arm64-vim/install.sh" \
+			--finalize --root="$output_path"; } &&
 	if test ! -f "$output_path/etc/profile"
 	then
 		if test minimal-sdk = $mode
