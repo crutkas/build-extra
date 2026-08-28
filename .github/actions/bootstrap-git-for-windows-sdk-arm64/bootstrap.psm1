@@ -11,6 +11,16 @@ $script:Parent = 'bd683ba009eeed6d87334bda905e687a260c175a'
 $script:ManifestSha256 = '6d3407edcebcd4bec2b985e8a1dd5d16720cafd08d326a5b99fa4c76d97d7882'
 $script:PackageDatabaseSha256 = 'ac954098803554fddcfa79bf66aeddd7ede4659ae645072493743a14f5bf8d89'
 $script:Utf8 = [Text.UTF8Encoding]::new($false, $true)
+# GetLongPathNameW and the other Win32 path entry points this module relies on
+# resolve a DOS path only while it stays shorter than MAX_PATH. Measured on
+# Windows, they succeed at 259 characters and fail with ERROR_PATH_NOT_FOUND
+# at 260. Extended-length '\\?\' syntax lifts that limit, but this module
+# deliberately refuses to accept or construct such paths, so every path it
+# validates or creates has to stay at or below the usable length. The .NET
+# directory APIs carry no such limit, so without this bound the bootstrap can
+# create a root it can no longer canonicalize, identity-check or delete.
+$script:MaxUsablePathLength = 259
+$script:RootSentinelName = '.gfw-sdk-bootstrap-owner'
 $script:TrustedGitExecPath = $null
 $script:TrustedGitRuntimePath = $null
 $script:PrivateTempPath = $null
@@ -1190,6 +1200,24 @@ function Assert-NativeRunnerPolicy {
 		$isElevated
 }
 
+function Assert-UsablePathLength {
+	param(
+		[Parameter(Mandatory = $true)][string]$Path,
+		[Parameter(Mandatory = $true)][int]$ReservedChildLength,
+		[Parameter(Mandatory = $true)][string]$Name
+	)
+
+	if ($ReservedChildLength -lt 0) {
+		throw "$Name cannot reserve a negative child length"
+	}
+	# Subtract rather than add so the comparison cannot overflow for a
+	# hostile length, and so the reservation is expressed as headroom.
+	$headroom = $script:MaxUsablePathLength - $Path.Length
+	if ($headroom -lt $ReservedChildLength) {
+		throw "$Name exceeds the usable Windows path length"
+	}
+}
+
 function Assert-LocalPathSyntax {
 	param(
 		[Parameter(Mandatory = $true)][object]$Path,
@@ -1224,6 +1252,7 @@ function Assert-LocalPathSyntax {
 	if ($canonicalPath.Length -le 3) {
 		throw "$Name cannot be a drive root"
 	}
+	Assert-UsablePathLength $canonicalPath 0 $Name
 
 	foreach ($segment in $canonicalPath.Substring(3).Split('\')) {
 		if (
@@ -1410,12 +1439,18 @@ function New-PrivateSdkRoot {
 	$leaf = "gfw-sdk-arm64-$RunId-$RunAttempt-$($bindingHash.Substring(0, 20))-$Nonce"
 	$candidate = [IO.Path]::GetFullPath((Join-Path $runnerRoot $leaf))
 	Assert-ContainedPath $runnerRoot $candidate
+	# Reject the parent before creating anything beneath it. The ownership
+	# sentinel is written directly inside the new root and every cleanup path
+	# canonicalizes the root again, so a runner.temp that cannot hold both
+	# would otherwise yield a root that can be created but never removed.
+	Assert-UsablePathLength `
+		$candidate ($script:RootSentinelName.Length + 1) 'runner.temp'
 	if (Test-Path -LiteralPath $candidate) {
 		throw 'The unique SDK root already exists'
 	}
 
 	$sentinelValue = "gfw-sdk-arm64-root-v1`n$bindingHash`n$Nonce`n"
-	$sentinelPath = Join-Path $candidate '.gfw-sdk-bootstrap-owner'
+	$sentinelPath = Join-Path $candidate $script:RootSentinelName
 	$item = [IO.Directory]::CreateDirectory($candidate)
 	try {
 		if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
@@ -1509,7 +1544,7 @@ function Remove-OwnedSdkRoot {
 			throw "SDK root cleanup encountered a reparse point at '$($item.FullName)'"
 		}
 	}
-	$sentinelPath = Join-Path $root '.gfw-sdk-bootstrap-owner'
+	$sentinelPath = Join-Path $root $script:RootSentinelName
 	$sentinel = Get-Item -LiteralPath $sentinelPath -Force
 	if (
 		$sentinel.PSIsContainer -or
@@ -2584,6 +2619,18 @@ function New-VerifiedSdkWorktree {
 	if (Test-Path -LiteralPath $indexPath) {
 		throw 'The SDK Git directory contains an unexpected checkout index'
 	}
+	# The locked manifest states every relative path this checkout will
+	# materialize, so the longest of them is the real downstream requirement
+	# on the root. Enforce it before the destination exists rather than
+	# discovering it as a partial checkout that then has to be cleaned up.
+	$longestEntryPath = 0
+	foreach ($entry in $Manifest.Entries) {
+		if ($entry.Path.Length -gt $longestEntryPath) {
+			$longestEntryPath = $entry.Path.Length
+		}
+	}
+	Assert-UsablePathLength `
+		$SdkRoot ($longestEntryPath + 1) 'SDK root'
 	[void][IO.Directory]::CreateDirectory($SdkRoot)
 	[void](New-SafeGitProcess $GitPath @(
 		'-c', 'core.autocrlf=false',

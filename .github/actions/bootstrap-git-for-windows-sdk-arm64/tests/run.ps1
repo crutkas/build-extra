@@ -259,6 +259,7 @@ function Assert-RunnerPlatformFacts {
 
 $script:passed = 0
 $script:failed = 0
+$script:skipped = 0
 
 function Assert-Equal {
 	param(
@@ -274,9 +275,16 @@ function Assert-Equal {
 function Assert-Throws {
 	param(
 		[Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
-		[Parameter(Mandatory = $true)][string]$Pattern,
+		[string]$Pattern,
+		[string]$ExpectedMessage,
 		[string]$ForbiddenPattern
 	)
+
+	$hasPattern = -not [string]::IsNullOrEmpty($Pattern)
+	$hasExact = -not [string]::IsNullOrEmpty($ExpectedMessage)
+	if ($hasPattern -eq $hasExact) {
+		throw 'Assert-Throws needs exactly one of Pattern or ExpectedMessage'
+	}
 
 	$caught = $null
 	try {
@@ -284,8 +292,9 @@ function Assert-Throws {
 	} catch {
 		$caught = $_
 	}
+	$expected = if ($hasExact) { $ExpectedMessage } else { $Pattern }
 	if ($null -eq $caught) {
-		throw "Expected failure matching '$Pattern'"
+		throw "Expected failure matching '$expected'"
 	}
 	$message = $caught.Exception.Message
 	if (
@@ -293,6 +302,19 @@ function Assert-Throws {
 		$message -cmatch $ForbiddenPattern
 	) {
 		throw "Expected no '$ForbiddenPattern', got '$message'"
+	}
+	if ($hasExact) {
+		# Ordinal whole-message equality. A wrapper, prefix, suffix or any
+		# generic error that merely contains the phrase must not satisfy an
+		# assertion that claims to name an exact production gate.
+		if (-not [string]::Equals(
+			$message,
+			$ExpectedMessage,
+			[StringComparison]::Ordinal
+		)) {
+			throw "Expected exactly '$ExpectedMessage', got '$message'"
+		}
+		return
 	}
 	if ($message -cnotmatch $Pattern) {
 		throw "Expected '$Pattern', got '$message'"
@@ -314,6 +336,19 @@ function Invoke-Test {
 		Write-Host $_
 		$script:failed++
 	}
+}
+
+function Skip-Test {
+	param(
+		[Parameter(Mandatory = $true)][string]$Name,
+		[Parameter(Mandatory = $true)][string]$Reason
+	)
+
+	# A capability that cannot be produced here is reported as uncovered. It
+	# never emits 'ok' and never increments the passed count, so an absent
+	# capability can never masquerade as exercised coverage.
+	Write-Host "skip - $Name ($Reason)"
+	$script:skipped++
 }
 
 function Copy-Lock {
@@ -438,7 +473,7 @@ function New-ApprovedLock {
 function Assert-GateStopsBeforeSideEffects {
 	param(
 		[Parameter(Mandatory = $true)][string]$CandidateLockPath,
-		[Parameter(Mandatory = $true)][string]$ExpectedPattern
+		[Parameter(Mandatory = $true)][string]$ExpectedMessage
 	)
 
 	$message = & $script:bootstrapModule {
@@ -492,8 +527,12 @@ function Assert-GateStopsBeforeSideEffects {
 	if ($message -ceq 'SIDE_EFFECT_SENTINEL') {
 		throw 'Admission failure reached a side-effect sentinel'
 	}
-	if ($message -cnotmatch $ExpectedPattern) {
-		throw "Expected '$ExpectedPattern', got '$message'"
+	if (-not [string]::Equals(
+		$message,
+		$ExpectedMessage,
+		[StringComparison]::Ordinal
+	)) {
+		throw "Expected exactly '$ExpectedMessage', got '$message'"
 	}
 }
 
@@ -592,6 +631,32 @@ function Get-TestFileFacts {
 	}
 }
 
+# Win32 path resolution, and therefore production Get-LongPath, stops working
+# at MAX_PATH. The suite drives production New-PrivateSdkRoot beneath
+# $testRoot, and production additionally reserves room for the ownership
+# sentinel inside the root it creates. Derive every reserve from the real leaf
+# formats instead of a threshold that merely happens to fit the current tests.
+$script:MaxUsablePathLength = 259
+$script:TestRootSentinelName = '.gfw-sdk-bootstrap-owner'
+$script:TestRootLeafSample =
+	"gfw-sdk-bootstrap-tests-$('0' * 32)"
+# Widest run identifiers any test passes to New-PrivateSdkRoot are '777' and
+# a single-digit attempt; the binding hash and nonce widths are fixed.
+$script:WidestPrivateRootLeaf =
+	"gfw-sdk-arm64-777-1-$('0' * 20)-$('0' * 32)"
+# What any directory must reserve to host a private SDK root plus its sentinel.
+$script:PrivateRootReserve =
+	1 + $script:WidestPrivateRootLeaf.Length +
+	1 + $script:TestRootSentinelName.Length
+# Deepest intermediate directory the suite interposes between $testRoot and a
+# private SDK root. The startup gate has to account for it, otherwise a base
+# it admits still produces late failures part way through the run.
+$script:DeepestTestHolder = 'cleanup-failure'
+$script:TestRootReserve =
+	1 + $script:DeepestTestHolder.Length + $script:PrivateRootReserve
+$script:BaseReserve =
+	1 + $script:TestRootLeafSample.Length + $script:TestRootReserve
+
 function Resolve-TestRootBase {
 	param(
 		[AllowNull()]
@@ -601,7 +666,8 @@ function Resolve-TestRootBase {
 		[AllowNull()]
 		[AllowEmptyString()]
 		[AllowEmptyCollection()]
-		[object]$ProcessTemp
+		[object]$ProcessTemp,
+		[int]$ReservedChildLength = $script:TestRootReserve
 	)
 
 	$candidate = $null
@@ -628,6 +694,9 @@ function Resolve-TestRootBase {
 	}
 
 	$name = "test root base ($source)"
+	if ($ReservedChildLength -lt 0) {
+		throw 'test root base cannot reserve a negative length'
+	}
 	$trimmed = $candidate.TrimEnd('\')
 	if (
 		-not [IO.Path]::IsPathFullyQualified($candidate) -or
@@ -673,6 +742,14 @@ function Resolve-TestRootBase {
 			throw "$name resolves to a shared installation root"
 		}
 	}
+	# Refuse an environment that cannot satisfy the production path invariant
+	# before hundreds of tests are registered against it. An early refusal has
+	# to be exact, loud and residue free rather than a handful of late
+	# failures buried in an otherwise green run.
+	$headroom = $script:MaxUsablePathLength - $canonical.Length
+	if ($headroom -lt $ReservedChildLength) {
+		throw "$name leaves too little room for the SDK bootstrap invariant"
+	}
 	return $canonical
 }
 
@@ -694,7 +771,7 @@ function Get-TestVolumeFileSystem {
 $script:AliasRejectionPattern =
 	'short-name alias|relative or noncanonical path components'
 $testRootBase = Resolve-TestRootBase `
-	$env:RUNNER_TEMP ([IO.Path]::GetTempPath())
+	$env:RUNNER_TEMP ([IO.Path]::GetTempPath()) $script:BaseReserve
 $testRoot = Join-Path $testRootBase (
 	"gfw-sdk-bootstrap-tests-$([Guid]::NewGuid().ToString('N'))")
 [void][IO.Directory]::CreateDirectory($testRoot)
@@ -702,6 +779,12 @@ try {
 	$verifiedTestRoot = Assert-SafeExistingDirectory $testRoot 'test root'
 	if ($verifiedTestRoot -cne $testRoot) {
 		throw "The test root '$testRoot' is not its own canonical path"
+	}
+	if (
+		$script:MaxUsablePathLength - $testRoot.Length -lt
+		$script:TestRootReserve
+	) {
+		throw "The test root '$testRoot' cannot hold a private SDK root"
 	}
 } catch {
 	Remove-Item -LiteralPath $testRoot -Recurse -Force
@@ -1281,14 +1364,15 @@ try {
 
 	Invoke-Test 'pending lock stops every side-effect sentinel' {
 		Assert-GateStopsBeforeSideEffects $lockPath `
-			'not independently admitted'
+			'The pinned SDK snapshot is not independently admitted'
 	}
 
 	Invoke-Test 'malformed lock stops every side-effect sentinel' {
 		$malformed = Copy-Lock $lock
 		$malformed.admission.status = [object[]]@('approved')
 		$malformedPath = Write-LockFixture $malformed 'malformed-ordering'
-		Assert-GateStopsBeforeSideEffects $malformedPath 'JSON string'
+		Assert-GateStopsBeforeSideEffects $malformedPath `
+			'lock.admission.status must be a JSON string'
 	}
 
 	Invoke-Test 'callers cannot supply a lock path or approval switch' {
@@ -1785,7 +1869,9 @@ try {
 		New-TestJunction $junction $junctionTarget
 		Assert-Throws {
 			Assert-SafeExistingDirectory $junction
-		} 'reparse point' -ForbiddenPattern $script:AliasRejectionPattern
+		} -ExpectedMessage (
+			"path traverses a reparse point at '$junction'"
+		) -ForbiddenPattern $script:AliasRejectionPattern
 		Assert-Throws {
 			Assert-ContainedPath $testRoot (
 				Join-Path $testRoot '..\escape')
@@ -1813,7 +1899,8 @@ try {
 				-Job test `
 				-MatrixDiscriminator arm64 `
 				-Nonce $nonce
-		} 'already exists' -ForbiddenPattern $script:AliasRejectionPattern
+		} -ExpectedMessage 'The unique SDK root already exists' `
+			-ForbiddenPattern $script:AliasRejectionPattern
 		Remove-OwnedSdkRoot $ownedRoot
 		if (Test-Path -LiteralPath $root) {
 			throw 'Owned private root was not removed'
@@ -1862,7 +1949,11 @@ try {
 		if ($message -cmatch $script:AliasRejectionPattern) {
 			throw "Post-root failure rejected the test root: $message"
 		}
-		if ($message -cnotmatch 'after-root-sentinel') {
+		if (-not [string]::Equals(
+			$message,
+			'after-root-sentinel',
+			[StringComparison]::Ordinal
+		)) {
 			throw "Unexpected post-root failure: $message"
 		}
 		$residue = @(Get-ChildItem -LiteralPath $testRoot -Directory |
@@ -1918,23 +2009,52 @@ try {
 		$ignored = Join-Path $testRoot 'process-temp-ignored'
 		[void][IO.Directory]::CreateDirectory($preferred)
 		[void][IO.Directory]::CreateDirectory($ignored)
-		Assert-Equal (Resolve-TestRootBase $preferred $ignored) $preferred
-		Assert-Equal (Resolve-TestRootBase "$preferred\" $ignored) $preferred
+		# These cases exercise source selection and canonicalization, not the
+		# capacity to host a private SDK root, so they reserve nothing.
+		Assert-Equal (Resolve-TestRootBase $preferred $ignored 0) $preferred
+		Assert-Equal (
+			Resolve-TestRootBase "$preferred\" $ignored 0) $preferred
 	}
 
 	Invoke-Test 'test root base falls back to TEMP without RUNNER_TEMP' {
 		$fallback = Join-Path $testRoot 'process-temp-fallback'
 		[void][IO.Directory]::CreateDirectory($fallback)
 		foreach ($absent in @($null, '', '   ')) {
-			Assert-Equal (Resolve-TestRootBase $absent $fallback) $fallback
+			Assert-Equal (Resolve-TestRootBase $absent $fallback 0) $fallback
 		}
 	}
 
 	Invoke-Test 'test root base accepts a hosted RUNNER_TEMP shape' {
 		$hosted = Join-Path $testRoot 'a\_temp'
 		[void][IO.Directory]::CreateDirectory($hosted)
-		Assert-Equal (Resolve-TestRootBase $hosted $null) $hosted
+		Assert-Equal (Resolve-TestRootBase $hosted $null 0) $hosted
 		Assert-Equal (Assert-LocalPathSyntax $hosted 'hosted base') $hosted
+	}
+
+	Invoke-Test 'test root base reserves the suite invariant by default' {
+		# Read the declared default rather than probing for it, so the proof
+		# does not itself need path headroom the boundary case cannot spare.
+		$parameters = (Get-Command Resolve-TestRootBase).ScriptBlock.Ast.Body.
+			ParamBlock.Parameters
+		$declared = @(
+			$parameters |
+				Where-Object { $_.Name.VariablePath.UserPath -ceq
+					'ReservedChildLength' }
+		)
+		Assert-Equal $declared.Count 1
+		Assert-Equal $declared[0].DefaultValue.Extent.Text `
+			'$script:TestRootReserve'
+		# The startup gate guarantees $testRoot itself satisfies the default.
+		Assert-Equal (Resolve-TestRootBase $testRoot $null) $testRoot
+		$headroom = $script:MaxUsablePathLength - $testRoot.Length
+		if ($headroom -lt $script:TestRootReserve) {
+			throw 'The verified test root does not satisfy its own reserve'
+		}
+		Assert-Throws {
+			Resolve-TestRootBase $testRoot $null ($headroom + 1)
+		} -ExpectedMessage (
+			'test root base (RUNNER_TEMP) leaves too little room ' +
+			'for the SDK bootstrap invariant')
 	}
 
 	Invoke-Test 'test root base rejects a hosted short-name TEMP shape' {
@@ -1963,21 +2083,15 @@ try {
 			} 'shared installation root'
 		}
 	} else {
-		Invoke-Test 'DOS 8.3 alias canonicalization is unavailable here' {
-			if ([IO.Directory]::Exists($aliasCandidate)) {
-				throw "'$aliasCandidate' exists but did not expand"
-			}
-			Assert-Throws {
-				Get-LongPath $aliasCandidate
-			} 'Cannot canonicalize path'
-		}
+		Skip-Test 'test root base canonicalizes an available 8.3 alias' (
+			"no genuine DOS 8.3 alias is available at '$aliasCandidate'")
 	}
 
 	Invoke-Test 'test root base preserves a safe non-alias path' {
 		$control = Join-Path $testRoot 'non-alias-control-directory'
 		[void][IO.Directory]::CreateDirectory($control)
 		Assert-Equal (Get-LongPath $control) $control
-		Assert-Equal (Resolve-TestRootBase $control $null) $control
+		Assert-Equal (Resolve-TestRootBase $control $null 0) $control
 		$windowsRoot = [Environment]::GetFolderPath(
 			[Environment+SpecialFolder]::Windows)
 		$windowsLong = Get-LongPath $windowsRoot
@@ -2074,6 +2188,254 @@ try {
 		} 'not independently admitted' -ForbiddenPattern 'INDEPENDENTLY'
 	}
 
+	Invoke-Test 'usable path length bound is derived, not assumed' {
+		Assert-Equal $script:WidestPrivateRootLeaf.Length 73
+		Assert-Equal $script:PrivateRootReserve 99
+		Assert-Equal $script:TestRootReserve 115
+		Assert-Equal $script:BaseReserve 172
+		$probe = & $bootstrapModule {
+			[pscustomobject]@{
+				Limit = $script:MaxUsablePathLength
+				Sentinel = $script:RootSentinelName
+			}
+		}
+		Assert-Equal $probe.Limit $script:MaxUsablePathLength
+		Assert-Equal $probe.Sentinel $script:TestRootSentinelName
+		# Only a holder that itself hosts a private SDK root feeds the
+		# reserve. Holders that host a worktree instead are bounded by the
+		# manifest headroom check, which is exercised separately.
+		$deepest = ''
+		foreach ($holder in @('cleanup-failure', 'headroom')) {
+			if ($holder.Length -gt $deepest.Length) {
+				$deepest = $holder
+			}
+		}
+		Assert-Equal $deepest $script:DeepestTestHolder
+	}
+
+	Invoke-Test 'Win32 canonicalization fails exactly at MAX_PATH' {
+		$limit = $script:MaxUsablePathLength
+		$holder = Join-Path $testRoot 'maxpath'
+		[void][IO.Directory]::CreateDirectory($holder)
+		foreach ($length in @($limit, ($limit + 1))) {
+			$room = $length - $holder.Length - 1
+			if ($room -lt 1) {
+				throw "The test root leaves no room to probe length $length"
+			}
+			$path = Join-Path $holder ('p' * $room)
+			[void][IO.Directory]::CreateDirectory($path)
+			Assert-Equal $path.Length $length
+			if (-not [IO.Directory]::Exists($path)) {
+				throw "The .NET APIs refused to create a $length path"
+			}
+			if ($length -le $limit) {
+				Assert-Equal (Get-LongPath $path) $path
+			} else {
+				Assert-Throws {
+					Get-LongPath $path
+				} -ExpectedMessage (
+					"Cannot canonicalize path '$path' (Win32 error 3)")
+			}
+			[IO.Directory]::Delete($path)
+		}
+		Remove-Item -LiteralPath $holder -Recurse -Force
+	}
+
+	Invoke-Test 'private roots refuse a parent without sentinel headroom' {
+		$holder = Join-Path $testRoot 'headroom'
+		[void][IO.Directory]::CreateDirectory($holder)
+		$reserve = $script:PrivateRootReserve
+		foreach ($offset in @(-1, 0, 1)) {
+			$target = $script:MaxUsablePathLength - $reserve + $offset
+			$room = $target - $holder.Length - 1
+			if ($room -lt 1) {
+				throw "The test root leaves no room to probe a $target parent"
+			}
+			$parent = Join-Path $holder ('h' * $room)
+			[void][IO.Directory]::CreateDirectory($parent)
+			Assert-Equal $parent.Length $target
+			$canary = Join-Path $parent 'canary.txt'
+			[IO.File]::WriteAllText(
+				$canary, "canary`n", [Text.UTF8Encoding]::new($false))
+			$nonce = '0' * 32
+			if ($offset -le 0) {
+				$owned = New-PrivateSdkRoot `
+					-RunnerTemp $parent `
+					-RunId '777' `
+					-RunAttempt '1' `
+					-Job headroom `
+					-MatrixDiscriminator arm64 `
+					-Nonce $nonce
+				Assert-Equal (Get-LongPath $owned.Path) $owned.Path
+				Remove-OwnedSdkRoot $owned
+				if (Test-Path -LiteralPath $owned.Path) {
+					throw 'The bounded private root survived cleanup'
+				}
+			} else {
+				Assert-Throws {
+					New-PrivateSdkRoot `
+						-RunnerTemp $parent `
+						-RunId '777' `
+						-RunAttempt '1' `
+						-Job headroom `
+						-MatrixDiscriminator arm64 `
+						-Nonce $nonce
+				} -ExpectedMessage (
+					'runner.temp exceeds the usable Windows path length')
+			}
+			$residue = @(Get-ChildItem -LiteralPath $parent -Force |
+				Where-Object {
+					$_.Name.StartsWith(
+						'gfw-sdk-arm64-', [StringComparison]::Ordinal)
+				})
+			Assert-Equal $residue.Count 0
+			if (-not (Test-Path -LiteralPath $canary -PathType Leaf)) {
+				throw 'Cleanup removed the canary beside the private root'
+			}
+			Remove-Item -LiteralPath $parent -Recurse -Force
+		}
+	}
+
+	Invoke-Test 'worktrees refuse a root without locked manifest headroom' {
+		$longest = 0
+		foreach ($entry in $fixtureManifest.Entries) {
+			if ($entry.Path.Length -gt $longest) {
+				$longest = $entry.Path.Length
+			}
+		}
+		if ($longest -le 0) {
+			throw 'The fixture manifest has no relative paths'
+		}
+		$holder = Join-Path $testRoot 'manifest-headroom'
+		[void][IO.Directory]::CreateDirectory($holder)
+		$target = $script:MaxUsablePathLength - $longest
+		$room = $target - $holder.Length - 1
+		if ($room -lt 1) {
+			throw "The test root leaves no room to probe a $target root"
+		}
+		$root = Join-Path $holder ('m' * $room)
+		Assert-Equal $root.Length $target
+		$indexPath = Join-Path $bareRepo 'index'
+		if (Test-Path -LiteralPath $indexPath) {
+			Remove-Item -LiteralPath $indexPath -Force
+		}
+		Assert-Throws {
+			New-VerifiedSdkWorktree `
+				$gitPath $bareRepo $fixtureCommit $root $fixtureManifest
+		} -ExpectedMessage (
+			'SDK root exceeds the usable Windows path length')
+		if (Test-Path -LiteralPath $root) {
+			throw 'The refused worktree destination was created anyway'
+		}
+	}
+
+	Invoke-Test 'test root base refuses an unusable environment base' {
+		$probe = Join-Path $testRoot 'base-bound'
+		[void][IO.Directory]::CreateDirectory($probe)
+		# Vary the reservation rather than the path length so the boundary is
+		# exercised exactly without needing a base that is itself near the
+		# limit, which the suite's own root already consumes room for.
+		$exact = $script:MaxUsablePathLength - $probe.Length
+		Assert-Equal (Resolve-TestRootBase $probe $null $exact) $probe
+		Assert-Equal (Resolve-TestRootBase $probe $null ($exact - 1)) $probe
+		Assert-Throws {
+			Resolve-TestRootBase $probe $null ($exact + 1)
+		} -ExpectedMessage (
+			'test root base (RUNNER_TEMP) leaves too little room ' +
+			'for the SDK bootstrap invariant')
+		Assert-Throws {
+			Resolve-TestRootBase $null $probe ($exact + 1)
+		} -ExpectedMessage (
+			'test root base (TEMP) leaves too little room ' +
+			'for the SDK bootstrap invariant')
+		Assert-Throws {
+			Resolve-TestRootBase $probe $null -1
+		} -ExpectedMessage 'test root base cannot reserve a negative length'
+		Remove-Item -LiteralPath $probe -Recurse -Force
+	}
+
+	Invoke-Test 'sentinel-bound cleanup failure is explicit and retains identity' {
+		$parent = Join-Path $testRoot 'cleanup-failure'
+		[void][IO.Directory]::CreateDirectory($parent)
+		$owned = New-PrivateSdkRoot `
+			-RunnerTemp $parent `
+			-RunId '900' `
+			-RunAttempt '1' `
+			-Job cleanup `
+			-MatrixDiscriminator arm64 `
+			-Nonce ('c' * 32)
+		$tampered = [pscustomobject][ordered]@{
+			Path = $owned.Path
+			RunnerRoot = $owned.RunnerRoot
+			SentinelValue = "gfw-sdk-arm64-root-v1`nwrong`nwrong`n"
+		}
+		Assert-Throws {
+			Remove-OwnedSdkRoot $tampered
+		} -ExpectedMessage 'SDK root cleanup sentinel does not match'
+		if (-not (Test-Path -LiteralPath $owned.Path -PathType Container)) {
+			throw 'A refused cleanup removed the root anyway'
+		}
+		Remove-OwnedSdkRoot $owned
+		if (Test-Path -LiteralPath $owned.Path) {
+			throw 'The retried cleanup did not remove the owned root'
+		}
+		Remove-Item -LiteralPath $parent -Recurse -Force
+	}
+
+	Invoke-Test 'exact message assertions reject impostors' {
+		$exact = 'The unique SDK root already exists'
+		Assert-Throws { throw $exact } -ExpectedMessage $exact
+		foreach ($impostor in @(
+			"wrapper: $exact",
+			"$exact was never reached",
+			"$exact ",
+			" $exact",
+			$exact.ToUpperInvariant(),
+			'already exists'
+		)) {
+			Assert-Throws {
+				Assert-Throws { throw $impostor } -ExpectedMessage $exact
+			} "^Expected exactly '"
+		}
+		Assert-Throws {
+			Assert-Throws { } -ExpectedMessage $exact
+		} "^Expected failure matching '"
+		Assert-Throws {
+			Assert-Throws { throw 'x' } -Pattern 'x' -ExpectedMessage $exact
+		} -ExpectedMessage (
+			'Assert-Throws needs exactly one of Pattern or ExpectedMessage')
+		Assert-Throws {
+			Assert-Throws { throw 'x' }
+		} -ExpectedMessage (
+			'Assert-Throws needs exactly one of Pattern or ExpectedMessage')
+	}
+
+	Invoke-Test 'exact message assertions treat metacharacters literally' {
+		$literal = 'value (a|b) [c] .* ended'
+		Assert-Throws { throw $literal } -ExpectedMessage $literal
+		Assert-Throws {
+			Assert-Throws { throw 'value X ended' } -ExpectedMessage $literal
+		} "^Expected exactly '"
+		Assert-Throws {
+			Assert-Throws {
+				throw $literal
+			} -ExpectedMessage $literal -ForbiddenPattern 'ended'
+		} "^Expected no 'ended', got '"
+		Assert-Throws {
+			throw $literal
+		} -ExpectedMessage $literal -ForbiddenPattern 'ENDED'
+	}
+
+	Invoke-Test 'gate assertions reject a wrapped admission message' {
+		$exact = 'The pinned SDK snapshot is not independently admitted'
+		Assert-Throws {
+			Assert-GateStopsBeforeSideEffects $lockPath "wrapper: $exact"
+		} "^Expected exactly 'wrapper: $([regex]::Escape($exact))', got '"
+		Assert-Throws {
+			Assert-GateStopsBeforeSideEffects $lockPath 'admitted'
+		} "^Expected exactly 'admitted', got '"
+	}
+
 	Invoke-Test 'runtime source forbids cache package and extra network operations' {
 		$runtimeSource = [IO.File]::ReadAllText($entrypointPath) +
 			[IO.File]::ReadAllText($modulePath) +
@@ -2097,7 +2459,7 @@ try {
 	}
 }
 
-Write-Host "$script:passed passed, $script:failed failed"
+Write-Host "$script:passed passed, $script:failed failed, $script:skipped skipped"
 if ($script:failed -ne 0) {
 	throw "$script:failed adversarial SDK bootstrap tests failed"
 }
