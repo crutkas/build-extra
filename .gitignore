@@ -66,3 +66,5 @@ edit-git-bash.exe
 !/archive/root/etc/protocols
 !/archive/root/etc/services
 /versions/cached-files/
+/arm64-dos2unix/mingw-w64-clang-aarch64-dos2unix-7.5.6-1-any.pkg.tar.zst
+/arm64-dos2unix/.*

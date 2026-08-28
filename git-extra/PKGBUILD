@@ -4,7 +4,7 @@ _realname="git-extra"
 pkgbase="mingw-w64-${_realname}"
 pkgname=("${MINGW_PACKAGE_PREFIX}-${_realname}")
 _ver_base=1.1
-pkgver=1.1.725.fb3ee6347
+pkgver=1.1.731.a70fd8512
 pkgrel=1
 pkgdesc="Git for Windows extra files"
 arch=('any')
@@ -197,12 +197,14 @@ package() {
 package_mingw-w64-x86_64-git-extra() {
   conflicts=('git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-i686-git-extra' 'mingw-w64-ucrt-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   package
 }
 
 package_mingw-w64-ucrt-x86_64-git-extra() {
   conflicts=('git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-i686-git-extra' 'mingw-w64-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   depends+=("${MINGW_PACKAGE_PREFIX}-docx2txt-rs")
   package
 }
@@ -210,6 +212,7 @@ package_mingw-w64-ucrt-x86_64-git-extra() {
 package_mingw-w64-i686-git-extra() {
   conflicts=('git-extra' 'mingw-w64-x86_64-git-extra' 'mingw-w64-clang-aarch64-git-extra' 'mingw-w64-ucrt-x86_64-git-extra')
   provides=('git-extra')
+  depends+=('dos2unix')
   package
 }
 
