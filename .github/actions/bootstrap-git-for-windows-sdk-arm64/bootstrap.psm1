@@ -36,6 +36,9 @@ $script:GitControlPathAnalyzedVersion = '2.53.0'
 $script:GitDirectoryName = 'repository.git'
 $script:SdkDirectoryName = 'sdk'
 $script:GitTemplateDirectoryName = 'empty-git-template'
+$script:GitIsolationDirectoryPrefix = 'git-process-'
+$script:GitGlobalConfigName = 'global.config'
+$script:GitHooksDirectoryName = 'hooks'
 # The bootstrap creates its bare mirror at <root>\repository.git and fetches
 # into it long before the worktree gate can read the locked manifest, so the
 # root has to be budgeted for Git's own control paths as well. The deepest
@@ -1818,91 +1821,116 @@ function New-SafeGitProcess {
 		[int[]]$AllowedExitCodes = @(0)
 	)
 
-	$info = [Diagnostics.ProcessStartInfo]::new()
-	$info.FileName = $GitPath
-	$info.UseShellExecute = $false
-	$info.RedirectStandardOutput = $true
-	$info.RedirectStandardError = $true
-	$info.StandardOutputEncoding = $script:Utf8
-	$info.StandardErrorEncoding = $script:Utf8
-	$info.CreateNoWindow = $true
-	$systemDirectory = [Environment]::GetFolderPath(
-		[Environment+SpecialFolder]::System)
-	$windowsDirectory = [Environment]::GetFolderPath(
-		[Environment+SpecialFolder]::Windows)
-	$info.WorkingDirectory = $systemDirectory
-
-	foreach ($argument in @(
-		'--no-pager',
-		'--no-replace-objects',
-		'-c', 'core.hooksPath=NUL',
-		'-c', 'credential.helper=',
-		'-c', 'core.askPass=',
-		'-c', 'credential.interactive=never',
-		'-c', 'protocol.file.allow=never',
-		'-c', 'protocol.ext.allow=never',
-		'-c', 'submodule.recurse=false',
-		'-c', 'maintenance.auto=false',
-		'-c', 'gc.auto=0'
-	) + $Arguments) {
-		[void]$info.ArgumentList.Add($argument)
-	}
-
-	$info.Environment.Clear()
-	$info.Environment['SystemRoot'] = $windowsDirectory
-	$info.Environment['windir'] = $windowsDirectory
-	$info.Environment['ComSpec'] = Join-Path $systemDirectory 'cmd.exe'
-	$info.Environment['PATHEXT'] = '.COM;.EXE;.BAT;.CMD'
-	$info.Environment['PATH'] = if ($null -ne $script:TrustedGitRuntimePath) {
-		$script:TrustedGitRuntimePath
-	} else {
-		"$systemDirectory;$windowsDirectory"
-	}
-	$privateTemp = if ($null -ne $script:PrivateTempPath) {
+	$isolationParent = if (
+		$null -ne $script:PrivateTempPath -and
+		(Test-Path -LiteralPath $script:PrivateTempPath -PathType Container)
+	) {
 		$script:PrivateTempPath
 	} else {
 		[IO.Path]::GetTempPath()
 	}
-	$info.Environment['TEMP'] = $privateTemp
-	$info.Environment['TMP'] = $privateTemp
-	$info.Environment['TMPDIR'] = $privateTemp
-	$info.Environment['LANG'] = 'C'
-	$info.Environment['LC_ALL'] = 'C'
-	$info.Environment['GIT_CONFIG_NOSYSTEM'] = '1'
-	$info.Environment['GIT_CONFIG_GLOBAL'] = 'NUL'
-	$info.Environment['GIT_TERMINAL_PROMPT'] = '0'
-	$info.Environment['GCM_INTERACTIVE'] = 'Never'
-	$info.Environment['GIT_ATTR_NOSYSTEM'] = '1'
-	$info.Environment['GIT_LFS_SKIP_SMUDGE'] = '1'
-	$info.Environment['GIT_OPTIONAL_LOCKS'] = '0'
-	if ($null -ne $script:TrustedGitExecPath) {
-		$info.Environment['GIT_EXEC_PATH'] = $script:TrustedGitExecPath
-	}
+	$isolationRoot = Join-Path $isolationParent (
+		$script:GitIsolationDirectoryPrefix +
+			[Guid]::NewGuid().ToString('N'))
+	$globalConfigPath = Join-Path `
+		$isolationRoot $script:GitGlobalConfigName
+	$hooksPath = Join-Path $isolationRoot $script:GitHooksDirectoryName
 
-	$process = [Diagnostics.Process]::new()
-	$process.StartInfo = $info
-	$output = [IO.MemoryStream]::new()
 	try {
-		if (-not $process.Start()) {
-			throw 'Could not start Git'
+		[void][IO.Directory]::CreateDirectory($isolationRoot)
+		[IO.File]::WriteAllText(
+			$globalConfigPath,
+			'',
+			[Text.UTF8Encoding]::new($false))
+		[void][IO.Directory]::CreateDirectory($hooksPath)
+
+		$info = [Diagnostics.ProcessStartInfo]::new()
+		$info.FileName = $GitPath
+		$info.UseShellExecute = $false
+		$info.RedirectStandardOutput = $true
+		$info.RedirectStandardError = $true
+		$info.StandardOutputEncoding = $script:Utf8
+		$info.StandardErrorEncoding = $script:Utf8
+		$info.CreateNoWindow = $true
+		$systemDirectory = [Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::System)
+		$windowsDirectory = [Environment]::GetFolderPath(
+			[Environment+SpecialFolder]::Windows)
+		$info.WorkingDirectory = $systemDirectory
+
+		foreach ($argument in @(
+			'--no-pager',
+			'--no-replace-objects',
+			'-c', "core.hooksPath=$hooksPath",
+			'-c', 'credential.helper=',
+			'-c', 'core.askPass=',
+			'-c', 'credential.interactive=never',
+			'-c', 'protocol.file.allow=never',
+			'-c', 'protocol.ext.allow=never',
+			'-c', 'submodule.recurse=false',
+			'-c', 'maintenance.auto=false',
+			'-c', 'gc.auto=0'
+		) + $Arguments) {
+			[void]$info.ArgumentList.Add($argument)
 		}
-		$stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($output)
-		$stderrTask = $process.StandardError.ReadToEndAsync()
-		$process.WaitForExit()
-		[void]$stdoutTask.GetAwaiter().GetResult()
-		$stderr = $stderrTask.GetAwaiter().GetResult()
-		if ($process.ExitCode -notin $AllowedExitCodes) {
-			$displayArguments = $Arguments -join ' '
-			throw "Git failed ($($process.ExitCode)): git $displayArguments`n$($stderr.Trim())"
+
+		$info.Environment.Clear()
+		$info.Environment['SystemRoot'] = $windowsDirectory
+		$info.Environment['windir'] = $windowsDirectory
+		$info.Environment['ComSpec'] = Join-Path $systemDirectory 'cmd.exe'
+		$info.Environment['PATHEXT'] = '.COM;.EXE;.BAT;.CMD'
+		$info.Environment['PATH'] = if (
+			$null -ne $script:TrustedGitRuntimePath
+		) {
+			$script:TrustedGitRuntimePath
+		} else {
+			"$systemDirectory;$windowsDirectory"
 		}
-		return [pscustomobject]@{
-			ExitCode = $process.ExitCode
-			Stdout = $output.ToArray()
-			Stderr = $stderr
+		$info.Environment['TEMP'] = $isolationParent
+		$info.Environment['TMP'] = $isolationParent
+		$info.Environment['TMPDIR'] = $isolationParent
+		$info.Environment['LANG'] = 'C'
+		$info.Environment['LC_ALL'] = 'C'
+		$info.Environment['GIT_CONFIG_NOSYSTEM'] = '1'
+		$info.Environment['GIT_CONFIG_GLOBAL'] = $globalConfigPath
+		$info.Environment['GIT_TERMINAL_PROMPT'] = '0'
+		$info.Environment['GCM_INTERACTIVE'] = 'Never'
+		$info.Environment['GIT_ATTR_NOSYSTEM'] = '1'
+		$info.Environment['GIT_LFS_SKIP_SMUDGE'] = '1'
+		$info.Environment['GIT_OPTIONAL_LOCKS'] = '0'
+		if ($null -ne $script:TrustedGitExecPath) {
+			$info.Environment['GIT_EXEC_PATH'] = $script:TrustedGitExecPath
+		}
+
+		$process = [Diagnostics.Process]::new()
+		$process.StartInfo = $info
+		$output = [IO.MemoryStream]::new()
+		try {
+			if (-not $process.Start()) {
+				throw 'Could not start Git'
+			}
+			$stdoutTask = $process.StandardOutput.BaseStream.CopyToAsync($output)
+			$stderrTask = $process.StandardError.ReadToEndAsync()
+			$process.WaitForExit()
+			[void]$stdoutTask.GetAwaiter().GetResult()
+			$stderr = $stderrTask.GetAwaiter().GetResult()
+			if ($process.ExitCode -notin $AllowedExitCodes) {
+				$displayArguments = $Arguments -join ' '
+				throw "Git failed ($($process.ExitCode)): git $displayArguments`n$($stderr.Trim())"
+			}
+			return [pscustomobject]@{
+				ExitCode = $process.ExitCode
+				Stdout = $output.ToArray()
+				Stderr = $stderr
+			}
+		} finally {
+			$output.Dispose()
+			$process.Dispose()
 		}
 	} finally {
-		$output.Dispose()
-		$process.Dispose()
+		if (Test-Path -LiteralPath $isolationRoot) {
+			Remove-Item -LiteralPath $isolationRoot -Recurse -Force
+		}
 	}
 }
 

@@ -314,6 +314,7 @@ $script:passed = 0
 $script:failed = 0
 $script:skipped = 0
 $script:adsCapabilitySupported = $false
+$script:TestGitHooksPath = $null
 
 function Assert-Equal {
 	param(
@@ -598,7 +599,7 @@ function Invoke-TestGit {
 
 	& $GitPath `
 		--no-pager `
-		-c core.hooksPath=NUL `
+		-c "core.hooksPath=$script:TestGitHooksPath" `
 		-c credential.helper= `
 		@Arguments
 	if ($LASTEXITCODE -ne 0) {
@@ -928,10 +929,22 @@ try {
 	throw
 }
 
-$savedNoSystem = $env:GIT_CONFIG_NOSYSTEM
-$savedGlobal = $env:GIT_CONFIG_GLOBAL
+$savedGitConfigEnvironment = @{}
+foreach ($entry in @(Get-ChildItem Env: | Where-Object {
+	$_.Name.StartsWith('GIT_CONFIG_', [StringComparison]::Ordinal)
+})) {
+	$savedGitConfigEnvironment[$entry.Name] = $entry.Value
+	Remove-Item -LiteralPath "Env:$($entry.Name)"
+}
+$testGitConfigPath = Join-Path $testRoot 'empty-git-config'
+$script:TestGitHooksPath = Join-Path $testRoot 'empty-git-hooks'
+[IO.File]::WriteAllText(
+	$testGitConfigPath,
+	'',
+	[Text.UTF8Encoding]::new($false))
+[void][IO.Directory]::CreateDirectory($script:TestGitHooksPath)
 $env:GIT_CONFIG_NOSYSTEM = '1'
-$env:GIT_CONFIG_GLOBAL = 'NUL'
+$env:GIT_CONFIG_GLOBAL = $testGitConfigPath
 
 try {
 	$gitPath = (Get-Command git.exe -CommandType Application |
@@ -2779,8 +2792,15 @@ try {
 		Assert-Equal $fetches 1
 	}
 } finally {
-	$env:GIT_CONFIG_NOSYSTEM = $savedNoSystem
-	$env:GIT_CONFIG_GLOBAL = $savedGlobal
+	foreach ($entry in @(Get-ChildItem Env: | Where-Object {
+		$_.Name.StartsWith('GIT_CONFIG_', [StringComparison]::Ordinal)
+	})) {
+		Remove-Item -LiteralPath "Env:$($entry.Name)"
+	}
+	foreach ($name in $savedGitConfigEnvironment.Keys) {
+		Set-Item -LiteralPath "Env:$name" `
+			-Value $savedGitConfigEnvironment[$name]
+	}
 	if (Test-Path -LiteralPath $testRoot) {
 		Remove-Item -LiteralPath $testRoot -Recurse -Force
 	}
