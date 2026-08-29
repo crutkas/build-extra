@@ -8,6 +8,8 @@ const fs = require('fs')
 const https = require('https')
 const os = require('os')
 const path = require('path')
+const yaml = require('js-yaml')
+const yamlPackage = require('js-yaml/package.json')
 
 const COPILOT_COAUTHOR = 'Co-authored-by: Copilot App <223556219+Copilot@users.noreply.github.com>'
 const SESSION_TRAILER_PREFIX = 'Copilot-Session: '
@@ -16,6 +18,10 @@ const SHA = /^[0-9a-f]{40}$/
 const DIGEST = /^sha256:[0-9a-f]{64}$/
 const TRUSTED_ADMISSION_COMMAND =
   'node trusted/validate-arm64-governance.js admission trusted "$CANDIDATE_REPOSITORY" "$BASE_SHA" "$HEAD_SHA"'
+const TRUSTED_DEPENDENCY_COMMAND =
+  'npm ci --prefix trusted --ignore-scripts --no-audit --no-fund'
+const TRUSTED_TEST_COMMAND = 'npm --prefix trusted run test:governance'
+const TRUSTED_MUTATION_COMMAND = 'npm --prefix trusted run test:governance:mutations'
 
 const REQUIRED_ACTION_PROVENANCE = Object.freeze({
   'actions/checkout': {
@@ -64,9 +70,12 @@ const REQUIRED_GOVERNANCE_SOURCES = Object.freeze([
   '.github/workflows/add-release-note.yml',
   '.github/workflows/main.yml',
   'add-release-note.js',
+  'package-lock.json',
+  'package.json',
   'tests/fixtures/arm64-ancestry-api.json',
   'tests/fixtures/arm64-release-api.json',
   'validate-arm64-governance.js',
+  'validate-arm64-governance.mutation.js',
   'validate-arm64-governance.test.js'
 ])
 
@@ -85,50 +94,35 @@ const compareDeniedSources = (left, right) => {
   return left < right ? -1 : left > right ? 1 : 0
 }
 
-const POWERSHELL_YAML = [
-  "$ErrorActionPreference = 'Stop'",
-  'Import-Module powershell-yaml -ErrorAction Stop',
-  '$module = Get-Module powershell-yaml',
-  "if ($module.Version.ToString() -ne '0.4.12') { throw 'powershell-yaml 0.4.12 is required' }",
-  '$text = [Console]::In.ReadToEnd()',
-  '$stream = & $module { param($yaml) ' +
-    '$documents = @(Get-YamlDocuments -Yaml $yaml -UseMergingParser); ' +
-    '$values = [System.Collections.Generic.List[object]]::new(); ' +
-    '$empty = [System.Collections.Generic.List[bool]]::new(); ' +
-    'foreach ($document in $documents) { ' +
-      '$isEmpty = $null -eq $document.RootNode; $empty.Add($isEmpty); ' +
-      'if ($isEmpty) { $values.Add($null) } ' +
-      'else { $values.Add((Convert-YamlDocumentToPSObject $document.RootNode -Ordered)) } ' +
-    '}; ' +
-    '[ordered]@{ documentCount = $documents.Count; emptyDocuments = @($empty); documents = @($values) } ' +
-  '} $text',
-  '$result = [ordered]@{ parser = "powershell-yaml@$($module.Version)"; stream = $stream }',
-  '[Console]::Out.Write(($result | ConvertTo-Json -Depth 100 -Compress))'
-].join('; ')
-
-const RUBY_YAML = [
-  "require 'yaml'",
-  "require 'json'",
-  'text = STDIN.read',
-  'stream = Psych.parse_stream(text)',
-  'documents = stream.children',
-  'empty = documents.map { |document| document.root.nil? }',
-  'values = documents.length == 1 && !empty[0] ? ' +
-    '[Psych.safe_load(text, permitted_classes: [], permitted_symbols: [], aliases: true)] : []',
-  'STDOUT.write(JSON.generate({ parser: "ruby-psych@#{Psych::VERSION}", ' +
-    'stream: { documentCount: documents.length, emptyDocuments: empty, documents: values } }))'
-].join('; ')
+const yamlStreamHasNoNode = contents => contents
+  .replace(/^\uFEFF/, '')
+  .split(/\r?\n/)
+  .every(line => {
+    const trimmed = line.trim()
+    return !trimmed ||
+      trimmed.startsWith('#') ||
+      /^---(?:\s+#.*)?$/.test(trimmed) ||
+      /^%[A-Z]+(?:\s+.*)?$/.test(trimmed)
+  })
 
 const DEFAULT_YAML_PARSERS = Object.freeze([
   {
-    name: 'powershell-yaml',
-    command: 'pwsh',
-    args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', POWERSHELL_YAML]
-  },
-  {
-    name: 'ruby-psych',
-    command: 'ruby',
-    args: ['-e', RUBY_YAML]
+    name: 'js-yaml',
+    version: yamlPackage.version,
+    parse (contents) {
+      const documents = []
+      yaml.loadAll(contents, document => {
+        documents.push(document)
+      })
+      const emptyDocuments = documents.map(document => document === undefined)
+      if (documents.length === 1 && documents[0] === null && yamlStreamHasNoNode(contents)) {
+        emptyDocuments[0] = true
+      }
+      return {
+        parser: `js-yaml@${yamlPackage.version}`,
+        stream: { documentCount: documents.length, emptyDocuments, documents }
+      }
+    }
   }
 ])
 
@@ -831,6 +825,13 @@ const validateGovernancePolicy = (policy, label = 'governance policy') => {
 let selectedYamlParser
 
 const invokeYamlParser = (parser, contents) => {
+  if (typeof parser.parse === 'function') {
+    try {
+      return parser.parse(contents)
+    } catch (error) {
+      return { error: error.message }
+    }
+  }
   const result = childProcess.spawnSync(parser.command, parser.args, {
     input: contents,
     encoding: 'utf8',
@@ -1241,7 +1242,8 @@ const validateJobSteps = (job, jobLabel, source, blocked, findings) => {
         const ref = isRecord(step.with) ? step.with.ref : undefined
         const approvedRefs = [
           '${{ github.event.pull_request.base.sha }}',
-          '${{ github.event.pull_request.head.sha }}'
+          '${{ github.event.pull_request.head.sha }}',
+          '${{ github.sha }}'
         ]
         if (!approvedRefs.includes(ref)) fail(`${label}: active checkout must use an exact event commit SHA`)
       }
@@ -1251,14 +1253,20 @@ const validateJobSteps = (job, jobLabel, source, blocked, findings) => {
 }
 
 const validateAdmissionJob = (job, label) => {
-  expectExactKeys(job, ['runs-on', 'outputs', 'steps'], label)
+  expectExactKeys(job, ['if', 'needs', 'runs-on', 'outputs', 'steps'], label)
+  if (job.if !== "github.event_name == 'pull_request_target'") {
+    fail(`${label}.if must limit admission to pull_request_target`)
+  }
+  if (job.needs !== 'arm64-governance-tests') {
+    fail(`${label}.needs must require the complete trusted governance test job`)
+  }
   if (job['runs-on'] !== 'ubuntu-latest') fail(`${label}.runs-on must be ubuntu-latest`)
   expectExactKeys(job.outputs, ['inputs-locked'], `${label}.outputs`)
   if (job.outputs['inputs-locked'] !== '${{ steps.governance.outputs.inputs-locked }}') {
     fail(`${label}.outputs.inputs-locked must come only from the trusted governance step`)
   }
-  if (!Array.isArray(job.steps) || job.steps.length !== 2) {
-    fail(`${label}.steps must contain exactly one trusted checkout and one trusted evaluation`)
+  if (!Array.isArray(job.steps) || job.steps.length !== 3) {
+    fail(`${label}.steps must contain exactly one trusted checkout, dependency install, and evaluation`)
   }
 
   const base = job.steps[0]
@@ -1276,19 +1284,89 @@ const validateAdmissionJob = (job, label) => {
     fail(`${label}.steps[0] must check out the exact base SHA without credentials`)
   }
 
-  const evaluation = job.steps[1]
-  expectExactKeys(evaluation, ['name', 'id', 'env', 'run'], `${label}.steps[1]`)
-  if (evaluation.id !== 'governance' || evaluation.run !== TRUSTED_ADMISSION_COMMAND) {
-    fail(`${label}.steps[1] must execute only the trusted base validator`)
+  const dependency = job.steps[1]
+  expectExactKeys(dependency, ['name', 'run'], `${label}.steps[1]`)
+  if (
+    dependency.name !== 'install trusted governance dependencies' ||
+    dependency.run !== TRUSTED_DEPENDENCY_COMMAND
+  ) {
+    fail(`${label}.steps[1] must install only the lockfile-pinned trusted dependencies`)
   }
-  expectExactKeys(evaluation.env, ['BASE_SHA', 'HEAD_SHA', 'CANDIDATE_REPOSITORY'], `${label}.steps[1].env`)
+
+  const evaluation = job.steps[2]
+  expectExactKeys(evaluation, ['name', 'id', 'env', 'run'], `${label}.steps[2]`)
+  if (evaluation.id !== 'governance' || evaluation.run !== TRUSTED_ADMISSION_COMMAND) {
+    fail(`${label}.steps[2] must execute only the trusted base validator`)
+  }
+  expectExactKeys(evaluation.env, ['BASE_SHA', 'HEAD_SHA', 'CANDIDATE_REPOSITORY'], `${label}.steps[2].env`)
   if (
     evaluation.env.BASE_SHA !== '${{ github.event.pull_request.base.sha }}' ||
     evaluation.env.HEAD_SHA !== '${{ github.event.pull_request.head.sha }}' ||
     evaluation.env.CANDIDATE_REPOSITORY !== '${{ github.event.pull_request.head.repo.full_name }}'
   ) {
-    fail(`${label}.steps[1].env must use only exact event repository and commit identities`)
+    fail(`${label}.steps[2].env must use only exact event repository and commit identities`)
   }
+}
+
+const validateGovernanceTestJob = (job, label) => {
+  expectExactKeys(job, ['runs-on', 'steps'], label)
+  if (job['runs-on'] !== 'ubuntu-latest') fail(`${label}.runs-on must be ubuntu-latest`)
+  if (!Array.isArray(job.steps) || job.steps.length !== 5) {
+    fail(`${label}.steps must contain exact trusted checkouts, install, tests, and mutation proof`)
+  }
+
+  const checkouts = [
+    {
+      name: 'check out trusted pull-request base',
+      condition: "github.event_name == 'pull_request_target'",
+      ref: '${{ github.event.pull_request.base.sha }}'
+    },
+    {
+      name: 'check out trusted event commit',
+      condition: "github.event_name != 'pull_request_target'",
+      ref: '${{ github.sha }}'
+    }
+  ]
+  checkouts.forEach((expected, index) => {
+    const checkout = job.steps[index]
+    const stepLabel = `${label}.steps[${index}]`
+    expectExactKeys(checkout, ['name', 'if', 'uses', 'with'], stepLabel)
+    if (
+      checkout.name !== expected.name ||
+      checkout.if !== expected.condition ||
+      checkout.uses !== `actions/checkout@${APPROVED_ACTION_PINS['actions/checkout']}`
+    ) {
+      fail(`${stepLabel} must select only its exact trusted event commit`)
+    }
+    expectExactKeys(
+      checkout.with,
+      ['ref', 'path', 'persist-credentials', 'fetch-depth'],
+      `${stepLabel}.with`
+    )
+    if (
+      checkout.with.ref !== expected.ref ||
+      checkout.with.path !== 'trusted' ||
+      checkout.with['persist-credentials'] !== false ||
+      checkout.with['fetch-depth'] !== 0
+    ) {
+      fail(`${stepLabel} must check out complete trusted ancestry without credentials`)
+    }
+  })
+
+  const commands = [
+    ['install trusted governance dependencies', TRUSTED_DEPENDENCY_COMMAND],
+    ['run full trusted governance tests', TRUSTED_TEST_COMMAND],
+    ['prove trusted governance mutation completeness', TRUSTED_MUTATION_COMMAND]
+  ]
+  commands.forEach(([name, command], offset) => {
+    const index = offset + 2
+    const step = job.steps[index]
+    const stepLabel = `${label}.steps[${index}]`
+    expectExactKeys(step, ['name', 'run'], stepLabel)
+    if (step.name !== name || step.run !== command) {
+      fail(`${stepLabel} must run only the exact trusted ${name}`)
+    }
+  })
 }
 
 const workflowTrigger = workflow => (
@@ -1304,18 +1382,33 @@ const validateMainWorkflow = (workflow, label, source) => {
   expectExactKeys(normalized, ['name', 'on', 'permissions', 'jobs'], label)
   if (normalized.name !== 'ARM64 PR governance') fail(`${label}.name must identify the trusted governance workflow`)
   const trigger = workflowTrigger(normalized)
-  const validTrigger = trigger === 'pull_request_target' ||
-    (isRecord(trigger) && Object.keys(trigger).length === 1 && trigger.pull_request_target !== undefined)
-  if (!validTrigger) fail(`${label} must be base-controlled by pull_request_target only`)
+  if (
+    !isRecord(trigger) ||
+    !sameJson(Object.keys(trigger), ['pull_request_target', 'push', 'workflow_dispatch']) ||
+    Object.values(trigger).some(value => value !== null)
+  ) {
+    fail(`${label} must run exact trusted tests on pushes and admission on pull_request_target`)
+  }
   expectExactKeys(normalized.permissions, ['contents'], `${label}.permissions`)
   if (normalized.permissions.contents !== 'read') fail(`${label}.permissions.contents must be read`)
   expectRecord(normalized.jobs, `${label}.jobs`)
-  if (!sameJson(Object.keys(normalized.jobs), ['arm64-governance'])) {
-    fail(`${label} must contain only the data-only arm64-governance job`)
+  if (!sameJson(Object.keys(normalized.jobs), ['arm64-governance-tests', 'arm64-governance'])) {
+    fail(`${label} must contain only the trusted governance test and admission jobs`)
   }
+  validateGovernanceTestJob(
+    normalized.jobs['arm64-governance-tests'],
+    `${label}.jobs.arm64-governance-tests`
+  )
   validateAdmissionJob(normalized.jobs['arm64-governance'], `${label}.jobs.arm64-governance`)
 
   const findings = []
+  validateJobSteps(
+    normalized.jobs['arm64-governance-tests'],
+    `${label}.jobs.arm64-governance-tests`,
+    source,
+    false,
+    findings
+  )
   validateJobSteps(
     normalized.jobs['arm64-governance'],
     `${label}.jobs.arm64-governance`,
@@ -1361,9 +1454,14 @@ const validateWorkflowSet = (source, policy) => {
   return { blockedFindings, inventory, parser }
 }
 
+const emptyGitConfigDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'arm64-governance-git-'))
+const emptyGitConfig = path.join(emptyGitConfigDirectory, 'empty.gitconfig')
+fs.writeFileSync(emptyGitConfig, '')
+process.once('exit', () => fs.rmSync(emptyGitConfigDirectory, { recursive: true, force: true }))
+
 const gitEnvironment = () => ({
   ...process.env,
-  GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+  GIT_CONFIG_GLOBAL: emptyGitConfig,
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_NO_REPLACE_OBJECTS: '1',
   GIT_TERMINAL_PROMPT: '0'
@@ -1431,7 +1529,7 @@ const validateOwnedCommitMessage = (message, authorizedSessions, cwd = process.c
 
   const trailers = interpretTrailers(message, cwd)
   if (
-    trailers.length < 3 ||
+    trailers.length < 2 ||
     trailers[trailers.length - 2] !== COPILOT_COAUTHOR ||
     trailers[trailers.length - 1] !== expectedSessionTrailer
   ) {
@@ -1524,8 +1622,8 @@ const validateAdmission = async (trustedRoot, candidateRepository, base, head, o
     if (!sameJson(candidatePolicy, trustedPolicy)) fail('candidate governance policy differs from the trusted base policy')
 
     const workflows = validateWorkflowSet(candidateSource, trustedPolicy)
-    if (process.env.GITHUB_ACTIONS === 'true' && !workflows.parser.startsWith('ruby-psych@')) {
-      fail(`hosted admission requires preinstalled system Ruby Psych, not ${workflows.parser}`)
+    if (workflows.parser !== 'js-yaml@4.3.2') {
+      fail(`admission requires lockfile-pinned js-yaml@4.3.2, not ${workflows.parser}`)
     }
     const topology = validateCommitRange(
       base,
@@ -1690,11 +1788,15 @@ module.exports = {
   REQUIRED_ACTION_PROVENANCE,
   REQUIRED_GOVERNANCE_SOURCES,
   TRUSTED_ADMISSION_COMMAND,
+  TRUSTED_DEPENDENCY_COMMAND,
+  TRUSTED_MUTATION_COMMAND,
+  TRUSTED_TEST_COMMAND,
   createFileSource,
   createFixtureApi,
   createGitSource,
   createMemorySource,
   enumerateDeniedCampaignSources,
+  gitEnvironment,
   inspectRun,
   parseYaml,
   requireReleaseLock,

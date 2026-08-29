@@ -1,0 +1,11 @@
+{
+  "name": "build-extra-arm64-governance",
+  "private": true,
+  "scripts": {
+    "test:governance": "node validate-arm64-governance.test.js",
+    "test:governance:mutations": "node validate-arm64-governance.mutation.js"
+  },
+  "dependencies": {
+    "js-yaml": "4.3.2"
+  }
+}

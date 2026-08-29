@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "repository": "crutkas/build-extra",
   "authorizedSessions": [
+    "775adff7-e193-4c90-80ad-a25553c185f3",
     "b6f1996e-6689-4aca-92fc-07e4d6815369",
     "e2cca4d9-1311-4a66-b493-1f1a982d597a"
   ],
@@ -27,9 +28,12 @@
     ".github/workflows/add-release-note.yml",
     ".github/workflows/main.yml",
     "add-release-note.js",
+    "package-lock.json",
+    "package.json",
     "tests/fixtures/arm64-ancestry-api.json",
     "tests/fixtures/arm64-release-api.json",
     "validate-arm64-governance.js",
+    "validate-arm64-governance.mutation.js",
     "validate-arm64-governance.test.js"
   ],
   "deniedCampaignEnumeration": {
