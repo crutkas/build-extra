@@ -232,7 +232,7 @@ test('validates the data-only workflow architecture semantically', () => {
   const result = validateWorkflowSet(createFileSource('.'), validateGovernancePolicy(policy))
   assert.strictEqual(result.parser, 'js-yaml@4.3.2')
   assert.deepStrictEqual(result.blockedFindings, [])
-  assert.strictEqual(result.inventory.filter(action => action.identity === 'actions/checkout').length, 1)
+  assert.strictEqual(result.inventory.filter(action => action.identity === 'actions/checkout').length, 3)
   assert.ok(!mainWorkflow.includes('upload-artifact'))
   assert.ok(!mainWorkflow.includes('setup-git-for-windows-sdk'))
   assert.ok(!mainWorkflow.includes('secrets.'))
@@ -270,6 +270,25 @@ rejects('rejects any payload job in pull_request_target', () => {
 
 rejects('rejects elevated pull_request_target permissions', () => {
   const modified = mainWorkflow.replace('contents: read', 'contents: write')
+  validateWorkflowSet(createMemorySource({
+    '.github/workflows/main.yml': modified,
+    '.github/arm64-governance.json': JSON.stringify(policy)
+  }), policy)
+})
+
+rejects('rejects removal of the mutation-completeness CI proof', () => {
+  const modified = mainWorkflow.replace(
+    'npm --prefix trusted run test:governance:mutations',
+    'npm --prefix trusted run test:governance'
+  )
+  validateWorkflowSet(createMemorySource({
+    '.github/workflows/main.yml': modified,
+    '.github/arm64-governance.json': JSON.stringify(policy)
+  }), policy)
+})
+
+rejects('rejects admission that does not require the complete governance test job', () => {
+  const modified = mainWorkflow.replace('    needs: arm64-governance-tests\n', '')
   validateWorkflowSet(createMemorySource({
     '.github/workflows/main.yml': modified,
     '.github/arm64-governance.json': JSON.stringify(policy)

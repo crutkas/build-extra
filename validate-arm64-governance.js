@@ -20,6 +20,8 @@ const TRUSTED_ADMISSION_COMMAND =
   'node trusted/validate-arm64-governance.js admission trusted "$CANDIDATE_REPOSITORY" "$BASE_SHA" "$HEAD_SHA"'
 const TRUSTED_DEPENDENCY_COMMAND =
   'npm ci --prefix trusted --ignore-scripts --no-audit --no-fund'
+const TRUSTED_TEST_COMMAND = 'npm --prefix trusted run test:governance'
+const TRUSTED_MUTATION_COMMAND = 'npm --prefix trusted run test:governance:mutations'
 
 const REQUIRED_ACTION_PROVENANCE = Object.freeze({
   'actions/checkout': {
@@ -1240,7 +1242,8 @@ const validateJobSteps = (job, jobLabel, source, blocked, findings) => {
         const ref = isRecord(step.with) ? step.with.ref : undefined
         const approvedRefs = [
           '${{ github.event.pull_request.base.sha }}',
-          '${{ github.event.pull_request.head.sha }}'
+          '${{ github.event.pull_request.head.sha }}',
+          '${{ github.sha }}'
         ]
         if (!approvedRefs.includes(ref)) fail(`${label}: active checkout must use an exact event commit SHA`)
       }
@@ -1250,7 +1253,13 @@ const validateJobSteps = (job, jobLabel, source, blocked, findings) => {
 }
 
 const validateAdmissionJob = (job, label) => {
-  expectExactKeys(job, ['runs-on', 'outputs', 'steps'], label)
+  expectExactKeys(job, ['if', 'needs', 'runs-on', 'outputs', 'steps'], label)
+  if (job.if !== "github.event_name == 'pull_request_target'") {
+    fail(`${label}.if must limit admission to pull_request_target`)
+  }
+  if (job.needs !== 'arm64-governance-tests') {
+    fail(`${label}.needs must require the complete trusted governance test job`)
+  }
   if (job['runs-on'] !== 'ubuntu-latest') fail(`${label}.runs-on must be ubuntu-latest`)
   expectExactKeys(job.outputs, ['inputs-locked'], `${label}.outputs`)
   if (job.outputs['inputs-locked'] !== '${{ steps.governance.outputs.inputs-locked }}') {
@@ -1299,6 +1308,67 @@ const validateAdmissionJob = (job, label) => {
   }
 }
 
+const validateGovernanceTestJob = (job, label) => {
+  expectExactKeys(job, ['runs-on', 'steps'], label)
+  if (job['runs-on'] !== 'ubuntu-latest') fail(`${label}.runs-on must be ubuntu-latest`)
+  if (!Array.isArray(job.steps) || job.steps.length !== 5) {
+    fail(`${label}.steps must contain exact trusted checkouts, install, tests, and mutation proof`)
+  }
+
+  const checkouts = [
+    {
+      name: 'check out trusted pull-request base',
+      condition: "github.event_name == 'pull_request_target'",
+      ref: '${{ github.event.pull_request.base.sha }}'
+    },
+    {
+      name: 'check out trusted event commit',
+      condition: "github.event_name != 'pull_request_target'",
+      ref: '${{ github.sha }}'
+    }
+  ]
+  checkouts.forEach((expected, index) => {
+    const checkout = job.steps[index]
+    const stepLabel = `${label}.steps[${index}]`
+    expectExactKeys(checkout, ['name', 'if', 'uses', 'with'], stepLabel)
+    if (
+      checkout.name !== expected.name ||
+      checkout.if !== expected.condition ||
+      checkout.uses !== `actions/checkout@${APPROVED_ACTION_PINS['actions/checkout']}`
+    ) {
+      fail(`${stepLabel} must select only its exact trusted event commit`)
+    }
+    expectExactKeys(
+      checkout.with,
+      ['ref', 'path', 'persist-credentials', 'fetch-depth'],
+      `${stepLabel}.with`
+    )
+    if (
+      checkout.with.ref !== expected.ref ||
+      checkout.with.path !== 'trusted' ||
+      checkout.with['persist-credentials'] !== false ||
+      checkout.with['fetch-depth'] !== 0
+    ) {
+      fail(`${stepLabel} must check out complete trusted ancestry without credentials`)
+    }
+  })
+
+  const commands = [
+    ['install trusted governance dependencies', TRUSTED_DEPENDENCY_COMMAND],
+    ['run full trusted governance tests', TRUSTED_TEST_COMMAND],
+    ['prove trusted governance mutation completeness', TRUSTED_MUTATION_COMMAND]
+  ]
+  commands.forEach(([name, command], offset) => {
+    const index = offset + 2
+    const step = job.steps[index]
+    const stepLabel = `${label}.steps[${index}]`
+    expectExactKeys(step, ['name', 'run'], stepLabel)
+    if (step.name !== name || step.run !== command) {
+      fail(`${stepLabel} must run only the exact trusted ${name}`)
+    }
+  })
+}
+
 const workflowTrigger = workflow => (
   workflow.on !== undefined ? workflow.on : workflow.true
 )
@@ -1312,18 +1382,33 @@ const validateMainWorkflow = (workflow, label, source) => {
   expectExactKeys(normalized, ['name', 'on', 'permissions', 'jobs'], label)
   if (normalized.name !== 'ARM64 PR governance') fail(`${label}.name must identify the trusted governance workflow`)
   const trigger = workflowTrigger(normalized)
-  const validTrigger = trigger === 'pull_request_target' ||
-    (isRecord(trigger) && Object.keys(trigger).length === 1 && trigger.pull_request_target !== undefined)
-  if (!validTrigger) fail(`${label} must be base-controlled by pull_request_target only`)
+  if (
+    !isRecord(trigger) ||
+    !sameJson(Object.keys(trigger), ['pull_request_target', 'push', 'workflow_dispatch']) ||
+    Object.values(trigger).some(value => value !== null)
+  ) {
+    fail(`${label} must run exact trusted tests on pushes and admission on pull_request_target`)
+  }
   expectExactKeys(normalized.permissions, ['contents'], `${label}.permissions`)
   if (normalized.permissions.contents !== 'read') fail(`${label}.permissions.contents must be read`)
   expectRecord(normalized.jobs, `${label}.jobs`)
-  if (!sameJson(Object.keys(normalized.jobs), ['arm64-governance'])) {
-    fail(`${label} must contain only the data-only arm64-governance job`)
+  if (!sameJson(Object.keys(normalized.jobs), ['arm64-governance-tests', 'arm64-governance'])) {
+    fail(`${label} must contain only the trusted governance test and admission jobs`)
   }
+  validateGovernanceTestJob(
+    normalized.jobs['arm64-governance-tests'],
+    `${label}.jobs.arm64-governance-tests`
+  )
   validateAdmissionJob(normalized.jobs['arm64-governance'], `${label}.jobs.arm64-governance`)
 
   const findings = []
+  validateJobSteps(
+    normalized.jobs['arm64-governance-tests'],
+    `${label}.jobs.arm64-governance-tests`,
+    source,
+    false,
+    findings
+  )
   validateJobSteps(
     normalized.jobs['arm64-governance'],
     `${label}.jobs.arm64-governance`,
@@ -1704,6 +1789,8 @@ module.exports = {
   REQUIRED_GOVERNANCE_SOURCES,
   TRUSTED_ADMISSION_COMMAND,
   TRUSTED_DEPENDENCY_COMMAND,
+  TRUSTED_MUTATION_COMMAND,
+  TRUSTED_TEST_COMMAND,
   createFileSource,
   createFixtureApi,
   createGitSource,

@@ -13,13 +13,44 @@ name: ARM64 PR governance
 # Every one of these is a lowercase UUID, so a wrong value is invisible on
 # inspection and only the resolution check catches it: the identifier either
 # exists as a session-state directory or it does not.
-on: pull_request_target
+on:
+  pull_request_target:
+  push:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  arm64-governance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check out trusted pull-request base
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: trusted
+          persist-credentials: false
+          fetch-depth: 0
+      - name: check out trusted event commit
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+          fetch-depth: 0
+      - name: install trusted governance dependencies
+        run: npm ci --prefix trusted --ignore-scripts --no-audit --no-fund
+      - name: run full trusted governance tests
+        run: npm --prefix trusted run test:governance
+      - name: prove trusted governance mutation completeness
+        run: npm --prefix trusted run test:governance:mutations
+
   arm64-governance:
+    if: github.event_name == 'pull_request_target'
+    needs: arm64-governance-tests
     runs-on: ubuntu-latest
     outputs:
       inputs-locked: ${{ steps.governance.outputs.inputs-locked }}
