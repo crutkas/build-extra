@@ -29,6 +29,8 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: trusted
           persist-credentials: false
+      - name: install trusted governance dependencies
+        run: npm ci --prefix trusted --ignore-scripts --no-audit --no-fund
       - name: evaluate candidate with trusted governance
         id: governance
         env:

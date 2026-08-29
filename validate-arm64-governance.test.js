@@ -18,6 +18,7 @@ const {
   createFixtureApi,
   createGitSource,
   createMemorySource,
+  gitEnvironment,
   inspectRun,
   parseYaml,
   requireReleaseLock,
@@ -57,11 +58,26 @@ const workflowSource = (extraWorkflow, files = {}) => createMemorySource({
 })
 
 test('uses an approved semantic YAML parser', () => {
-  assert.strictEqual(DEFAULT_YAML_PARSERS[0].name, 'powershell-yaml')
+  assert.strictEqual(DEFAULT_YAML_PARSERS.length, 1)
+  assert.strictEqual(DEFAULT_YAML_PARSERS[0].name, 'js-yaml')
   const parsed = parseYaml('value: true\n', 'parser probe')
   assert.strictEqual(parsed.document.value, true)
-  assert.ok(DEFAULT_YAML_PARSERS.some(parser => parsed.parser.startsWith(`${parser.name}@`)))
-  if (parsed.parser.startsWith('powershell-yaml@')) assert.strictEqual(parsed.parser, 'powershell-yaml@0.4.12')
+  assert.strictEqual(parsed.parser, 'js-yaml@4.3.2')
+})
+
+test('uses a real empty temporary global Git config', () => {
+  const env = gitEnvironment()
+  assert.ok(path.isAbsolute(env.GIT_CONFIG_GLOBAL))
+  assert.notStrictEqual(env.GIT_CONFIG_GLOBAL.toUpperCase(), 'NUL')
+  assert.strictEqual(fs.readFileSync(env.GIT_CONFIG_GLOBAL, 'utf8'), '')
+  const result = childProcess.spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env,
+    windowsHide: true
+  })
+  assert.strictEqual(result.status, 0, result.stderr)
+  assert.strictEqual(result.stdout.trim(), 'true')
 })
 
 rejects('fails closed without a semantic YAML parser', () => {
@@ -82,6 +98,15 @@ rejects('rejects an approved YAML document followed by a second document', () =>
 
 rejects('rejects an approved YAML document followed by an empty document', () => {
   parseYaml('value: true\n---\n', 'trailing empty YAML document')
+})
+
+rejects('rejects a standalone marker-only YAML document', () => {
+  parseYaml('--- # no document node\n', 'marker-only YAML document')
+})
+
+test('accepts an explicit YAML null document as non-empty', () => {
+  const parsed = parseYaml('null\n', 'explicit null YAML document')
+  assert.strictEqual(parsed.document, null)
 })
 
 rejects('rejects an explicit YAML document terminator', () => {
@@ -205,7 +230,7 @@ rejects('recursively rejects a local Action downloader', () => {
 
 test('validates the data-only workflow architecture semantically', () => {
   const result = validateWorkflowSet(createFileSource('.'), validateGovernancePolicy(policy))
-  assert.ok(/^(?:powershell-yaml|ruby-psych)@/.test(result.parser))
+  assert.strictEqual(result.parser, 'js-yaml@4.3.2')
   assert.deepStrictEqual(result.blockedFindings, [])
   assert.strictEqual(result.inventory.filter(action => action.identity === 'actions/checkout').length, 1)
   assert.ok(!mainWorkflow.includes('upload-artifact'))
@@ -430,11 +455,7 @@ const git = (cwd, args, input) => {
     cwd,
     encoding: 'utf8',
     input,
-    env: {
-      ...process.env,
-      GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
-      GIT_CONFIG_NOSYSTEM: '1'
-    }
+    env: gitEnvironment()
   })
   if (result.status !== 0) throw new Error(result.stderr || `git ${args.join(' ')} failed`)
   return result.stdout.trim()
@@ -449,6 +470,48 @@ const ownedMessage = (session, subject = 'Owned change', extraTrailers = []) => 
   `Copilot-Session: ${session}`,
   ''
 ].join('\n')
+
+const exactMessage = expected => error => {
+  assert.strictEqual(error.message, expected)
+  return true
+}
+
+test('accepts a fully valid owned commit message', () => {
+  assert.strictEqual(validateOwnedCommitMessage(ownedMessage(session), session), true)
+})
+
+test('rejects CR in an otherwise valid owned commit message', () => {
+  assert.throws(
+    () => validateOwnedCommitMessage(ownedMessage(session).replace('Owned change', 'Owned\rchange'), session),
+    exactMessage('commit: commit message must use LF line endings')
+  )
+})
+
+test('rejects a trailing blank line after an otherwise valid terminal pair', () => {
+  assert.throws(
+    () => validateOwnedCommitMessage(`${ownedMessage(session)}\n`, session),
+    exactMessage('commit: owned commit must end immediately after the Copilot-Session trailer')
+  )
+})
+
+test('rejects a non-Copilot co-author before an otherwise valid session trailer', () => {
+  const message = ownedMessage(session).replace(
+    COPILOT_COAUTHOR,
+    'Co-authored-by: Other User <other@example.com>'
+  )
+  assert.throws(
+    () => validateOwnedCommitMessage(message, session),
+    exactMessage('commit: owned commit must end with the exact expected Co-authored-by and Copilot-Session pair')
+  )
+})
+
+test('rejects an otherwise valid owned commit without DCO sign-off', () => {
+  const message = ownedMessage(session).replace('Signed-off-by: Test User <test@example.com>\n', '')
+  assert.throws(
+    () => validateOwnedCommitMessage(message, session),
+    exactMessage('commit: DCO Signed-off-by trailer is required before the terminal Copilot pair')
+  )
+})
 
 const createRepository = () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'arm64-governance-'))
