@@ -24,6 +24,9 @@ usage () {
 	      Verify that a signing helper is configured. With --allow-unsigned,
 	      report the absence via exit code 3 instead of failing.
 
+	  compiler [--iscc=<file>]
+	      Verify that the Inno Setup compiler is present and executable.
+
 	  openssh-cleanup
 	      Print the files owned by the OpenSSH package, one relative path per
 	      line, sorted. Fails when that list cannot be determined.
@@ -31,6 +34,11 @@ usage () {
 	  iscc-log <file> [--known-warnings=<file>]
 	      Fail on warnings and errors in an Inno Setup compiler log, except
 	      those matched by a reviewed pattern in <file>.
+
+	  promotable <artifact>
+	      Fail when <artifact> is accompanied by an .UNSIGNED sidecar, or is
+	      missing. This is the mechanical gate a promotion step must run
+	      before publishing anything this repository produced.
 	EOF
 	exit 2
 }
@@ -47,7 +55,12 @@ check_signing () {
 		shift
 	done
 
-	if test -n "$(git config alias.signtool)"
+	# An alias set to whitespace is as useless as an unset one, and would
+	# otherwise pass a `test -n` and then expand to nothing.
+	helper="$(git config alias.signtool)"
+	helper="$(printf '%s' "$helper" | tr -d ' 	')"
+
+	if test -n "$helper"
 	then
 		return 0
 	fi
@@ -62,6 +75,42 @@ check_signing () {
 
 	echo "Building an UNSIGNED installer because --allow-unsigned was given." >&2
 	exit 3
+}
+
+check_compiler () {
+	iscc=./InnoSetup/ISCC.exe
+
+	while test $# -gt 0
+	do
+		case "$1" in
+		--iscc=*) iscc="${1#*=}";;
+		*) echo "Unknown option: $1" >&2; usage;;
+		esac
+		shift
+	done
+
+	test -f "$iscc" ||
+	die "Not found: $iscc; run installer/update-inno-setup.sh to install the compiler"
+
+	test -s "$iscc" ||
+	die "$iscc is empty"
+}
+
+check_promotable () {
+	test $# = 1 || usage
+
+	artifact="$1"
+
+	test -f "$artifact" ||
+	die "Not found: $artifact; nothing to promote"
+
+	test ! -f "$artifact.UNSIGNED" || {
+		echo "$artifact.UNSIGNED says:" >&2
+		sed 's/^/  /' <"$artifact.UNSIGNED" >&2
+		die "$artifact was built unsigned and must not be promoted"
+	}
+
+	echo "$artifact carries no unsigned marker."
 }
 
 check_openssh_cleanup () {
@@ -179,7 +228,9 @@ shift
 
 case "$check" in
 signing) check_signing "$@";;
+compiler) check_compiler "$@";;
 openssh-cleanup) check_openssh_cleanup "$@";;
 iscc-log) check_iscc_log "$@";;
+promotable) check_promotable "$@";;
 *) echo "Unknown check: $check" >&2; usage;;
 esac

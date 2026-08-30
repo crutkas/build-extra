@@ -176,17 +176,19 @@ jobs:
         shell: bash
         id: build
         run: |
-          # No signing helper is configured here, and installer/release.sh now
-          # refuses to produce an unsigned installer unless it is told to.
-          unsigned=
-          case "${{ matrix.directory }}" in
-          installer) unsigned=--allow-unsigned;;
-          esac
-
           artifacts="$(basename "${{ matrix.directory }}")-artifacts-${{ matrix.architecture.name }}" &&
           mkdir -p "$artifacts" &&
-          ./"${{ matrix.directory }}"/release.sh $unsigned --output="$PWD/$artifacts/" 0-test &&
-          echo "result=$artifacts" >>$GITHUB_OUTPUT
+          echo "result=$artifacts" >>$GITHUB_OUTPUT &&
+          if test installer = "${{ matrix.directory }}"
+          then
+            # No signing helper is configured here, so release.sh finishes with
+            # its unsigned status. This is the only caller allowed to accept
+            # that, and it also insists on the sidecar and on the promotion
+            # gate refusing the result.
+            sh installer/expect-unsigned-test-build.sh --output="$PWD/$artifacts/" 0-test
+          else
+            ./"${{ matrix.directory }}"/release.sh --output="$PWD/$artifacts/" 0-test
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.build.outputs.result }}
@@ -323,11 +325,18 @@ jobs:
       - name: build installer
         if: matrix.artifact == 'build-installers'
         shell: bash
-        run: ./installer/release.sh --allow-unsigned --include-self-check --output=$PWD/installer-${{ matrix.arch.name }} 0-test
+        # No signing helper is configured on a runner, so this is an unsigned
+        # test build. Only this helper may accept that outcome, and it refuses
+        # anything that is not exactly "built, marked unsigned, not promotable".
+        run: |
+          mkdir -p installer-${{ matrix.arch.name }} &&
+          sh installer/expect-unsigned-test-build.sh \
+            --output=$PWD/installer-${{ matrix.arch.name }} \
+            --include-self-check 0-test
       - uses: actions/upload-artifact@v7
         if: matrix.artifact == 'build-installers'
         with:
-          name: installer-${{ matrix.arch.name }}
+          name: installer-${{ matrix.arch.name }}-unsigned-test-only
           path: installer-${{ matrix.arch.name }}
       - name: run the installer
         if: matrix.artifact == 'build-installers'

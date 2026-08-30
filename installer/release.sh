@@ -5,6 +5,11 @@ die () {
 	exit 1
 }
 
+# A build that deliberately skipped signing finishes with this status instead of
+# 0, so that an ordinary `release.sh && promote` path stops on its own. Only a
+# caller that names this exact code may carry on.
+UNSIGNED_EXIT_CODE=3
+
 # change directory to the script's directory
 cd "$(dirname "$0")" ||
 die "Could not switch directory"
@@ -111,7 +116,8 @@ test $# = 0 ||
 die "Usage: $0 [-f | --force] [--allow-unsigned] [--output=<directory>] ( --debug-wizard-page=<page> | <version> )"
 
 # Fail before doing any work rather than producing an unsigned installer that
-# looks like a release.
+# looks like a release, or discovering halfway through that the compiler that
+# has to produce it is not there.
 unsigned=
 sh ./check-release-prerequisites.sh signing $allow_unsigned
 case $? in
@@ -119,6 +125,9 @@ case $? in
 3) unsigned=t;;
 *) exit 1;;
 esac
+
+sh ./check-release-prerequisites.sh compiler ||
+die "The Inno Setup compiler is not usable"
 
 displayver="$(echo "${version#prerelease-}" |
 	sed -e 's/\.[^0-9]*\.[^0-9]*\./\./g' \
@@ -429,7 +438,10 @@ test -z "$unsigned" || {
 		>"$(cygpath -u "$installer_path").UNSIGNED" ||
 	die "Could not mark $installer_path as unsigned"
 
+	echo "Installer is available as $installer_path"
 	echo "WARNING: $installer_path is UNSIGNED and must not be released." >&2
+	echo "Exiting $UNSIGNED_EXIT_CODE so that no ordinary release or promotion path continues." >&2
+	exit $UNSIGNED_EXIT_CODE
 }
 
 echo "Installer is available as $installer_path"

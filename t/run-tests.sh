@@ -32,6 +32,8 @@ run "check-payload-architecture.sh" \
 	sh "$here/test-payload-architecture.sh"
 run "installer/check-release-prerequisites.sh" \
 	sh "$here/test-release-prerequisites.sh"
+run "installer/expect-unsigned-test-build.sh" \
+	sh "$here/test-unsigned-test-build.sh"
 
 if test $status = 0
 then

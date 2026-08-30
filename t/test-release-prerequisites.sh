@@ -27,6 +27,15 @@ not_ok () {
 	test -z "$2" || sed 's/^/    /' <"$2"
 }
 
+said () { # <pattern> <description>
+	if grep -q "$1" "$work/err"
+	then
+		ok "$2"
+	else
+		not_ok "$2" "$work/err"
+	fi
+}
+
 # Run a check from a given directory, with a given PATH and HOME.
 run_check () { # <cwd> <args...>
 	cwd="$1"
@@ -61,14 +70,13 @@ echo "# signing"
 
 norepo="$work/plain"
 expect_exit 1 "an unconfigured signing helper fails the build" "$norepo" signing
-grep -q 'No signing helper is configured' "$work/err" &&
-ok "says what is missing" ||
-not_ok "says what is missing" "$work/err"
+said 'No signing helper is configured' "says what is missing"
 
 expect_exit 3 "--allow-unsigned reports the absence instead of failing" "$norepo" signing --allow-unsigned
-grep -q 'UNSIGNED' "$work/err" &&
-ok "warns loudly that the build will be unsigned" ||
-not_ok "warns loudly that the build will be unsigned" "$work/err"
+said 'UNSIGNED' "warns loudly that the build will be unsigned"
+
+# The opt-out must buy exactly one thing: no other check even accepts it.
+expect_exit 2 "--allow-unsigned is not accepted by any other check" "$norepo" openssh-cleanup --allow-unsigned
 
 signed="$work/signed-repo"
 mkdir -p "$signed"
@@ -81,6 +89,55 @@ mkdir -p "$signed"
 
 expect_exit 0 "a configured signing helper satisfies the check" "$signed" signing
 expect_exit 0 "--allow-unsigned is harmless when signing is configured" "$signed" signing --allow-unsigned
+
+blank="$work/blank-repo"
+mkdir -p "$blank"
+(
+	cd "$blank" &&
+	HOME="$work/home" git init -q . &&
+	HOME="$work/home" git config alias.signtool '   '
+) >/dev/null 2>&1 ||
+{ echo "Could not prepare the whitespace signing fixture" >&2; exit 1; }
+expect_exit 1 "a whitespace-only signing helper is treated as unset" "$blank" signing
+
+empty="$work/empty-repo"
+mkdir -p "$empty"
+(
+	cd "$empty" &&
+	HOME="$work/home" git init -q . &&
+	HOME="$work/home" git config alias.signtool ''
+) >/dev/null 2>&1 ||
+{ echo "Could not prepare the empty signing fixture" >&2; exit 1; }
+expect_exit 1 "an empty signing helper is treated as unset" "$empty" signing
+
+echo "# the Inno Setup compiler"
+
+mkdir -p "$work/iscc-present/InnoSetup"
+echo compiler >"$work/iscc-present/InnoSetup/ISCC.exe"
+expect_exit 0 "a compiler that is present satisfies the check" "$work/iscc-present" compiler
+
+mkdir -p "$work/iscc-missing"
+expect_exit 1 "a missing compiler fails before any work is done" "$work/iscc-missing" compiler
+said 'update-inno-setup.sh' "says how to install the compiler"
+
+mkdir -p "$work/iscc-empty/InnoSetup"
+: >"$work/iscc-empty/InnoSetup/ISCC.exe"
+expect_exit 1 "an empty compiler binary fails" "$work/iscc-empty" compiler
+
+echo "# the promotion gate"
+
+mkdir -p "$work/artifacts"
+echo installer >"$work/artifacts/Git-0-test-arm64.exe"
+expect_exit 0 "an artifact with no unsigned marker may be promoted" \
+	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
+
+printf 'built unsigned\n' >"$work/artifacts/Git-0-test-arm64.exe.UNSIGNED"
+expect_exit 1 "an artifact with an unsigned marker is refused" \
+	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
+said 'must not be promoted' "says why it was refused"
+
+expect_exit 1 "a missing artifact is refused rather than assumed fine" \
+	"$norepo" promotable "$work/artifacts/no-such.exe"
 
 echo "# openssh cleanup data"
 
