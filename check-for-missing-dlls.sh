@@ -72,8 +72,9 @@ unused_dlls_file=/tmp/unused-dlls.$$.txt
 tmp_file=/tmp/tmp.$$.txt
 trap "rm -f \"$used_dlls_file\" \"$missing_dlls_file\" \"$unused_dlls_file\" \
 	\"$tmp_file\" \"$tmp_file.raw\" \"$tmp_file.all\" \"$tmp_file.ldd\" \
-	\"$tmp_file.pe\" \"$tmp_file.expected\" \"$tmp_file.seen\" \
-	\"$tmp_file.todo\" \"$tmp_file.win\"" EXIT
+	\"$tmp_file.pe\" \"$tmp_file.pe.fixed\" \"$tmp_file.pe.raw\" \
+	\"$tmp_file.expected\" \"$tmp_file.seen\" \"$tmp_file.todo\" \
+	\"$tmp_file.win\" \"$tmp_file.candidates\" \"$tmp_file.dirs\"" EXIT
 
 # Report the binaries a parser described, by extracting the file names we asked
 # about from its own output. `objdump` writes "<path>:<TAB>file format <fmt>"
@@ -82,20 +83,70 @@ trap "rm -f \"$used_dlls_file\" \"$missing_dlls_file\" \"$unused_dlls_file\" \
 # their wording is not a stable interface.
 parsed_files () {
 	tr -d '\r' <"$1" |
-	sed -n -e 's|^\([^ 	]*\):$|\1|p' -e 's|^\([^ 	]*\):[ 	].*$|\1|p'
+	sed -n -e 's|^\(/[^:]*\):$|\1|p' -e 's|^\(/[^:]*\):[ 	].*$|\1|p'
 }
 
-# pe-imports.ps1 emits one "<path>:" header per input and indents every import
-# below it. Count the headers rather than matching the paths: those have been
-# through path conversion and may contain spaces.
-pe_headers () { # <file>
-	tr -d '\r' <"$1" | grep -c '^[^ 	].*:$' || :
+# Run `objdump -p` over a list of paths. The list is carried in the positional
+# parameters rather than a word-split string, so a path containing a space, a
+# tab or a bracket is passed through intact.
+run_objdump () { # <list-file> <stdout> <stderr>
+	objdump_list="$1"
+	objdump_out="$2"
+	objdump_err="$3"
+
+	# `set --` below overwrites these, so read them out first.
+	set --
+	while IFS= read -r objdump_path
+	do
+		set -- "$@" "$objdump_path"
+	done <"$objdump_list"
+
+	: >"$objdump_out"
+	: >"$objdump_err"
+	test $# -gt 0 || return 0
+	"$OBJDUMP" -p "$@" >"$objdump_out" 2>"$objdump_err"
+}
+
+# Replace each header pe-imports.ps1 emitted with the path we asked about, in
+# order. Its own echoed path has been through MSYS conversion and is not
+# comparable to ours, so pairing them by position is the only sound way to
+# attribute an import to a file. Sets $pe_header_count.
+rewrite_pe_headers () { # <inputs> <parser-output> <out> <scratch>
+	tr -d '\r' <"$2" >"$4"
+	: >"$3"
+	pe_header_count=0
+
+	exec 5<"$1" 6<"$4"
+	while IFS= read -r pe_line <&6
+	do
+		case "$pe_line" in
+		"	"*)
+			# An import, indented below its header.
+			printf '%s\n' "$pe_line" >>"$3"
+			;;
+		*:)
+			if IFS= read -r pe_original <&5
+			then
+				printf '%s:\n' "$pe_original" >>"$3"
+				pe_header_count=$(($pe_header_count + 1))
+			else
+				exec 5<&- 6<&-
+				return 1
+			fi
+			;;
+		*)
+			printf '%s\n' "$pe_line" >>"$3"
+			;;
+		esac
+	done
+	exec 5<&- 6<&-
+	return 0
 }
 
 ARCH=$ARCH "$thisdir"/make-file-list.sh >"$tmp_file.raw" ||
 die "Could not generate the file list"
 
-tr A-Z a-z <"$tmp_file.raw" | grep -v '/getprocaddr64.exe$' >"$tmp_file.all"
+tr A-Z a-z <"$tmp_file.raw" | grep -v '/getprocaddr64.exe$' | LC_ALL=C sort -u >"$tmp_file.all"
 test -s "$tmp_file.all" ||
 die "The file list is empty; refusing to report success"
 
@@ -103,12 +154,19 @@ die "The file list is empty; refusing to report success"
 # through the `&&` chain below and still exit successfully.
 usr_bin_dlls="$(grep '^usr/bin/[^/]*\.dll$' "$tmp_file.all")" || usr_bin_dlls=
 mingw_bin_dlls="$(grep '^'$MINGW_PREFIX'/bin/[^/]*\.dll$' "$tmp_file.all")" || mingw_bin_dlls=
-dirs="$(sed -n 's/[^/]*\.\(dll\|exe\)$//p' "$tmp_file.all" | sort | uniq)"
+
+# Every binary in the payload, and the directories they live in. The totals are
+# reconciled at the end so that a directory whose name defeats the per-directory
+# selection below cannot be skipped while the rest of the run still looks busy.
+grep '\.\(dll\|exe\)$' "$tmp_file.all" >"$tmp_file.candidates"
+candidate_total=$(($(wc -l <"$tmp_file.candidates")))
+sed -n 's/[^/]*\.\(dll\|exe\)$//p' "$tmp_file.all" | LC_ALL=C sort -u >"$tmp_file.dirs"
 
 total_expected=0
 total_inspected=0
 
-for dir in $dirs
+exec 7<"$tmp_file.dirs"
+while IFS= read -r dir <&7
 do
 	test -z "$print_dir" ||
 	printf "dir: $dir\\033[K\\r" >&2
@@ -119,26 +177,45 @@ do
 	*) dlls="";;
 	esac
 
-	paths=$(sed -ne 's,[][],\\&,g' -e "s,^$dir[^/]*\.\(dll\|exe\)$,/&,p" "$tmp_file.all")
-	test -n "$paths" || continue
-
 	sed -ne "s,^$dir[^/]*\.\(dll\|exe\)$,/&,p" "$tmp_file.all" |
-	LC_ALL=C sort >"$tmp_file.expected"
+	LC_ALL=C sort -u >"$tmp_file.expected"
 	expected_count=$(($(wc -l <"$tmp_file.expected")))
+	test "$expected_count" -gt 0 || continue
 
 	objdump_status=0
-	"$OBJDUMP" -p $paths 2>"$tmp_file" >"$tmp_file.ldd" ||
+	run_objdump "$tmp_file.expected" "$tmp_file.ldd" "$tmp_file" ||
 	objdump_status=$?
 
-	parsed_files "$tmp_file.ldd" | LC_ALL=C sort -u >"$tmp_file.seen"
-	LC_ALL=C comm -23 "$tmp_file.expected" "$tmp_file.seen" >"$tmp_file.todo"
-	objdump_count=$(($(LC_ALL=C comm -12 "$tmp_file.expected" "$tmp_file.seen" | wc -l)))
+	# `objdump` prints a header, and can print imports, for a file and then
+	# fail while decoding that same file. A header is therefore not proof
+	# that anything was decoded, and a batch that exited non-zero tells us
+	# nothing about which of its members were finished. Trust the batch only
+	# when it exited cleanly and described every member; otherwise discard
+	# all of its output and reparse the whole batch natively.
+	objdump_trusted=
+	if test "$objdump_status" = 0
+	then
+		parsed_files "$tmp_file.ldd" | LC_ALL=C sort -u >"$tmp_file.seen"
+		LC_ALL=C comm -23 "$tmp_file.expected" "$tmp_file.seen" >"$tmp_file.todo"
+		test -s "$tmp_file.todo" ||
+		objdump_trusted=t
+	fi
 
-	# Whatever `objdump` could not describe goes to the native PE parser. On
-	# ARM64 that is every binary, because the MSYS2 Binutils build cannot
-	# decode pei-aarch64. Hand the paths over in a file: MSYS silently
-	# refuses to convert an argument containing a bracket, and the payload
-	# really does contain `usr/bin/[.exe`.
+	if test -n "$objdump_trusted"
+	then
+		objdump_count=$expected_count
+		: >"$tmp_file.todo"
+	else
+		objdump_count=0
+		: >"$tmp_file.ldd"
+		cat "$tmp_file.expected" >"$tmp_file.todo"
+	fi
+
+	# Whatever `objdump` did not prove it decoded goes to the native PE
+	# parser. On ARM64 that is every binary, because the MSYS2 Binutils
+	# build cannot decode pei-aarch64. Hand the paths over in a file: MSYS
+	# silently refuses to convert an argument containing a bracket, and the
+	# payload really does contain `usr/bin/[.exe`.
 	pe_count=0
 	if test -s "$tmp_file.todo"
 	then
@@ -154,8 +231,13 @@ do
 			cat "$tmp_file" >&2
 			die "pe-imports.ps1 failed to parse PE imports in /$dir (objdump exit code $objdump_status)"
 		}
-		pe_count=$(($(pe_headers "$tmp_file.pe")))
-		cat "$tmp_file.pe" >>"$tmp_file.ldd"
+
+		rewrite_pe_headers "$tmp_file.todo" "$tmp_file.pe" \
+			"$tmp_file.pe.fixed" "$tmp_file.pe.raw" ||
+		die "pe-imports.ps1 described more binaries than it was given in /$dir"
+
+		pe_count=$pe_header_count
+		cat "$tmp_file.pe.fixed" >>"$tmp_file.ldd"
 	fi
 
 	# Fail closed. A parser that quietly describes nothing must never be
@@ -165,10 +247,10 @@ do
 	then
 		cat "$tmp_file" >&2
 		echo "Inspected $inspected_count of $expected_count binaries in /$dir" >&2
-		echo "objdump exited with $objdump_status and described $objdump_count;" \
-			"pe-imports.ps1 described $pe_count of the remaining" \
-			"$(($expected_count - $objdump_count))" >&2
-		sed 's|^|  objdump did not describe: |' <"$tmp_file.todo" >&2
+		echo "objdump exited with $objdump_status and was" \
+			"${objdump_trusted:+trusted}${objdump_trusted:-not trusted};" \
+			"pe-imports.ps1 described $pe_count of $(($(wc -l <"$tmp_file.todo")))" >&2
+		sed 's|^|  not proven decoded: |' <"$tmp_file.todo" >&2
 		die "Could not determine the DLL dependencies of every binary in /$dir"
 	fi
 
@@ -195,10 +277,13 @@ do
 		esac
 	done
 done
+exec 7<&-
 printf "$next_line" >&2
 
-test "$total_expected" -gt 0 ||
+test "$candidate_total" -gt 0 ||
 die "The file list contains no .dll or .exe files; refusing to report success"
+test "$total_expected" -eq "$candidate_total" ||
+die "Selected $total_expected of $candidate_total binaries in the file list; refusing to report success"
 test "$total_inspected" -eq "$total_expected" ||
 die "Inspected $total_inspected of $total_expected binaries; refusing to report success"
 
