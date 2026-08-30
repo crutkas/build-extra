@@ -77,12 +77,23 @@ do
 	test -f "$installer.UNSIGNED" ||
 	die "$installer has no .UNSIGNED sidecar, so nothing downstream would know it is not releasable"
 
+	# The marker has to belong to this artifact, not merely sit beside it.
+	named="$(sed -n 's/^artifact: //p' "$installer.UNSIGNED" | head -n 1)"
+	recorded="$(sed -n 's/^sha256: //p' "$installer.UNSIGNED" | head -n 1)"
+	actual="$(sha256sum <"$installer" | sed 's/ .*//')"
+
+	test "$named" = "${installer##*/}" ||
+	die "$installer.UNSIGNED names '$named', not '${installer##*/}'"
+
+	test "$recorded" = "$actual" ||
+	die "$installer.UNSIGNED records '$recorded' but $installer hashes to '$actual'"
+
 	if sh "$thisdir/check-release-prerequisites.sh" promotable "$installer" >/dev/null 2>&1
 	then
 		die "$installer was accepted for promotion despite being unsigned"
 	fi
 
-	echo "$installer is present, marked unsigned, and refused by the promotion gate." >&2
+	echo "$installer is present, bound to its unsigned marker, and refused by the promotion gate." >&2
 done
 
 test "$found" -gt 0 ||

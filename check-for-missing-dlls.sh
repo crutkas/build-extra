@@ -64,6 +64,12 @@ fi
 # that a native `objdump` can be pointed at later. The default is unchanged.
 OBJDUMP="${OBJDUMP-/usr/bin/objdump}"
 
+# A missing inspection tool is a hard failure, not something to work around.
+# Rerouting silently to the fallback parser would mean the run no longer
+# inspects what it says it does.
+{ test -x "$OBJDUMP" || command -v "$OBJDUMP" >/dev/null 2>&1; } ||
+die "objdump not found at '$OBJDUMP'; refusing to inspect the payload without it"
+
 used_dlls_file=/tmp/used-dlls.$$.txt
 >"$used_dlls_file"
 missing_dlls_file=/tmp/missing-dlls.$$.txt
@@ -110,7 +116,12 @@ run_objdump () { # <list-file> <stdout> <stderr>
 # Replace each header pe-imports.ps1 emitted with the path we asked about, in
 # order. Its own echoed path has been through MSYS conversion and is not
 # comparable to ours, so pairing them by position is the only sound way to
-# attribute an import to a file. Sets $pe_header_count.
+# attribute an import to a file.
+#
+# Every line is also checked against the parser's own output schema: a header,
+# or an import indented below one. Counting headers is not enough on its own --
+# evidence that is not the shape we expect is not evidence. Sets
+# $pe_header_count, and returns non-zero on any schema or arity violation.
 rewrite_pe_headers () { # <inputs> <parser-output> <out> <scratch>
 	tr -d '\r' <"$2" >"$4"
 	: >"$3"
@@ -120,8 +131,7 @@ rewrite_pe_headers () { # <inputs> <parser-output> <out> <scratch>
 	while IFS= read -r pe_line <&6
 	do
 		case "$pe_line" in
-		"	"*)
-			# An import, indented below its header.
+		"	DLL Name: "?*)
 			printf '%s\n' "$pe_line" >>"$3"
 			;;
 		*:)
@@ -135,7 +145,8 @@ rewrite_pe_headers () { # <inputs> <parser-output> <out> <scratch>
 			fi
 			;;
 		*)
-			printf '%s\n' "$pe_line" >>"$3"
+			exec 5<&- 6<&-
+			return 2
 			;;
 		esac
 	done
@@ -232,9 +243,16 @@ do
 			die "pe-imports.ps1 failed to parse PE imports in /$dir (objdump exit code $objdump_status)"
 		}
 
+		rewrite_status=0
 		rewrite_pe_headers "$tmp_file.todo" "$tmp_file.pe" \
 			"$tmp_file.pe.fixed" "$tmp_file.pe.raw" ||
-		die "pe-imports.ps1 described more binaries than it was given in /$dir"
+		rewrite_status=$?
+
+		case $rewrite_status in
+		0) ;;
+		1) die "pe-imports.ps1 described more binaries than it was given in /$dir";;
+		*) die "pe-imports.ps1 produced output that is not import evidence in /$dir";;
+		esac
 
 		pe_count=$pe_header_count
 		cat "$tmp_file.pe.fixed" >>"$tmp_file.ldd"
@@ -245,11 +263,17 @@ do
 	inspected_count=$(($objdump_count + $pe_count))
 	if test $inspected_count -ne $expected_count
 	then
+		if test -n "$objdump_trusted"
+		then
+			trust=trusted
+		else
+			trust="not trusted"
+		fi
 		cat "$tmp_file" >&2
 		echo "Inspected $inspected_count of $expected_count binaries in /$dir" >&2
-		echo "objdump exited with $objdump_status and was" \
-			"${objdump_trusted:+trusted}${objdump_trusted:-not trusted};" \
-			"pe-imports.ps1 described $pe_count of $(($(wc -l <"$tmp_file.todo")))" >&2
+		echo "objdump exited with $objdump_status and was $trust;" \
+			"pe-imports.ps1 described $pe_count of" \
+			"$(($(wc -l <"$tmp_file.todo")))" >&2
 		sed 's|^|  not proven decoded: |' <"$tmp_file.todo" >&2
 		die "Could not determine the DLL dependencies of every binary in /$dir"
 	fi

@@ -184,14 +184,17 @@ jobs:
             # No signing helper is configured here, so release.sh finishes with
             # its unsigned status. This is the only caller allowed to accept
             # that, and it also insists on the sidecar and on the promotion
-            # gate refusing the result.
+            # gate refusing the result. The upload is named accordingly so the
+            # artifact cannot be mistaken for something releasable.
+            echo "name=$artifacts-unsigned-test-only" >>$GITHUB_OUTPUT &&
             sh installer/expect-unsigned-test-build.sh --output="$PWD/$artifacts/" 0-test
           else
+            echo "name=$artifacts" >>$GITHUB_OUTPUT &&
             ./"${{ matrix.directory }}"/release.sh --output="$PWD/$artifacts/" 0-test
           fi
       - uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.build.outputs.result }}
+          name: ${{ steps.build.outputs.name }}
           path: ${{ steps.build.outputs.result }}
       - name: run the installer
         if: matrix.directory == 'installer'

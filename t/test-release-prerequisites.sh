@@ -132,9 +132,29 @@ expect_exit 0 "an artifact with no unsigned marker may be promoted" \
 	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
 
 printf 'built unsigned\n' >"$work/artifacts/Git-0-test-arm64.exe.UNSIGNED"
-expect_exit 1 "an artifact with an unsigned marker is refused" \
+expect_exit 1 "a marker with no identity is refused" \
+	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
+said 'does not identify' "says the marker does not identify anything"
+
+digest="$(sha256sum <"$work/artifacts/Git-0-test-arm64.exe" | sed 's/ .*//')"
+printf '# unsigned\nartifact: Git-0-test-arm64.exe\nsha256: %s\n' "$digest" \
+	>"$work/artifacts/Git-0-test-arm64.exe.UNSIGNED"
+expect_exit 1 "an artifact with a bound unsigned marker is refused" \
 	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
 said 'must not be promoted' "says why it was refused"
+
+printf '# unsigned\nartifact: Other.exe\nsha256: %s\n' "$digest" \
+	>"$work/artifacts/Git-0-test-arm64.exe.UNSIGNED"
+expect_exit 1 "a marker naming a different artifact is refused" \
+	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
+said "belongs to" "says the marker belongs to something else"
+
+printf '# unsigned\nartifact: Git-0-test-arm64.exe\nsha256: %s\n' \
+	0000000000000000000000000000000000000000000000000000000000000000 \
+	>"$work/artifacts/Git-0-test-arm64.exe.UNSIGNED"
+expect_exit 1 "a marker whose digest does not match the artifact is refused" \
+	"$norepo" promotable "$work/artifacts/Git-0-test-arm64.exe"
+said 'hashes to' "says the artifact does not match the marker"
 
 expect_exit 1 "a missing artifact is refused rather than assumed fine" \
 	"$norepo" promotable "$work/artifacts/no-such.exe"

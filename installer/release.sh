@@ -432,10 +432,22 @@ test -f "$installer_path" ||
 die "Could not determine the installer path from install.log"
 
 test -z "$unsigned" || {
+	installer_posix="$(cygpath -u "$installer_path")" ||
+	die "Could not convert $installer_path"
+
+	installer_digest="$(sha256sum <"$installer_posix" | sed 's/ .*//')" &&
+	test -n "$installer_digest" ||
+	die "Could not hash $installer_path"
+
+	# The marker names the artifact it belongs to and binds to its contents,
+	# so it cannot be silently detached, reused from an earlier build, or
+	# left behind next to a different file.
 	printf '%s\n' \
-		"This installer was built with --allow-unsigned and is not signed." \
-		"It must not be published or promoted to a release." \
-		>"$(cygpath -u "$installer_path").UNSIGNED" ||
+		"# This installer was built with --allow-unsigned and is not signed." \
+		"# It must not be published or promoted to a release." \
+		"artifact: ${installer_posix##*/}" \
+		"sha256: $installer_digest" \
+		>"$installer_posix.UNSIGNED" ||
 	die "Could not mark $installer_path as unsigned"
 
 	echo "Installer is available as $installer_path"

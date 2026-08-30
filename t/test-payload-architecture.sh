@@ -96,6 +96,9 @@ write_list () { # <path> <body-file>
 	{
 		echo "# test fixture"
 		echo "# format-version: 1"
+		echo "# seed-source: the test suite"
+		echo "# seed-version: test"
+		echo "# seed-artifact: test.tsv"
 		echo "# entries: $(($(wc -l <"$body")))"
 		echo "# sha256: $(sha_of "$body")"
 		cat "$body"
@@ -128,7 +131,7 @@ write_list "$work/seed" "$work/seed-body"
 write_list "$work/exceptions" "$work/exceptions-body"
 
 seed_sha="$(sha_of "$work/seed-body")"
-pin="--seed-sha256=$seed_sha --seed-entries=2"
+pin="--seed-sha256=$seed_sha --seed-entries=2 --seed-version=test --seed-artifact=test.tsv"
 common="--root=$root --file-list=$work/file-list --baseline=$work/seed --exceptions=$work/exceptions $pin"
 
 echo "# the happy path"
@@ -149,7 +152,7 @@ echo 'usr/bin/newcomer.exe' >>"$work/file-list-swapped"
 expect_exit 1 "swapping one seed entry for another at the same count fails" \
 	--root="$root" --file-list="$work/file-list-swapped" \
 	--baseline="$work/swapped" --exceptions="$work/exceptions" \
-	--seed-sha256="$seed_sha" --seed-entries=2
+	--seed-sha256="$seed_sha" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'immutable evidence and must not be edited' "says the seed may not be edited"
 
 printf 'amd64\tusr/bin/legacy.exe\n' >"$work/shrunk-body"
@@ -157,7 +160,7 @@ write_list "$work/shrunk" "$work/shrunk-body"
 expect_exit 1 "even shrinking the seed by hand fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/shrunk" --exceptions="$work/exceptions" \
-	--seed-sha256="$seed_sha" --seed-entries=2
+	--seed-sha256="$seed_sha" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 
 echo "# new non-ARM64 payload"
 
@@ -235,7 +238,7 @@ write_list "$work/unsorted" "$work/unsorted-body"
 expect_exit 1 "an unsorted body fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/unsorted" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/unsorted-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/unsorted-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'not sorted' "says the body is not sorted"
 
 printf 'amd64\tusr/bin/legacy.exe\namd64\tusr/bin/legacy.exe\n' >"$work/dup-body"
@@ -243,7 +246,7 @@ write_list "$work/dup" "$work/dup-body"
 expect_exit 1 "a duplicate entry fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/dup" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/dup-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/dup-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'duplicate entries' "says the body has duplicates"
 
 printf 'amd64\tusr/bin/legacy.exe\ni386\tusr/bin/legacy.exe\n' >"$work/dup-path-body"
@@ -251,7 +254,7 @@ write_list "$work/dup-path" "$work/dup-path-body"
 expect_exit 1 "the same path with two machines fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/dup-path" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/dup-path-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/dup-path-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'listed more than once' "says the path is listed twice"
 
 printf 'amd64\tusr/bin/legacy.exe\textra\ni386\tusr/libexec/old32.exe\n' >"$work/fields-body"
@@ -259,7 +262,7 @@ write_list "$work/fields" "$work/fields-body"
 expect_exit 1 "a wrong tab field count fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/fields" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/fields-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/fields-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'tab-separated fields' "says the field count is wrong"
 
 printf 'amd64\t/usr/bin/legacy.exe\ni386\tusr/libexec/old32.exe\n' >"$work/abs-body"
@@ -267,7 +270,7 @@ write_list "$work/abs" "$work/abs-body"
 expect_exit 1 "an absolute path fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/abs" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/abs-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/abs-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said 'repo-relative' "says paths must be repo-relative"
 
 printf 'amd64\tusr/bin/../bin/legacy.exe\ni386\tusr/libexec/old32.exe\n' >"$work/noncanon-body"
@@ -275,14 +278,14 @@ write_list "$work/noncanon" "$work/noncanon-body"
 expect_exit 1 "a non-canonical path fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/noncanon" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/noncanon-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/noncanon-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 
 printf 'arm64\tusr/bin/native.exe\ni386\tusr/libexec/old32.exe\n' >"$work/arm64-body"
 write_list "$work/arm64seed" "$work/arm64-body"
 expect_exit 1 "an arm64 entry in the seed fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/arm64seed" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/arm64-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/arm64-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 said "must not appear in the seed" "refuses arm64 in the seed"
 
 printf 'malformed\tusr/bin/legacy.exe\ni386\tusr/libexec/old32.exe\n' >"$work/bad-class-body"
@@ -290,7 +293,7 @@ write_list "$work/bad-class" "$work/bad-class-body"
 expect_exit 1 "a parse failure cannot be grandfathered into the seed" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/bad-class" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/bad-class-body")" --seed-entries=2
+	--seed-sha256="$(sha_of "$work/bad-class-body")" --seed-entries=2 --seed-version=test --seed-artifact=test.tsv
 
 printf 'anycpu\tclangarm64/bin/Managed.dll\t\n' >"$work/blank-reason-body"
 write_list "$work/blank-reason" "$work/blank-reason-body"
@@ -321,6 +324,27 @@ sed 's/^# format-version: .*/# format-version: 99/' <"$work/seed" >"$work/bad-ve
 expect_exit 1 "an unsupported format-version fails" \
 	--root="$root" --file-list="$work/file-list" \
 	--baseline="$work/bad-version" --exceptions="$work/exceptions" $pin
+
+echo "# the seed has to say what it is evidence of"
+
+expect_exit 1 "a seed-version that is not the pinned one fails" \
+	--root="$root" --file-list="$work/file-list" \
+	--baseline="$work/seed" --exceptions="$work/exceptions" \
+	--seed-sha256="$seed_sha" --seed-entries=2 \
+	--seed-version=v9.9.9 --seed-artifact=test.tsv
+said 'seed-version' "says which identity field is wrong"
+
+expect_exit 1 "a seed-artifact that is not the pinned one fails" \
+	--root="$root" --file-list="$work/file-list" \
+	--baseline="$work/seed" --exceptions="$work/exceptions" \
+	--seed-sha256="$seed_sha" --seed-entries=2 \
+	--seed-version=test --seed-artifact=other.tsv
+said 'seed-artifact' "says which identity field is wrong"
+
+grep -v '^# seed-source' <"$work/seed" >"$work/no-source"
+expect_exit 1 "a seed that does not record where it came from fails" \
+	--root="$root" --file-list="$work/file-list" \
+	--baseline="$work/no-source" --exceptions="$work/exceptions" $pin
 
 echo "# nothing inspected is never success"
 
@@ -359,7 +383,7 @@ write_list "$work/glob-seed" "$work/glob-body"
 expect_exit 0 "a payload named [.exe is handled literally" \
 	--root="$root" --file-list="$work/file-list-glob" \
 	--baseline="$work/glob-seed" --exceptions="$work/exceptions" \
-	--seed-sha256="$(sha_of "$work/glob-body")" --seed-entries=3
+	--seed-sha256="$(sha_of "$work/glob-body")" --seed-entries=3 --seed-version=test --seed-artifact=test.tsv
 
 echo "# the committed seed and exceptions"
 

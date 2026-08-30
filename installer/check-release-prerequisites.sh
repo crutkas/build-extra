@@ -104,13 +104,37 @@ check_promotable () {
 	test -f "$artifact" ||
 	die "Not found: $artifact; nothing to promote"
 
-	test ! -f "$artifact.UNSIGNED" || {
-		echo "$artifact.UNSIGNED says:" >&2
-		sed 's/^/  /' <"$artifact.UNSIGNED" >&2
-		die "$artifact was built unsigned and must not be promoted"
+	marker="$artifact.UNSIGNED"
+	test -f "$marker" || {
+		echo "$artifact carries no unsigned marker."
+		return 0
 	}
 
-	echo "$artifact carries no unsigned marker."
+	echo "$marker says:" >&2
+	sed 's/^/  /' <"$marker" >&2
+
+	# The marker binds to the artifact by name and by content. A marker that
+	# does not match the file beside it is worse than one that does: it means
+	# either the artifact or the marker has been swapped, and neither can be
+	# promoted on that basis.
+	named="$(sed -n 's/^artifact: //p' "$marker" | head -n 1)"
+	recorded="$(sed -n 's/^sha256: //p' "$marker" | head -n 1)"
+
+	case "$named,$recorded" in
+	,* | *,) die "$marker does not identify the artifact it belongs to; refusing to promote $artifact";;
+	esac
+
+	test "$named" = "${artifact##*/}" ||
+	die "$marker belongs to '$named', not to '${artifact##*/}'; refusing to promote either"
+
+	type sha256sum >/dev/null 2>&1 ||
+	die "sha256sum is required to verify $marker"
+
+	actual="$(sha256sum <"$artifact" | sed 's/ .*//')"
+	test "$actual" = "$recorded" ||
+	die "$marker records $recorded but $artifact hashes to $actual; refusing to promote"
+
+	die "$artifact was built unsigned and must not be promoted"
 }
 
 check_openssh_cleanup () {

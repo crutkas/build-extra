@@ -43,7 +43,7 @@ said () { # <pattern> <description>
 }
 
 # Build a stub release.sh with a chosen exit code, and a chosen set of outputs.
-make_release () { # <exit-code> <make-exe:yes|no> <make-sidecar:yes|no>
+make_release () { # <exit-code> <make-exe:yes|no> <sidecar:none|bound|wrong-name|wrong-digest|bare>
 	cat >"$work/release.sh" <<-EOF
 		#!/bin/sh
 		out=
@@ -54,8 +54,25 @@ make_release () { # <exit-code> <make-exe:yes|no> <make-sidecar:yes|no>
 			esac
 		done
 		test -n "\$out" || { echo "no --output" >&2; exit 1; }
-		test "$2" != yes || echo installer >"\$out/Git-0-test-arm64.exe"
-		test "$3" != yes || echo unsigned >"\$out/Git-0-test-arm64.exe.UNSIGNED"
+		exe="\$out/Git-0-test-arm64.exe"
+		test "$2" != yes || echo installer >"\$exe"
+		digest=
+		test ! -f "\$exe" || digest="\$(sha256sum <"\$exe" | sed 's/ .*//')"
+		case "$3" in
+		bound)
+			printf '# unsigned\nartifact: Git-0-test-arm64.exe\nsha256: %s\n' "\$digest" >"\$exe.UNSIGNED"
+			;;
+		wrong-name)
+			printf '# unsigned\nartifact: Something-Else.exe\nsha256: %s\n' "\$digest" >"\$exe.UNSIGNED"
+			;;
+		wrong-digest)
+			printf '# unsigned\nartifact: Git-0-test-arm64.exe\nsha256: %s\n' \
+				0000000000000000000000000000000000000000000000000000000000000000 >"\$exe.UNSIGNED"
+			;;
+		bare)
+			printf '# unsigned\n' >"\$exe.UNSIGNED"
+			;;
+		esac
 		exit $1
 	EOF
 }
@@ -83,29 +100,42 @@ expect_exit () { # <expected> <description>
 
 echo "# the one accepted outcome"
 
-make_release 3 yes yes
-expect_exit 0 "exit 3 with an installer and a sidecar is accepted"
+make_release 3 yes bound
+expect_exit 0 "exit 3 with an installer and a bound sidecar is accepted"
 said 'refused by the promotion gate' "confirms the promotion gate refuses the result"
 
 echo "# everything else is refused"
 
-make_release 0 yes yes
+make_release 0 yes bound
 expect_exit 1 "plain success is refused, because a release path would have continued"
 said 'must exit 3' "explains that an unsigned build has to be distinguishable"
 
-make_release 1 yes yes
+make_release 1 yes bound
 expect_exit 1 "an ordinary failure is refused"
 
-make_release 2 yes yes
+make_release 2 yes bound
 expect_exit 1 "a usage failure is refused"
 
-make_release 3 yes no
+make_release 3 yes none
 expect_exit 1 "exit 3 without a sidecar is refused"
 said 'no .UNSIGNED sidecar' "says the sidecar is missing"
 
-make_release 3 no no
+make_release 3 no none
 expect_exit 1 "exit 3 with no installer at all is refused"
 said 'No installer was produced' "says nothing was built"
+
+echo "# the sidecar has to belong to the artifact"
+
+make_release 3 yes wrong-name
+expect_exit 1 "a sidecar naming a different artifact is refused"
+said 'names' "says the sidecar names something else"
+
+make_release 3 yes wrong-digest
+expect_exit 1 "a sidecar whose digest does not match the artifact is refused"
+said 'hashes to' "says the digest does not match"
+
+make_release 3 yes bare
+expect_exit 1 "a sidecar with no identity at all is refused"
 
 echo "# the accepted status is named in exactly one place"
 

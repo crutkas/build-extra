@@ -290,8 +290,25 @@ expect_exit 1 "a parser that exits non-zero fails the check" \
 	"$work/objdump-silent" "$work/pe-fail.ps1"
 said 'failed to parse PE imports' "says which tool failed"
 
-expect_exit 1 "a missing objdump does not silently produce an empty report" \
-	"$work/no-such-objdump" "$work/pe-silent.ps1"
+expect_exit 1 "a missing objdump is a hard failure, not something to work around" \
+	"$work/no-such-objdump" "$work/pe-cover-all.ps1"
+said 'objdump not found' "names the tool that is missing"
+
+echo "# parser output has to be import evidence"
+
+{
+	echo "$pe_parser_preamble"
+	cat <<-\EOF
+		foreach ($p in @(Get-Content -LiteralPath $PathFile)) {
+		    Write-Output "${p}:"
+		    Write-Output "this is not an import line"
+		}
+		exit 0
+	EOF
+} >"$work/pe-garbage.ps1"
+expect_exit 1 "a parser that emits something other than imports fails" \
+	"$work/objdump-silent" "$work/pe-garbage.ps1"
+said 'not import evidence' "says the output was not evidence"
 
 echo "# awkward payload names"
 

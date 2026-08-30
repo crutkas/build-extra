@@ -30,6 +30,8 @@
 # constants mean the file cannot change without this script changing too.
 SEED_ENTRIES=433
 SEED_SHA256=a1e536ae97206e0b88e432978aed40a13d19f61c27076fc28052dcd1de9aeb10
+SEED_VERSION=v2.55.0.4
+SEED_ARTIFACT=arm64-payload-architecture-v2.55.0.4.tsv
 
 # The only class that may appear in the exceptions file. `anycpu32` is
 # deliberately absent: a 32-bit-preferred assembly starts a 32-bit process
@@ -58,6 +60,8 @@ usage () {
 	  --pe-imports=<file>  default: <script dir>/pe-imports.ps1
 	  --seed-sha256=<hex>  override the pinned seed digest; for tests only
 	  --seed-entries=<n>   override the pinned seed size; for tests only
+	  --seed-version=<v>   override the pinned seed version; for tests only
+	  --seed-artifact=<a>  override the pinned seed artifact; for tests only
 	EOF
 	exit 2
 }
@@ -85,6 +89,8 @@ do
 	--pe-imports=*) pe_imports="${1#*=}";;
 	--seed-sha256=*) SEED_SHA256="${1#*=}";;
 	--seed-entries=*) SEED_ENTRIES="${1#*=}";;
+	--seed-version=*) SEED_VERSION="${1#*=}";;
+	--seed-artifact=*) SEED_ARTIFACT="${1#*=}";;
 	-h|--help) usage;;
 	*) echo "Unknown option: $1" >&2; usage;;
 	esac
@@ -196,6 +202,19 @@ die "$baseline_file: the seed has $baseline_count entries but $SEED_ENTRIES are 
 baseline_digest="$(digest_of "$tmp.baseline")"
 test "$baseline_digest" = "$SEED_SHA256" ||
 die "$baseline_file: the seed hashes to $baseline_digest but $SEED_SHA256 is pinned in $0; the seed is immutable evidence and must not be edited"
+
+# The seed also has to say which payload it describes. A digest on its own
+# identifies the bytes; these say what they are evidence of.
+seed_version="$(header_value "$baseline_file" seed-version)"
+test "$seed_version" = "$SEED_VERSION" ||
+die "$baseline_file: seed-version is '$seed_version' but '$SEED_VERSION' is pinned in $0"
+
+seed_artifact="$(header_value "$baseline_file" seed-artifact)"
+test "$seed_artifact" = "$SEED_ARTIFACT" ||
+die "$baseline_file: seed-artifact is '$seed_artifact' but '$SEED_ARTIFACT' is pinned in $0"
+
+test -n "$(header_value "$baseline_file" seed-source)" ||
+die "$baseline_file: the seed does not record where it came from"
 
 cut -f 1 <"$tmp.baseline" | LC_ALL=C sort -u >"$tmp.baseline.classes"
 while IFS= read -r machine
