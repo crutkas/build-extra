@@ -15,6 +15,7 @@ skip_files=
 test_installer=
 test_installer_options=
 include_pdbs=
+allow_unsigned=
 LF='
 '
 while test $# -gt 0
@@ -25,6 +26,9 @@ do
 		;;
 	--skip-files)
 		skip_files=t
+		;;
+	--allow-unsigned)
+		allow_unsigned=--allow-unsigned
 		;;
 	--window-title-version=*)
 		inno_defines="$inno_defines$LF#define WINDOW_TITLE_VERSION '${1#*=}'"
@@ -104,7 +108,17 @@ else
 fi
 
 test $# = 0 ||
-die "Usage: $0 [-f | --force] [--output=<directory>] ( --debug-wizard-page=<page> | <version> )"
+die "Usage: $0 [-f | --force] [--allow-unsigned] [--output=<directory>] ( --debug-wizard-page=<page> | <version> )"
+
+# Fail before doing any work rather than producing an unsigned installer that
+# looks like a release.
+unsigned=
+sh ./check-release-prerequisites.sh signing $allow_unsigned
+case $? in
+0) ;;
+3) unsigned=t;;
+*) exit 1;;
+esac
 
 displayver="$(echo "${version#prerelease-}" |
 	sed -e 's/\.[^0-9]*\.[^0-9]*\./\./g' \
@@ -316,16 +330,40 @@ fi
 # 2. Convert paths to Windows filesystem compatible ones and construct the function body for the DeleteOpenSSHFiles function; one DeleteFile operation per file found
 # 3. Construct DeleteOpenSSHFiles function signature to be used in install.iss
 # 4. Assemble function body and compile flag to be used as guard in install.iss
-echo "$LIST" | sort >sorted-file-list.txt
-if type -p pacman.exe >/dev/null 2>&1
+#
+# Without this list an upgrade silently leaves a previously installed OpenSSH
+# behind, so a build that ships a payload must not proceed without it. A build
+# with no payload has nothing to reconcile against.
+echo "$LIST" | LC_ALL=C sort >sorted-file-list.txt
+define_openssh_cleanup=
+if test t = "$skip_files"
 then
-	pacman -Ql openssh 2>pacman.stderr | sed -n 's|^openssh /\(.*[^/]\)$|\1|p' | sort >sorted-openssh-file-list.txt
-	grep -v 'database file for .* does not exist' <pacman.stderr >&2
-	openssh_deletes="$(comm -12 sorted-file-list.txt sorted-openssh-file-list.txt |
+	: >sorted-openssh-file-list.txt
+	if type -p pacman.exe >/dev/null 2>&1
+	then
+		define_openssh_cleanup=t
+	fi
+else
+	sh ./check-release-prerequisites.sh openssh-cleanup >sorted-openssh-file-list.txt ||
+	die "Could not determine which files the OpenSSH package owns"
+	define_openssh_cleanup=t
+fi
+
+test -z "$define_openssh_cleanup" || {
+	# Both inputs are sorted with LC_ALL=C, and `comm` complains and exits
+	# non-zero if they are not, which would otherwise silently truncate the
+	# list of files to delete.
+	openssh_files="$(LC_ALL=C comm -12 sorted-file-list.txt sorted-openssh-file-list.txt)" ||
+	die "Could not reconcile the file list with the files owned by OpenSSH"
+
+	openssh_deletes=
+	test -z "$openssh_files" ||
+	openssh_deletes="$(printf '%s\n' "$openssh_files" |
 		sed -e 'y/\//\\/' -e "s|.*|    if not DeleteFile(AppDir+'\\\\&') then\n        Result:=False;|")"
+
 	inno_defines="$inno_defines$LF[Code]${LF}function DeleteOpenSSHFiles():Boolean;${LF}var$LF    AppDir:String;${LF}begin$LF    AppDir:=ExpandConstant('{app}');$LF    Result:=True;"
 	inno_defines="$inno_defines$LF$openssh_deletes${LF}end;$LF#define DELETE_OPENSSH_FILES 1"
-fi
+}
 
 test -z "$LIST" ||
 echo "$LIST" |
@@ -362,8 +400,16 @@ test -z "$(git config alias.signtool)" ||
 signtool="//Ssigntool=\"git signtool \\\$f\" //DSIGNTOOL"
 
 echo "Launching Inno Setup compiler ..." &&
-eval ./InnoSetup/ISCC.exe "$signtool" install.iss >install.log ||
-die "Could not make installer"
+eval ./InnoSetup/ISCC.exe "$signtool" install.iss >install.log || {
+	cat install.log >&2
+	die "Could not make installer"
+}
+
+# The compiler writes its diagnostics to the log, where they used to go
+# unread.
+sh ./check-release-prerequisites.sh iscc-log install.log \
+	--known-warnings=iscc-known-warnings.txt ||
+die "Inno Setup reported problems while building the installer"
 
 if test -n "$test_installer"
 then
@@ -372,4 +418,18 @@ then
 	exit
 fi
 
-echo "Installer is available as $(tail -n 1 install.log)"
+installer_path="$(tail -n 1 install.log | tr -d '\r')"
+test -f "$installer_path" ||
+die "Could not determine the installer path from install.log"
+
+test -z "$unsigned" || {
+	printf '%s\n' \
+		"This installer was built with --allow-unsigned and is not signed." \
+		"It must not be published or promoted to a release." \
+		>"$(cygpath -u "$installer_path").UNSIGNED" ||
+	die "Could not mark $installer_path as unsigned"
+
+	echo "WARNING: $installer_path is UNSIGNED and must not be released." >&2
+}
+
+echo "Installer is available as $installer_path"

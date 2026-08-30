@@ -1,0 +1,15 @@
+# Inno Setup compiler diagnostics that have been reviewed and accepted.
+#
+# check-release-prerequisites.sh fails the build on any Warning or Error line in
+# the compiler log that is not matched here, so that a compiler diagnostic can
+# never again be written to install.log and read by nobody.
+#
+# One basic regular expression per line, matched against the whole log line.
+# Add an entry only together with a comment saying why the diagnostic is
+# expected and what would remove it.
+
+# install.iss sets `ArchitecturesInstallIn64BitMode=x64 arm64`, and Inno Setup
+# 6.3 deprecated the bare `x64` identifier in favour of `x64compatible`.
+# Changing it is a behavioural change to installer architecture selection and is
+# deliberately out of scope here.
+^Warning: Architecture identifier "x64" is deprecated\.

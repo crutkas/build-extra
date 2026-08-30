@@ -1,0 +1,214 @@
+#!/bin/sh
+
+# Tests for installer/check-release-prerequisites.sh.
+#
+# Run: sh t/test-release-prerequisites.sh
+
+here="$(cd "$(dirname "$0")" && pwd)"
+top="$(dirname "$here")"
+checker="$top/installer/check-release-prerequisites.sh"
+
+work="$(mktemp -d)" ||
+{ echo "Could not create a temporary directory" >&2; exit 1; }
+trap 'rm -rf "$work"' EXIT
+
+checks=0
+failures=0
+
+ok () {
+	checks=$(($checks + 1))
+	echo "ok - $1"
+}
+
+not_ok () {
+	checks=$(($checks + 1))
+	failures=$(($failures + 1))
+	echo "not ok - $1"
+	test -z "$2" || sed 's/^/    /' <"$2"
+}
+
+# Run a check from a given directory, with a given PATH and HOME.
+run_check () { # <cwd> <args...>
+	cwd="$1"
+	shift
+	(
+		cd "$cwd" &&
+		PATH="$stub_path$PATH" HOME="$work/home" GIT_CONFIG_NOSYSTEM=1 \
+		sh "$checker" "$@"
+	) >"$work/out" 2>"$work/err"
+}
+
+expect_exit () { # <expected> <description> <cwd> <args...>
+	expected="$1"
+	what="$2"
+	shift 2
+
+	run_check "$@"
+	actual=$?
+
+	if test "$actual" = "$expected"
+	then
+		ok "$what"
+	else
+		not_ok "$what (expected exit $expected, got $actual)" "$work/err"
+	fi
+}
+
+mkdir -p "$work/home" "$work/plain"
+stub_path=
+
+echo "# signing"
+
+norepo="$work/plain"
+expect_exit 1 "an unconfigured signing helper fails the build" "$norepo" signing
+grep -q 'No signing helper is configured' "$work/err" &&
+ok "says what is missing" ||
+not_ok "says what is missing" "$work/err"
+
+expect_exit 3 "--allow-unsigned reports the absence instead of failing" "$norepo" signing --allow-unsigned
+grep -q 'UNSIGNED' "$work/err" &&
+ok "warns loudly that the build will be unsigned" ||
+not_ok "warns loudly that the build will be unsigned" "$work/err"
+
+signed="$work/signed-repo"
+mkdir -p "$signed"
+(
+	cd "$signed" &&
+	HOME="$work/home" git init -q . &&
+	HOME="$work/home" git config alias.signtool '!true'
+) >/dev/null 2>&1 ||
+{ echo "Could not prepare the signing fixture repository" >&2; exit 1; }
+
+expect_exit 0 "a configured signing helper satisfies the check" "$signed" signing
+expect_exit 0 "--allow-unsigned is harmless when signing is configured" "$signed" signing --allow-unsigned
+
+echo "# openssh cleanup data"
+
+expect_exit 1 "a missing pacman fails rather than silently skipping the cleanup" "$norepo" openssh-cleanup
+grep -q 'pacman is required' "$work/err" &&
+ok "says why it failed" ||
+not_ok "says why it failed" "$work/err"
+
+make_pacman () { # <body>
+	mkdir -p "$work/bin"
+	{
+		echo '#!/bin/sh'
+		cat
+	} >"$work/bin/pacman"
+	chmod +x "$work/bin/pacman"
+	cp "$work/bin/pacman" "$work/bin/pacman.exe"
+	stub_path="$work/bin:"
+}
+
+make_pacman <<-\EOF
+	echo "openssh /usr/bin/ssh.exe"
+	echo "openssh /usr/bin/scp.exe"
+	echo "openssh /usr/share/"
+EOF
+expect_exit 0 "a pacman that reports files satisfies the check" "$norepo" openssh-cleanup
+printf 'usr/bin/scp.exe\nusr/bin/ssh.exe\n' >"$work/expected-openssh"
+if cmp -s "$work/out" "$work/expected-openssh"
+then
+	ok "prints the owned files, sorted and relative"
+else
+	not_ok "prints the owned files, sorted and relative" "$work/out"
+fi
+
+make_pacman <<-\EOF
+	echo "openssh /usr/bin/ssh.exe"
+	echo "openssh /usr/bin/ssh_config"
+	echo "openssh /usr/bin/ssh-add.exe"
+	echo "openssh /usr/bin/sshd.exe"
+EOF
+(
+	cd "$norepo" &&
+	PATH="$stub_path$PATH" HOME="$work/home" LC_ALL=en_US.UTF-8 \
+	sh "$checker" openssh-cleanup
+) >"$work/out" 2>"$work/err"
+printf 'usr/bin/ssh-add.exe\nusr/bin/ssh.exe\nusr/bin/ssh_config\nusr/bin/sshd.exe\n' >"$work/expected-c-order"
+# installer/release.sh feeds this into `comm` against a list it sorts itself,
+# so the collation has to be C regardless of the ambient locale.
+if cmp -s "$work/out" "$work/expected-c-order"
+then
+	ok "sorts in C collation even under a locale that would order differently"
+else
+	not_ok "sorts in C collation even under a locale that would order differently" "$work/out"
+fi
+
+make_pacman <<-\EOF
+	echo "error: package 'openssh' was not found" >&2
+	exit 1
+EOF
+expect_exit 1 "a pacman that reports no files fails rather than producing an empty cleanup" "$norepo" openssh-cleanup
+grep -q 'owns no files' "$work/err" &&
+ok "says the cleanup data would have been empty" ||
+not_ok "says the cleanup data would have been empty" "$work/err"
+
+stub_path=
+
+echo "# Inno Setup diagnostics"
+
+known="$top/installer/iscc-known-warnings.txt"
+
+cat >"$work/clean.log" <<-\EOF
+	Inno Setup 7 Command-Line Compiler
+	Successful compile (12.345 sec). Resulting Setup program filename is:
+	D:\out\Git-0-test-arm64.exe
+EOF
+expect_exit 0 "a clean log passes" "$norepo" iscc-log "$work/clean.log" --known-warnings="$known"
+
+cat >"$work/warn.log" <<-\EOF
+	Inno Setup 7 Command-Line Compiler
+	Warning: Something nobody has looked at yet.
+	Successful compile (12.345 sec). Resulting Setup program filename is:
+EOF
+expect_exit 1 "an unreviewed warning fails the build" "$norepo" iscc-log "$work/warn.log" --known-warnings="$known"
+grep -q 'Something nobody has looked at yet' "$work/err" &&
+ok "prints the diagnostic instead of leaving it in the log" ||
+not_ok "prints the diagnostic instead of leaving it in the log" "$work/err"
+
+cat >"$work/error.log" <<-\EOF
+	Inno Setup 7 Command-Line Compiler
+	Error on line 57 in install.iss: Value of [Setup] section directive is invalid.
+EOF
+expect_exit 1 "an error fails the build" "$norepo" iscc-log "$work/error.log" --known-warnings="$known"
+
+# The wording comes from ISCmplr.dll:
+# `Architecture identifier "%s" is deprecated. Substituting "%s", ...`
+cat >"$work/deprecated.log" <<-\EOF
+	Inno Setup 7 Command-Line Compiler
+	Warning: Architecture identifier "x64" is deprecated. Substituting "x64os", but note that "x64compatible" is preferred in most cases. See the "Architecture Identifiers" topic in help file for more information.
+	Successful compile (12.345 sec). Resulting Setup program filename is:
+EOF
+expect_exit 0 "the reviewed x64 deprecation warning is accepted" "$norepo" iscc-log "$work/deprecated.log" --known-warnings="$known"
+grep -q 'Architecture identifier' "$work/err" &&
+ok "still shows the reviewed warning rather than hiding it" ||
+not_ok "still shows the reviewed warning rather than hiding it" "$work/err"
+
+expect_exit 1 "without a known-warnings file even a reviewed warning fails" "$norepo" iscc-log "$work/deprecated.log"
+
+# A typo in the reviewed list must not admit everything: grep exits 2 on a bad
+# pattern, which looks just like "nothing selected" if the status is ignored.
+printf '# reviewed\n^Warning: \\(unclosed\n' >"$work/broken-patterns.txt"
+expect_exit 1 "a malformed reviewed pattern fails instead of admitting every diagnostic" \
+	"$norepo" iscc-log "$work/warn.log" --known-warnings="$work/broken-patterns.txt"
+grep -q 'Could not apply the patterns' "$work/err" &&
+ok "says the pattern list could not be applied" ||
+not_ok "says the pattern list could not be applied" "$work/err"
+
+expect_exit 1 "a missing log fails" "$norepo" iscc-log "$work/no-such.log" --known-warnings="$known"
+expect_exit 1 "a missing known-warnings file fails" "$norepo" iscc-log "$work/clean.log" --known-warnings="$work/no-such-patterns"
+
+echo "# usage"
+
+expect_exit 2 "an unknown check is a usage error" "$norepo" no-such-check
+expect_exit 2 "no arguments is a usage error" "$norepo"
+expect_exit 2 "iscc-log without a log is a usage error" "$norepo" iscc-log --known-warnings="$known"
+
+echo ""
+if test $failures -gt 0
+then
+	echo "FAILED $failures of $checks checks"
+	exit 1
+fi
+echo "passed all $checks checks"
