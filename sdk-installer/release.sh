@@ -100,9 +100,19 @@ type 7z ||
 pacman -Sy --noconfirm $MINGW_PREFIX-7zip ||
 die "Could not install 7-Zip"
 
+# Select the architecture-appropriate 7-Zip self-extractor stub.  ARM64 uses a
+# native stub (7zS-arm64.sfx); every other architecture shares the x86 stub
+# (7zS.sfx), which also runs natively on x64.  verify-sfx-machine.sh rejects a
+# stub whose PE Machine does not match the target, so the ARM64 self-extractor
+# can never silently fall back to the x86 stub.
+SFX="$SCRIPT_PATH/../7-Zip/7zS.sfx"
+test "$SDK_ARCH" != arm64 || SFX="$SCRIPT_PATH/../7-Zip/7zS-arm64.sfx"
+sh "$SCRIPT_PATH/../7-Zip/verify-sfx-machine.sh" "$SDK_ARCH" "$SFX" ||
+die "Unusable 7-Zip SFX stub for $SDK_ARCH: $SFX"
+
 echo "Creating archive" &&
 (cd "$FAKEROOTDIR" && 7z -x'!var/lib/pacman/*' a $OPTS7 "$TMPPACK" *) &&
-(cat "$SCRIPT_PATH/../7-Zip/7zS.sfx" &&
+(cat "$SFX" &&
  echo ';!@Install@!UTF-8!' &&
  echo 'Title="Git for Windows '$SDK_TITLE' SDK"' &&
  echo 'BeginPrompt="This archive extracts an SDK to build, test and package Git for Windows '$SDK_TITLE'"' &&

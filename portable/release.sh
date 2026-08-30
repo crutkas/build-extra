@@ -163,6 +163,16 @@ die "Could not unpack .pdb files"
 TITLE="$BITNESS-bit"
 test $ARCH == "aarch64" && TITLE="ARM64"
 
+# Select the architecture-appropriate 7-Zip self-extractor stub.  ARM64 uses a
+# native stub (7zS-arm64.sfx); every other architecture shares the x86 stub
+# (7zS.sfx), which also runs natively on x64.  verify-sfx-machine.sh rejects a
+# stub whose PE Machine does not match the target, so the ARM64 self-extractor
+# can never silently fall back to the x86 stub.
+SFX="$SCRIPT_PATH/../7-Zip/7zS.sfx"
+test "$ARCH" != aarch64 || SFX="$SCRIPT_PATH/../7-Zip/7zS-arm64.sfx"
+sh "$SCRIPT_PATH/../7-Zip/verify-sfx-machine.sh" "$ARCH" "$SFX" ||
+die "Unusable 7-Zip SFX stub for $ARCH: $SFX"
+
 
 # Make the self-extracting package
 
@@ -180,7 +190,7 @@ if test -z "$(7z l $TMPPACK etc/package-versions.txt)"
 then
 	die "/etc/package-versions.txt is missing?!?"
 fi &&
-(cat "$SCRIPT_PATH/../7-Zip/7zS.sfx" &&
+(cat "$SFX" &&
  echo ';!@Install@!UTF-8!' &&
  echo 'Title="Portable Git for Windows '$TITLE'"' &&
  echo 'BeginPrompt="This archive extracts a complete Git for Windows '$TITLE'"' &&
