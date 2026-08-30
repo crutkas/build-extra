@@ -59,9 +59,13 @@ $MachineNames = @{
     0xaa64 = 'arm64'
 }
 
-# Machine names describing an architecture-neutral payload rather than a
-# concrete instruction set.
-$NeutralMachines = @('anycpu')
+# Classes derived from more than the COFF machine word. `anycpu` is a managed
+# assembly the runtime compiles for whatever it runs on, and is the only class
+# the ratchet accepts as architecture-neutral. `anycpu32` is a managed assembly
+# marked 32BITPREFERRED, which starts a 32-bit process wherever one can be
+# started and so is emulated on ARM64; it is deliberately not neutral.
+# `chpe-x86` is a hybrid x86 image, the 32-bit sibling of ARM64EC.
+$DerivedClasses = @('anycpu', 'anycpu32', 'chpe-x86')
 
 function New-PeResult {
     param([string]$File, [string]$Status, [string]$MachineName, [int]$MachineValue, [string]$Detail)
@@ -120,46 +124,80 @@ function Read-ImportNames {
     }
 }
 
-# An ARM64EC image reports IMAGE_FILE_MACHINE_AMD64 and an ARM64X image reports
-# IMAGE_FILE_MACHINE_ARM64, so the COFF machine alone cannot tell either apart
-# from a plain x64/ARM64 binary. Both carry a non-zero CHPEMetadataPointer in
-# the load configuration directory, at offset 0xC8 of
-# IMAGE_LOAD_CONFIG_DIRECTORY64 and 0x7C of the 32-bit variant, where it
-# follows DynamicValueRelocTable at 0x78.
-function Test-HybridMetadata {
+# An ARM64EC image reports IMAGE_FILE_MACHINE_AMD64, an ARM64X image reports
+# IMAGE_FILE_MACHINE_ARM64 and a CHPE x86 image reports IMAGE_FILE_MACHINE_I386,
+# so the COFF machine alone cannot tell any of them apart from an ordinary
+# binary. All three carry a non-zero CHPEMetadataPointer in the load
+# configuration directory, at offset 0xC8 of IMAGE_LOAD_CONFIG_DIRECTORY64 and
+# 0x7C of the 32-bit variant, where it follows DynamicValueRelocTable at 0x78.
+#
+# Returns 'none', 'hybrid' or 'malformed'. A load configuration that is too
+# short to contain the field predates it and is reported as 'none'; one we
+# cannot read at all is 'malformed', so a corrupt directory is never quietly
+# reported as an ordinary ARM64 or AMD64 binary.
+function Get-HybridState {
     param([byte[]]$Bytes, $Sections, [uint32]$LoadConfigRva, [bool]$Is64Bit)
 
-    if ($LoadConfigRva -eq 0) { return $false }
+    if ($LoadConfigRva -eq 0) { return 'none' }
 
     $offset = Convert-RvaToOffset -Rva $LoadConfigRva -Sections $Sections
-    if ($offset -lt 0 -or ($offset + 4) -gt $Bytes.Length) { return $false }
+    if ($offset -lt 0) { return 'malformed' }
+    if (($offset + 4) -gt $Bytes.Length) { return 'malformed' }
 
     $declaredSize = Get-U32 -Bytes $Bytes -Offset ([int]$offset)
     if ($Is64Bit) { $field = 0xC8; $width = 8 } else { $field = 0x7C; $width = 4 }
 
-    if ($declaredSize -lt ($field + $width)) { return $false }
-    if (($offset + $field + $width) -gt $Bytes.Length) { return $false }
+    if ($declaredSize -lt ($field + $width)) { return 'none' }
+    if (($offset + $field + $width) -gt $Bytes.Length) { return 'malformed' }
 
     if ($Is64Bit) {
-        return ([BitConverter]::ToUInt64($Bytes, [int]$offset + $field) -ne 0)
+        $value = [BitConverter]::ToUInt64($Bytes, [int]$offset + $field)
+    } else {
+        $value = Get-U32 -Bytes $Bytes -Offset ([int]$offset + $field)
     }
-    return ((Get-U32 -Bytes $Bytes -Offset ([int]$offset + $field)) -ne 0)
+    if ($value -ne 0) { return 'hybrid' }
+    return 'none'
 }
 
-# A managed assembly built for AnyCPU is IL-only and is compiled to the host
-# instruction set at run time, so its COFF machine (always i386) says nothing
-# about the architecture it runs on. Distinguish it from a native i386 binary
-# via COMIMAGE_FLAGS_ILONLY / COMIMAGE_FLAGS_32BITREQUIRED in the CLR header.
-function Test-AnyCpuAssembly {
-    param([byte[]]$Bytes, $Sections, [uint32]$ClrRva)
+# Classify the CLR header, which decides whether the COFF machine says anything
+# useful about the architecture. Returns:
+#
+#   none            not a managed assembly
+#   anycpu          IL only, neither 32-bit required nor 32-bit preferred, so
+#                   the runtime compiles it for whatever it is running on
+#   anycpu32        IL only but 32BITPREFERRED, which starts a 32-bit process
+#                   wherever one can be started, and so is emulated on ARM64
+#   managed-native  mixed mode, a native entry point or ReadyToRun, all of
+#                   which contain native code; the COFF machine governs
+#   malformed       the directory is unreadable or too small to trust
+#
+# https://learn.microsoft.com/en-us/dotnet/api/system.reflection.portableexecutablekinds
+function Get-ManagedClass {
+    param([byte[]]$Bytes, $Sections, [uint32]$ClrRva, [uint32]$ClrSize)
 
-    if ($ClrRva -eq 0) { return $false }
+    if ($ClrRva -eq 0) { return 'none' }
+
+    # IMAGE_COR20_HEADER is 72 bytes; anything shorter cannot be one.
+    if ($ClrSize -lt 72) { return 'malformed' }
 
     $offset = Convert-RvaToOffset -Rva $ClrRva -Sections $Sections
-    if ($offset -lt 0 -or ($offset + 20) -gt $Bytes.Length) { return $false }
+    if ($offset -lt 0) { return 'malformed' }
+    if (($offset + 72) -gt $Bytes.Length) { return 'malformed' }
+
+    $cb = Get-U32 -Bytes $Bytes -Offset ([int]$offset)
+    if ($cb -lt 72) { return 'malformed' }
 
     $flags = Get-U32 -Bytes $Bytes -Offset ([int]$offset + 16)
-    return ((($flags -band 0x1) -ne 0) -and (($flags -band 0x2) -eq 0))
+    $ilOnly = ($flags -band 0x00000001) -ne 0
+    $requires32Bit = ($flags -band 0x00000002) -ne 0
+    $nativeEntryPoint = ($flags -band 0x00000010) -ne 0
+    $prefers32Bit = ($flags -band 0x00020000) -ne 0
+
+    if (-not $ilOnly) { return 'managed-native' }
+    if ($nativeEntryPoint) { return 'managed-native' }
+    if ($prefers32Bit) { return 'anycpu32' }
+    if ($requires32Bit) { return 'managed-native' }
+    return 'anycpu'
 }
 
 function Get-PeInfo {
@@ -255,14 +293,36 @@ function Get-PeInfo {
     $delayDir = & $readDir 13
     $clrDir = & $readDir 14
 
-    if (Test-AnyCpuAssembly -Bytes $bytes -Sections $sections -ClrRva $clrDir[0]) {
-        $machineName = 'anycpu'
-    } elseif ($machineValue -eq 0xaa64 -or $machineValue -eq 0x8664) {
-        if (Test-HybridMetadata -Bytes $bytes -Sections $sections -LoadConfigRva $loadConfigDir[0] -Is64Bit $is64Bit) {
-            if ($machineValue -eq 0xaa64) { $machineName = 'arm64x' } else { $machineName = 'arm64ec' }
-        }
+    $managed = Get-ManagedClass -Bytes $bytes -Sections $sections -ClrRva $clrDir[0] -ClrSize $clrDir[1]
+    if ($managed -eq 'malformed') {
+        return New-PeResult -File $File -Status 'malformed' -MachineName 'malformed' -MachineValue $machineValue `
+            -Detail 'unreadable CLR header'
     }
 
+    if ($managed -eq 'anycpu') {
+        $machineName = 'anycpu'
+    } elseif ($managed -eq 'anycpu32') {
+        $machineName = 'anycpu32'
+    } elseif ($machineValue -eq 0xaa64 -or $machineValue -eq 0x8664 -or $machineValue -eq 0x014c) {
+        # The three machines for which a hybrid image exists. A directory we
+        # cannot read is fatal here: reporting the COFF machine instead would
+        # pass an ARM64X image off as ordinary ARM64.
+        $hybrid = Get-HybridState -Bytes $bytes -Sections $sections `
+            -LoadConfigRva $loadConfigDir[0] -Is64Bit $is64Bit
+        if ($hybrid -eq 'malformed') {
+            return New-PeResult -File $File -Status 'malformed' -MachineName 'malformed' -MachineValue $machineValue `
+                -Detail 'unreadable load configuration directory'
+        }
+        if ($hybrid -eq 'hybrid') {
+            if ($machineValue -eq 0xaa64) {
+                $machineName = 'arm64x'
+            } elseif ($machineValue -eq 0x8664) {
+                $machineName = 'arm64ec'
+            } else {
+                $machineName = 'chpe-x86'
+            }
+        }
+    }
     $result = New-PeResult -File $File -Status 'ok' -MachineName $machineName -MachineValue $machineValue -Detail ''
 
     if ($importDir[0] -ne 0 -and $importDir[1] -ne 0) {
@@ -291,7 +351,7 @@ if ($AllowList -ne '') {
 }
 
 if ($RequireMachine -ne '' -and -not ($MachineNames.Values -contains $RequireMachine) -and
-    -not ($NeutralMachines -contains $RequireMachine)) {
+    -not ($DerivedClasses -contains $RequireMachine)) {
     Write-Error "pe-imports: unknown machine name '$RequireMachine'"
     exit 2
 }

@@ -15,7 +15,10 @@ param(
     [int]$MachineValue = 0xAA64,
     [int]$Bits = 64,
     [switch]$Hybrid,
-    [switch]$AnyCpu
+    [switch]$AnyCpu,
+    [switch]$AnyCpu32,
+    [switch]$Requires32,
+    [switch]$MixedMode
 )
 
 Set-StrictMode -Version 2.0
@@ -122,12 +125,18 @@ function New-HybridLoadConfig {
     return $data
 }
 
-# IMAGE_COR20_HEADER; 0x1 is COMIMAGE_FLAGS_ILONLY, 0x2 is 32BITREQUIRED.
+# IMAGE_COR20_HEADER. COMIMAGE_FLAGS_ILONLY is 0x1, 32BITREQUIRED 0x2,
+# NATIVE_ENTRYPOINT 0x10 and 32BITPREFERRED 0x20000.
 function New-ClrHeader {
-    param([uint32]$Flags = 0x1)
-    $data = New-Object byte[] 72
-    [Array]::Copy([BitConverter]::GetBytes([uint32]72), 0, $data, 0, 4)
-    [Array]::Copy([BitConverter]::GetBytes($Flags), 0, $data, 16, 4)
+    param([uint32]$Flags = 0x1, [int]$Size = 72, [int]$DeclaredSize = -1)
+    $data = New-Object byte[] $Size
+    if ($DeclaredSize -lt 0) { $DeclaredSize = 72 }
+    if ($Size -ge 4) {
+        [Array]::Copy([BitConverter]::GetBytes([uint32]$DeclaredSize), 0, $data, 0, 4)
+    }
+    if ($Size -ge 20) {
+        [Array]::Copy([BitConverter]::GetBytes($Flags), 0, $data, 16, 4)
+    }
     return $data
 }
 
@@ -142,6 +151,16 @@ if ($Out -ne '') {
     } elseif ($AnyCpu) {
         $dirs[14] = @(0x1000, 72)
         $data = New-ClrHeader -Flags 0x1
+    } elseif ($AnyCpu32) {
+        # 32BITPREFERRED is only ever set alongside 32BITREQUIRED.
+        $dirs[14] = @(0x1000, 72)
+        $data = New-ClrHeader -Flags 0x20003
+    } elseif ($Requires32) {
+        $dirs[14] = @(0x1000, 72)
+        $data = New-ClrHeader -Flags 0x3
+    } elseif ($MixedMode) {
+        $dirs[14] = @(0x1000, 72)
+        $data = New-ClrHeader -Flags 0x0
     }
 
     $null = New-TestPe -Path $Out -MachineValue $MachineValue -Is64Bit $is64 `

@@ -102,13 +102,56 @@ $notHybrid32 = New-Object byte[] 0xB0
 [Array]::Copy([BitConverter]::GetBytes([uint32]0x3000), 0, $notHybrid32, 0x78, 4)
 Assert-Equal 'amd64' (Get-Machine (New-Pe -Name 'reloc32.dll' -MachineValue 0x8664 -Is64Bit $false `
     -DataDirs @{ 10 = @(0x1000, 0xB0) } -SectionData $notHybrid32)) 'DynamicValueRelocTable at 0x78 is not mistaken for CHPE metadata'
+Assert-Equal 'chpe-x86' (Get-Machine (New-Pe -Name 'chpe32.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 10 = @(0x1000, 0xB0) } -SectionData $hybrid32)) 'a hybrid x86 image is chpe-x86, not i386'
+
+Write-Host "# a load configuration we cannot trust is never ordinary"
+
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'lc-unmapped.dll' -MachineValue 0xAA64 `
+    -DataDirs @{ 10 = @(0x9000, 0x140) } -SectionData $hybrid64)) 'a load config RVA outside every section is malformed, not ARM64'
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'lc-unmapped-amd64.dll' -MachineValue 0x8664 `
+    -DataDirs @{ 10 = @(0x9000, 0x140) } -SectionData $hybrid64)) 'a load config RVA outside every section is malformed, not AMD64'
+
+# Declares a structure long enough to contain CHPEMetadataPointer, but the
+# section data stops before it.
+$truncatedLc = New-Object byte[] 0x20
+[Array]::Copy([BitConverter]::GetBytes([uint32]0x140), 0, $truncatedLc, 0, 4)
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'lc-truncated.dll' -MachineValue 0xAA64 `
+    -DataDirs @{ 10 = @(0x1000, 0x140) } -SectionData $truncatedLc)) 'a load config that ends before CHPEMetadataPointer is malformed'
+
+# A structure that genuinely predates the field is not corrupt.
+$oldLc = New-Object byte[] 0x60
+[Array]::Copy([BitConverter]::GetBytes([uint32]0x5C), 0, $oldLc, 0, 4)
+Assert-Equal 'arm64' (Get-Machine (New-Pe -Name 'lc-old.dll' -MachineValue 0xAA64 `
+    -DataDirs @{ 10 = @(0x1000, 0x5C) } -SectionData $oldLc)) 'a load config predating CHPEMetadataPointer stays ARM64'
 
 Write-Host "# managed assemblies"
 
 Assert-Equal 'anycpu' (Get-Machine (New-Pe -Name 'anycpu.dll' -MachineValue 0x014C -Is64Bit $false `
-    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x1))) 'an IL-only managed assembly is anycpu'
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x1))) 'IL only, neither required nor preferred 32-bit, is anycpu'
 Assert-Equal 'i386' (Get-Machine (New-Pe -Name 'il32.dll' -MachineValue 0x014C -Is64Bit $false `
-    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x3))) 'a managed assembly that requires 32 bits is i386'
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x3))) '32BITREQUIRED is not anycpu'
+Assert-Equal 'anycpu32' (Get-Machine (New-Pe -Name 'pref32.exe' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x20003))) '32BITPREFERRED is its own class, never anycpu'
+Assert-Equal 'anycpu32' (Get-Machine (New-Pe -Name 'pref32only.exe' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x20001))) '32BITPREFERRED without 32BITREQUIRED is still anycpu32'
+Assert-Equal 'i386' (Get-Machine (New-Pe -Name 'mixed.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x0))) 'mixed mode is not anycpu'
+Assert-Equal 'i386' (Get-Machine (New-Pe -Name 'nativeentry.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x11))) 'a native entry point is not anycpu'
+Assert-Equal 'arm64' (Get-Machine (New-Pe -Name 'r2r-arm64.dll' -MachineValue 0xAA64 `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x0))) 'a ReadyToRun ARM64 assembly is classified by its machine'
+Assert-Equal 'amd64' (Get-Machine (New-Pe -Name 'r2r-amd64.dll' -MachineValue 0x8664 `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x0))) 'a ReadyToRun x64 assembly is classified by its machine'
+
+Write-Host "# a CLR directory we cannot trust is never anycpu"
+
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'clr-short-dir.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 40) } -SectionData (New-ClrHeader -Flags 0x1))) 'a CLR data directory smaller than IMAGE_COR20_HEADER is malformed'
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'clr-short-cb.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x1000, 72) } -SectionData (New-ClrHeader -Flags 0x1 -DeclaredSize 40))) 'a CLR header declaring fewer than 72 bytes is malformed'
+Assert-Equal 'malformed' (Get-Machine (New-Pe -Name 'clr-unmapped.dll' -MachineValue 0x014C -Is64Bit $false `
+    -DataDirs @{ 14 = @(0x9000, 72) } -SectionData (New-ClrHeader -Flags 0x1))) 'a CLR directory RVA outside every section is malformed'
 
 Write-Host "# malformed, truncated and non-PE inputs"
 
