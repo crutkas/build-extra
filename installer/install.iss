@@ -54,7 +54,7 @@ SolidCompression=yes
 #endif
 SourceDir={#SOURCE_DIR}
 #if BITNESS=='64' || INSTALLER_FILENAME_SUFFIX=='arm64'
-ArchitecturesInstallIn64BitMode=x64 arm64
+ArchitecturesInstallIn64BitMode=x64compatible arm64
 #endif
 #ifdef SIGNTOOL
 SignTool=signtool
