@@ -1,19 +1,46 @@
 #!/bin/sh
 
-# Verify that every PE shipped in the ARM64 payload is a native ARM64 binary,
-# and that the list of known non-ARM64 binaries only ever shrinks.
+# Verify that every PE shipped in the ARM64 payload is an ordinary ARM64
+# binary, and that the set of exceptions to that only ever shrinks.
 #
 # Two lists back this check:
 #
-#   arm64-payload-baseline.txt    native non-ARM64 binaries, i.e. residual
-#                                 emulation debt. Cannot grow past its recorded
-#                                 seed-entries; reductions are reported.
-#   arm64-payload-exceptions.txt  reviewed, architecture-neutral binaries that
-#                                 are not an emulation dependency. Refuses
-#                                 native machine types, so the ratchet above
-#                                 cannot be bypassed here.
+#   arm64-payload-baseline.txt    The seed: the native non-ARM64 binaries
+#                                 present when the ratchet was introduced, i.e.
+#                                 the residual emulation debt. It is immutable
+#                                 evidence. Its size and digest are pinned in
+#                                 this script, so it cannot be edited -- not
+#                                 even to swap one entry for another at the
+#                                 same count -- without a visible change here.
+#                                 Debt is paid down by the payload changing,
+#                                 which this check then reports as a reduction.
 #
-# Anything shipped that is neither ARM64 nor listed is a failure.
+#   arm64-payload-exceptions.txt  Reviewed binaries that are architecture
+#                                 neutral and so are not an emulation
+#                                 dependency. Only the strict AnyCPU class is
+#                                 accepted, so nothing native can be admitted
+#                                 here instead of failing against the seed.
+#
+# Anything shipped that is neither ordinary ARM64 nor listed is a failure, as
+# is any binary whose classification has drifted away from what the seed
+# records.
+
+# The seed is pinned here rather than only self-describing. A digest that a
+# contributor recomputes from the file they just edited proves nothing; these
+# constants mean the file cannot change without this script changing too.
+SEED_ENTRIES=433
+SEED_SHA256=a1e536ae97206e0b88e432978aed40a13d19f61c27076fc28052dcd1de9aeb10
+
+# The only class that may appear in the exceptions file. `anycpu32` is
+# deliberately absent: a 32-bit-preferred assembly starts a 32-bit process
+# wherever one can be started, and so is emulated on ARM64.
+EXCEPTION_CLASSES='anycpu'
+
+# Classes that may not appear in the seed. `arm64` because it is the thing
+# being required; `anycpu` because it belongs in the exceptions file; and every
+# parse failure because a binary nobody could decode must be fixed rather than
+# grandfathered.
+FORBIDDEN_BASELINE_CLASSES='arm64 anycpu not-pe truncated malformed unreadable'
 
 die () {
 	echo "$*" >&2
@@ -29,12 +56,14 @@ usage () {
 	  --file-list=<file>   payload paths to inspect; default: run make-file-list.sh
 	  --root=<dir>         prefix for payload paths; default: none, i.e. /
 	  --pe-imports=<file>  default: <script dir>/pe-imports.ps1
+	  --seed-sha256=<hex>  override the pinned seed digest; for tests only
+	  --seed-entries=<n>   override the pinned seed size; for tests only
 	EOF
 	exit 2
 }
 
-# Globbing is never wanted here and payload names such as `[.exe` would
-# otherwise be expanded when a batch is split into arguments.
+# Globbing is never wanted here, and payload names such as `[.exe` would
+# otherwise be expanded when a list is read.
 set -f
 
 thisdir="$(cd "$(dirname "$0")" && pwd)" ||
@@ -54,6 +83,8 @@ do
 	--file-list=*) file_list="${1#*=}";;
 	--root=*) root="${1#*=}";;
 	--pe-imports=*) pe_imports="${1#*=}";;
+	--seed-sha256=*) SEED_SHA256="${1#*=}";;
+	--seed-entries=*) SEED_ENTRIES="${1#*=}";;
 	-h|--help) usage;;
 	*) echo "Unknown option: $1" >&2; usage;;
 	esac
@@ -61,20 +92,18 @@ do
 done
 
 type sha256sum >/dev/null 2>&1 ||
-die "sha256sum is required to verify the baseline digest"
+die "sha256sum is required to verify the list digests"
+
+type cygpath >/dev/null 2>&1 ||
+die "cygpath is required to hand payload paths to the PE parser"
 
 test -f "$pe_imports" ||
 die "Not found: $pe_imports"
 
 tmp=/tmp/payload-arch.$$
-# `set -f` above is still in effect inside the trap, so the glob would not be
+# `set -f` is still in effect inside the trap, so a glob there would not be
 # expanded and the cleanup would quietly remove nothing.
 trap "set +f; rm -f \"$tmp\".*" EXIT
-
-# The machine names that describe an architecture-neutral payload. Only these
-# may appear in the exceptions file; everything else is a concrete instruction
-# set and belongs in the baseline.
-NEUTRAL_MACHINES='anycpu'
 
 header_value () { # <file> <key>
 	sed -n "s/^# $2: \\(.*\\)\$/\\1/p" "$1" | head -n 1
@@ -88,54 +117,127 @@ digest_of () { # <file>
 	sha256sum <"$1" | sed 's/ .*//'
 }
 
-check_list_format () { # <file> <label>
-	test -f "$1" ||
-	die "Not found: $1"
+# Everything a list has to satisfy regardless of which list it is: a declared
+# format and size that match the body, a fixed number of tab-separated fields,
+# byte order, uniqueness of both whole entries and paths, and paths that are
+# repo-relative and canonical.
+validate_list () { # <file> <label> <fields> <body-out>
+	list_file="$1"
+	label="$2"
+	fields="$3"
+	body_out="$4"
 
-	version="$(header_value "$1" format-version)"
+	test -f "$list_file" ||
+	die "Not found: $list_file"
+
+	version="$(header_value "$list_file" format-version)"
 	test "$version" = 1 ||
-	die "$2: unsupported format-version '$version', expected 1"
+	die "$label: unsupported format-version '$version', expected 1"
 
-	declared="$(header_value "$1" entries)"
+	list_body "$list_file" >"$body_out"
+
+	declared="$(header_value "$list_file" entries)"
 	case "$declared" in
-	'' | *[!0-9]*) die "$2: missing or malformed 'entries' header";;
+	'' | *[!0-9]*) die "$label: missing or malformed 'entries' header";;
 	esac
-
-	list_body "$1" >"$tmp.body"
-	actual=$(($(wc -l <"$tmp.body")))
+	actual=$(($(wc -l <"$body_out")))
 	test "$declared" -eq "$actual" ||
-	die "$2: header says $declared entries but the body has $actual"
+	die "$label: header says $declared entries but the body has $actual"
 
-	declared_digest="$(header_value "$1" sha256)"
-	actual_digest="$(digest_of "$tmp.body")"
+	declared_digest="$(header_value "$list_file" sha256)"
+	actual_digest="$(digest_of "$body_out")"
 	test "$declared_digest" = "$actual_digest" ||
-	die "$2: sha256 header is $declared_digest but the body hashes to $actual_digest"
+	die "$label: sha256 header is $declared_digest but the body hashes to $actual_digest"
+
+	# Exactly <fields> tab-separated fields, no more and no fewer. `awk` is
+	# not assumed to be present, so count the tabs with `tr`.
+	line_no=0
+	while IFS= read -r entry
+	do
+		line_no=$(($line_no + 1))
+		tabs=$(($(printf '%s' "$entry" | tr -cd '	' | wc -c)))
+		test "$tabs" -eq $(($fields - 1)) ||
+		die "$label line $line_no: expected $fields tab-separated fields, found $(($tabs + 1))"
+	done <"$body_out"
+
+	LC_ALL=C sort "$body_out" >"$body_out.sorted"
+	cmp -s "$body_out" "$body_out.sorted" ||
+	die "$label: the body is not sorted with LC_ALL=C"
+
+	LC_ALL=C sort -u "$body_out" >"$body_out.uniq"
+	cmp -s "$body_out" "$body_out.uniq" ||
+	die "$label: the body contains duplicate entries"
+
+	cut -f 2 <"$body_out" | LC_ALL=C sort >"$body_out.paths"
+	LC_ALL=C sort -u "$body_out.paths" >"$body_out.paths.uniq"
+	cmp -s "$body_out.paths" "$body_out.paths.uniq" ||
+	die "$label: the same path is listed more than once"
+
+	while IFS= read -r payload_path
+	do
+		case "$payload_path" in
+		'') die "$label: an entry has an empty path";;
+		/*) die "$label: '$payload_path' is absolute; paths are repo-relative";;
+		*\\*) die "$label: '$payload_path' contains a backslash";;
+		./* | ../* | */../* | */./*) die "$label: '$payload_path' is not canonical";;
+		esac
+	done <"$body_out.paths"
 }
 
-check_list_format "$baseline_file" "$baseline_file"
-cp "$tmp.body" "$tmp.baseline"
+validate_list "$baseline_file" "$baseline_file" 2 "$tmp.baseline"
 
-seed="$(header_value "$baseline_file" seed-entries)"
-case "$seed" in
-'' | *[!0-9]*) die "$baseline_file: missing or malformed 'seed-entries' header";;
-esac
+# The seed is evidence, not a working file. Pinning its size and digest here is
+# what stops one grandfathered entry being swapped for a new one at the same
+# count with a recomputed header.
 baseline_count=$(($(wc -l <"$tmp.baseline")))
-test "$baseline_count" -le "$seed" ||
-die "$baseline_file: $baseline_count entries exceeds seed-entries $seed; the baseline may only shrink"
+test "$baseline_count" -eq "$SEED_ENTRIES" ||
+die "$baseline_file: the seed has $baseline_count entries but $SEED_ENTRIES are pinned in $0"
 
-check_list_format "$exceptions_file" "$exceptions_file"
-cut -f 1,2 <"$tmp.body" >"$tmp.exceptions"
+baseline_digest="$(digest_of "$tmp.baseline")"
+test "$baseline_digest" = "$SEED_SHA256" ||
+die "$baseline_file: the seed hashes to $baseline_digest but $SEED_SHA256 is pinned in $0; the seed is immutable evidence and must not be edited"
 
-# Reject a native machine in the exceptions file, which would otherwise be a
-# way to add emulation debt without touching the baseline.
-cut -f 1 <"$tmp.exceptions" | sort -u >"$tmp.exception-machines"
-while read -r machine
+cut -f 1 <"$tmp.baseline" | LC_ALL=C sort -u >"$tmp.baseline.classes"
+while IFS= read -r machine
 do
-	case " $NEUTRAL_MACHINES " in
-	*" $machine "*) ;;
-	*) die "$exceptions_file: '$machine' is a native machine type; list it in $baseline_file instead";;
+	case " $FORBIDDEN_BASELINE_CLASSES " in
+	*" $machine "*) die "$baseline_file: '$machine' must not appear in the seed";;
 	esac
-done <"$tmp.exception-machines"
+	case "$machine" in
+	unknown-*) die "$baseline_file: '$machine' is unrecognised and must not appear in the seed";;
+	esac
+done <"$tmp.baseline.classes"
+
+validate_list "$exceptions_file" "$exceptions_file" 3 "$tmp.exceptions.full"
+cut -f 1,2 <"$tmp.exceptions.full" >"$tmp.exceptions"
+
+# Only the strict AnyCPU class is neutral. Anything else here would be a way to
+# admit emulation debt without touching the seed.
+cut -f 1 <"$tmp.exceptions" | LC_ALL=C sort -u >"$tmp.exceptions.classes"
+while IFS= read -r machine
+do
+	case " $EXCEPTION_CLASSES " in
+	*" $machine "*) ;;
+	*) die "$exceptions_file: '$machine' is not architecture-neutral; it belongs in $baseline_file, which is immutable";;
+	esac
+done <"$tmp.exceptions.classes"
+
+line_no=0
+while IFS= read -r entry
+do
+	line_no=$(($line_no + 1))
+	reason="${entry#*	}"
+	reason="${reason#*	}"
+	test -n "$(printf '%s' "$reason" | tr -d ' 	')" ||
+	die "$exceptions_file line $line_no: the reason is empty"
+done <"$tmp.exceptions.full"
+
+LC_ALL=C comm -12 "$tmp.baseline.paths" "$tmp.exceptions.full.paths" >"$tmp.overlap"
+test ! -s "$tmp.overlap" || {
+	echo "A path is listed in both $baseline_file and $exceptions_file:" >&2
+	sed 's/^/  /' <"$tmp.overlap" >&2
+	die "Each path must appear in exactly one list"
+}
 
 if test -n "$file_list"
 then
@@ -152,14 +254,11 @@ candidate_count=$(($(wc -l <"$tmp.candidates")))
 test "$candidate_count" -gt 0 ||
 die "The payload contains no .dll or .exe files; refusing to report success"
 
-type cygpath >/dev/null 2>&1 ||
-die "cygpath is required to hand payload paths to the PE parser"
-
 # Hand the paths over in a file rather than as arguments. MSYS silently
 # refuses to convert an argument containing a bracket, and the payload really
 # does contain `usr/bin/[.exe`.
 : >"$tmp.absolute"
-while read -r payload_path
+while IFS= read -r payload_path
 do
 	printf '%s\n' "$root/$payload_path" >>"$tmp.absolute"
 done <"$tmp.candidates"
@@ -181,10 +280,10 @@ die "pe-imports.ps1 described $out_n of $candidate_count binaries; refusing to r
 
 # Join by position: pe-imports.ps1 emits exactly one line per input, in order.
 # Its echoed path is in Windows form, so it is not comparable to the payload
-# path.
+# path and must not be used to pair the two up.
 : >"$tmp.machines"
 exec 3<"$tmp.candidates" 4<"$tmp.out"
-while read -r payload_path <&3 && read -r machine_line <&4
+while IFS= read -r payload_path <&3 && IFS= read -r machine_line <&4
 do
 	printf '%s\t%s\n' "${machine_line%%	*}" "$payload_path" >>"$tmp.machines"
 done
@@ -197,42 +296,77 @@ die "Classified $classified of $candidate_count binaries; refusing to report suc
 grep -v '^arm64	' <"$tmp.machines" | LC_ALL=C sort >"$tmp.observed"
 observed_count=$(($(wc -l <"$tmp.observed")))
 
-LC_ALL=C sort "$tmp.baseline" >"$tmp.baseline.sorted"
-LC_ALL=C sort "$tmp.exceptions" >"$tmp.exceptions.sorted"
-LC_ALL=C sort -u "$tmp.baseline.sorted" "$tmp.exceptions.sorted" >"$tmp.known"
+LC_ALL=C sort "$tmp.baseline" >"$tmp.baseline.byline"
+LC_ALL=C sort "$tmp.exceptions" >"$tmp.exceptions.byline"
+LC_ALL=C sort -u "$tmp.baseline.byline" "$tmp.exceptions.byline" >"$tmp.known"
 
 LC_ALL=C comm -23 "$tmp.observed" "$tmp.known" >"$tmp.unlisted"
-LC_ALL=C comm -13 "$tmp.observed" "$tmp.baseline.sorted" >"$tmp.gone"
+LC_ALL=C comm -13 "$tmp.observed" "$tmp.baseline.byline" >"$tmp.gone"
+
+# A path that is listed but now classifies differently appears in both sets at
+# once. That is drift, not a reduction, and reporting it as one would let an
+# ARM64 binary turn into an ARM64EC binary and look like progress.
+cut -f 2 <"$tmp.unlisted" | LC_ALL=C sort -u >"$tmp.unlisted.paths"
+cut -f 2 <"$tmp.gone" | LC_ALL=C sort -u >"$tmp.gone.paths"
+LC_ALL=C comm -12 "$tmp.unlisted.paths" "$tmp.gone.paths" >"$tmp.drift.paths"
+
+machine_for () { # <path> <file>
+	while IFS='	' read -r machine listed_path
+	do
+		test "$listed_path" = "$1" || continue
+		printf '%s' "$machine"
+		return
+	done <"$2"
+}
+
+without_drift () { # <file>
+	while IFS='	' read -r machine listed_path
+	do
+		grep -q -x -F "$listed_path" "$tmp.drift.paths" ||
+		printf '%s\t%s\n' "$machine" "$listed_path"
+	done <"$1"
+}
+
+without_drift "$tmp.unlisted" >"$tmp.unlisted.net"
+without_drift "$tmp.gone" >"$tmp.gone.net"
 
 status=0
 
-if test -s "$tmp.unlisted"
+if test -s "$tmp.drift.paths"
 then
-	echo "The ARM64 payload gained binaries that are not native ARM64:" >&2
-	sed 's/^/  /' <"$tmp.unlisted" >&2
+	echo "The classification of a listed binary changed:" >&2
+	while IFS= read -r drifted
+	do
+		printf '  %s: %s -> %s\n' "$drifted" \
+			"$(machine_for "$drifted" "$tmp.gone")" \
+			"$(machine_for "$drifted" "$tmp.unlisted")" >&2
+	done <"$tmp.drift.paths"
+	echo "That is a change of architecture, not a reduction in emulation debt." >&2
 	echo >&2
-	echo "Make them ARM64, or -- if a listed path merely changed machine type --" >&2
-	echo "update the entry. A native machine belongs in $baseline_file," >&2
-	echo "which cannot grow past its seed-entries; an architecture-neutral one" >&2
-	echo "belongs in $exceptions_file with a reason." >&2
 	status=1
 fi
 
-echo "Inspected $candidate_count binaries: $(($candidate_count - $observed_count)) ARM64," \
-	"$observed_count not ARM64." >&2
-echo "Baseline holds $baseline_count of a seeded $seed entries." >&2
-
-if test -s "$tmp.gone"
+if test -s "$tmp.unlisted.net"
 then
-	removed=$(($(wc -l <"$tmp.gone")))
+	echo "The ARM64 payload gained binaries that are not ordinary ARM64:" >&2
+	sed 's/^/  /' <"$tmp.unlisted.net" >&2
 	echo >&2
-	echo "$removed baseline entries are no longer shipped and can be dropped:" >&2
-	sed 's/^/  /' <"$tmp.gone" >&2
-	LC_ALL=C comm -12 "$tmp.observed" "$tmp.baseline.sorted" >"$tmp.baseline.next"
-	echo >&2
-	echo "After dropping them, $baseline_file should read:" >&2
-	echo "  # entries: $(($(wc -l <"$tmp.baseline.next")))" >&2
-	echo "  # sha256: $(digest_of "$tmp.baseline.next")" >&2
+	echo "Make them ARM64. The seed in $baseline_file is immutable evidence of" >&2
+	echo "what was already emulated and cannot be extended; only an" >&2
+	echo "architecture-neutral binary may be added to $exceptions_file, with a" >&2
+	echo "reason." >&2
+	status=1
+fi
+
+echo "Inspected $candidate_count binaries: $(($candidate_count - $observed_count)) ordinary ARM64," \
+	"$observed_count not." >&2
+echo "The seed records $SEED_ENTRIES emulated binaries." >&2
+
+if test -s "$tmp.gone.net"
+then
+	removed=$(($(wc -l <"$tmp.gone.net")))
+	echo "$removed of them are no longer shipped, or are now ARM64:" >&2
+	sed 's/^/  /' <"$tmp.gone.net" >&2
 fi
 
 exit $status

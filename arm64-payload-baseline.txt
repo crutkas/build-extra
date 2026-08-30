@@ -1,21 +1,25 @@
-# Git for Windows ARM64 payload architecture baseline.
+# Git for Windows ARM64 payload architecture seed.
 #
-# Every native PE in the ARM64 payload whose COFF machine is not
-# IMAGE_FILE_MACHINE_ARM64 (0xAA64) is listed here. This is the residual x64/x86
-# emulation debt, seeded from the ARM64 RTM packaging audit of v2.55.0.4.
+# The native non-ARM64 binaries the ARM64 payload shipped when this ratchet
+# was introduced: the residual x64/x86 emulation debt.
 #
-# check-payload-architecture.sh fails when a shipped binary is not ARM64 and is
-# absent from this file, and when this file grows beyond seed-entries. The list
-# may only shrink; reductions are reported so progress stays measurable.
+# This file is immutable evidence, not a working list. Its entry count and
+# body digest are pinned in check-payload-architecture.sh, so it cannot be
+# edited at all -- not even to swap one entry for another at the same count --
+# without a visible change to that script. Debt is paid down by the payload
+# becoming native, which the check then reports as a reduction; nothing needs
+# to be removed from here for that to happen.
 #
 # Managed, architecture-neutral assemblies do not belong here. They are listed
-# in arm64-payload-exceptions.txt, which refuses native machine types.
+# in arm64-payload-exceptions.txt, which refuses every other class.
 #
 # Body format: one entry per line, "<machine><TAB><path>", sorted with LC_ALL=C.
 # sha256 covers the body only: every non-comment line, LF-terminated.
 #
 # format-version: 1
-# seed-entries: 433
+# seed-source: ARM64 RTM packaging audit of git-for-windows/build-extra
+# seed-version: v2.55.0.4
+# seed-artifact: arm64-payload-architecture-v2.55.0.4.tsv
 # entries: 433
 # sha256: a1e536ae97206e0b88e432978aed40a13d19f61c27076fc28052dcd1de9aeb10
 #

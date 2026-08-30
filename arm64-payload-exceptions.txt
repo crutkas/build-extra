@@ -1,19 +1,25 @@
 # Git for Windows ARM64 payload architecture exceptions.
 #
-# Reviewed, permanent exceptions: shipped PEs whose COFF machine is not
-# IMAGE_FILE_MACHINE_ARM64 but which are architecture-neutral, and so are not an
-# emulation dependency.
+# Reviewed binaries whose COFF machine is not IMAGE_FILE_MACHINE_ARM64 but
+# which are architecture-neutral, and so are not an emulation dependency.
 #
-# Only architecture-neutral machine classes may appear here.
-# check-payload-architecture.sh rejects this file outright if it lists a native
-# machine such as amd64 or i386; those belong in arm64-payload-baseline.txt,
-# which cannot grow. That keeps the ratchet from being bypassed here.
+# Only the strict AnyCPU class may appear here: IL-only, neither 32-bit
+# required nor 32-bit preferred. check-payload-architecture.sh rejects this
+# file outright if it lists anything else -- a native machine, a hybrid image,
+# a 32-bit-preferred assembly, or a binary that failed to parse -- because all
+# of those are emulated on ARM64 and would otherwise be a way past the
+# immutable seed.
+#
+# Every entry needs a non-empty reason.
 #
 # Body format: one entry per line, "<machine><TAB><path><TAB><reason>", sorted
 # with LC_ALL=C. sha256 covers the body only: every non-comment line,
 # LF-terminated.
 #
 # format-version: 1
+# seed-source: ARM64 RTM packaging audit of git-for-windows/build-extra
+# seed-version: v2.55.0.4
+# seed-artifact: arm64-payload-architecture-v2.55.0.4.tsv
 # entries: 90
 # sha256: 5118b2749246ee5e8f5372fe1c4ab84c28c727f578dce49dbd09175d93d6daf7
 #
