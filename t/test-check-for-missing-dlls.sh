@@ -333,6 +333,18 @@ done
 
 echo "# every candidate in the file list is accounted for"
 
+# A directory name that the per-directory selection cannot match: the `*` is a
+# literal here but a repetition operator in the selection's regex, so the
+# directory selects none of its own members.
+set_file_list <<-\EOF
+	usr/li*b/orphan.dll
+	usr/bin/tool.exe
+	usr/bin/msys-2.0.dll
+EOF
+expect_exit 1 "a directory the selection cannot match is not silently skipped" \
+	"$work/objdump-full" "$work/pe-cover-all.ps1"
+said 'Selected 2 of 3 binaries' "reconciles what it selected against the file list"
+
 set_file_list <<-\EOF
 	usr/bin/tool.exe
 	usr/bin/tool.exe
@@ -363,6 +375,32 @@ expect_exit 1 "an import with nothing to satisfy it is still reported" \
 	"$work/objdump-full" "$work/pe-cover-all.ps1"
 said 'is missing msys-2.0.dll' "names the missing DLL"
 said '/usr/bin/tool.exe is missing' "attributes it to the file we asked about, not a converted path"
+
+# A payload name containing a space must be attributed to itself, not to
+# whichever file happened to be inspected before it.
+cat >"$work/objdump-space" <<-\EOF
+	#!/bin/sh
+	shift
+	for f
+	do
+		echo ""
+		printf '%s:     file format pei-x86-64\n' "$f"
+		echo ""
+		case "$f" in
+		*"with space.exe") printf '\tDLL Name: only-space-wants-this.dll\n';;
+		*) printf '\tDLL Name: KERNEL32.dll\n';;
+		esac
+	done
+EOF
+chmod +x "$work/objdump-space"
+set_file_list <<-\EOF
+	usr/bin/tool.exe
+	usr/bin/with space.exe
+EOF
+expect_exit 1 "an import of a path containing a space is still reported" \
+	"$work/objdump-space" "$work/pe-cover-all.ps1"
+said '/usr/bin/with space.exe is missing only-space-wants-this.dll' \
+	"attributes it to the file with the space, not to the one before it"
 
 echo ""
 if test $failures -gt 0

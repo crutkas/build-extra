@@ -10,6 +10,29 @@ die () {
 # caller that names this exact code may carry on.
 UNSIGNED_EXIT_CODE=3
 
+# Leave a marker beside an unsigned installer that names it and binds to its
+# contents, so the marker cannot be detached, reused from an earlier build, or
+# left beside a different file.
+mark_unsigned () { # <installer path, POSIX>
+	test -f "$1" ||
+	die "Could not find $1 to mark it unsigned"
+
+	unsigned_digest="$(sha256sum <"$1" | sed 's/ .*//')" &&
+	test -n "$unsigned_digest" ||
+	die "Could not hash $1"
+
+	printf '%s\n' \
+		"# This installer was built with --allow-unsigned and is not signed." \
+		"# It must not be published or promoted to a release." \
+		"artifact: ${1##*/}" \
+		"sha256: $unsigned_digest" \
+		>"$1.UNSIGNED" ||
+	die "Could not mark $1 as unsigned"
+
+	echo "WARNING: $1 is UNSIGNED and must not be released." >&2
+	echo "Exiting $UNSIGNED_EXIT_CODE so that no ordinary release or promotion path continues." >&2
+}
+
 # change directory to the script's directory
 cd "$(dirname "$0")" ||
 die "Could not switch directory"
@@ -423,8 +446,17 @@ die "Inno Setup reported problems while building the installer"
 if test -n "$test_installer"
 then
 	echo "Launching $TEMP/$version.exe"
-	exec "$TEMP/$version.exe" $test_installer_options
-	exit
+	"$TEMP/$version.exe" $test_installer_options
+	launch_status=$?
+
+	# This path used to `exec`, which meant an unsigned test build ended
+	# with the installer's own status and no marker at all.
+	test -z "$unsigned" || {
+		mark_unsigned "$(cygpath -u "$TEMP")/$version.exe"
+		exit $UNSIGNED_EXIT_CODE
+	}
+
+	exit $launch_status
 fi
 
 installer_path="$(tail -n 1 install.log | tr -d '\r')"
@@ -432,27 +464,8 @@ test -f "$installer_path" ||
 die "Could not determine the installer path from install.log"
 
 test -z "$unsigned" || {
-	installer_posix="$(cygpath -u "$installer_path")" ||
-	die "Could not convert $installer_path"
-
-	installer_digest="$(sha256sum <"$installer_posix" | sed 's/ .*//')" &&
-	test -n "$installer_digest" ||
-	die "Could not hash $installer_path"
-
-	# The marker names the artifact it belongs to and binds to its contents,
-	# so it cannot be silently detached, reused from an earlier build, or
-	# left behind next to a different file.
-	printf '%s\n' \
-		"# This installer was built with --allow-unsigned and is not signed." \
-		"# It must not be published or promoted to a release." \
-		"artifact: ${installer_posix##*/}" \
-		"sha256: $installer_digest" \
-		>"$installer_posix.UNSIGNED" ||
-	die "Could not mark $installer_path as unsigned"
-
+	mark_unsigned "$(cygpath -u "$installer_path")"
 	echo "Installer is available as $installer_path"
-	echo "WARNING: $installer_path is UNSIGNED and must not be released." >&2
-	echo "Exiting $UNSIGNED_EXIT_CODE so that no ordinary release or promotion path continues." >&2
 	exit $UNSIGNED_EXIT_CODE
 }
 

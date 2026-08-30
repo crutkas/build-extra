@@ -150,6 +150,79 @@ else
 	not_ok "only release.sh defines the code and only the accepter names it (found: $callers)"
 fi
 
+echo "# the arguments reach release.sh intact"
+
+# A stub that records exactly what it was invoked with, so a silently dropped
+# or reordered option cannot pass unnoticed.
+cat >"$work/release.sh" <<-EOF
+	#!/bin/sh
+	: >"$work/argv"
+	out=
+	for a
+	do
+		printf '%s\n' "\$a" >>"$work/argv"
+		case "\$a" in
+		--output=*) out="\${a#*=}";;
+		esac
+	done
+	exe="\$out/Git-0-test-arm64.exe"
+	echo installer >"\$exe"
+	printf '# unsigned\nartifact: Git-0-test-arm64.exe\nsha256: %s\n' \
+		"\$(sha256sum <"\$exe" | sed 's/ .*//')" >"\$exe.UNSIGNED"
+	exit 3
+EOF
+
+rm -rf "$work/out"
+mkdir -p "$work/out"
+sh "$accepter" --release-sh="$work/release.sh" --output="$work/out" \
+	--include-self-check --window-title-version=1.2.3 0-test \
+	>"$work/stdout" 2>"$work/err"
+accept_status=$?
+
+test "$accept_status" = 0 &&
+ok "the accepter succeeds when it forwards a fuller argument list" ||
+not_ok "the accepter succeeds when it forwards a fuller argument list" "$work/err"
+
+grep -q -x -F -- '--allow-unsigned' "$work/argv" &&
+ok "the opt-out release.sh requires is added" ||
+not_ok "the opt-out release.sh requires is added" "$work/argv"
+
+grep -q -- '--release-sh=' "$work/argv" &&
+not_ok "the accepter's own option is not forwarded" "$work/argv" ||
+ok "the accepter's own option is not forwarded"
+
+printf -- '--allow-unsigned\n--output=%s\n--include-self-check\n--window-title-version=1.2.3\n0-test\n' \
+	"$work/out" >"$work/argv-expected"
+if cmp -s "$work/argv" "$work/argv-expected"
+then
+	ok "every other argument is forwarded once, in order"
+else
+	not_ok "every other argument is forwarded once, in order" "$work/argv"
+fi
+
+echo "# no build path can finish unsigned without marking and exiting 3"
+
+release="$top/installer/release.sh"
+
+# The test-installer path used to `exec` the freshly built installer, which
+# replaced the shell and skipped the marker and the exit status entirely.
+if grep -q 'exec "\$TEMP/\$version.exe"' "$release"
+then
+	not_ok "the test-installer path no longer execs past the unsigned handling"
+else
+	ok "the test-installer path no longer execs past the unsigned handling"
+fi
+
+marks=$(grep -c '^[ 	]*mark_unsigned ' "$release")
+test "$marks" -ge 2 &&
+ok "both the test-installer and the release path mark an unsigned build" ||
+not_ok "both the test-installer and the release path mark an unsigned build (found $marks)"
+
+exits=$(grep -c 'exit \$UNSIGNED_EXIT_CODE' "$release")
+test "$exits" -ge 2 &&
+ok "both paths exit with the unsigned status" ||
+not_ok "both paths exit with the unsigned status (found $exits)"
+
 echo ""
 if test $failures -gt 0
 then

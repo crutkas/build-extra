@@ -281,14 +281,19 @@ do
 	total_expected=$(($total_expected + $expected_count))
 	total_inspected=$(($total_inspected + $inspected_count))
 
+	# Attribute each import to the file it came from. Read whole lines: a
+	# payload path may contain a space, and word-splitting the header would
+	# leave the import blamed on whichever file came before it.
 	tr A-Z\\r a-z\ <"$tmp_file.ldd" |
-	grep -e '^.dll name:' -e '^[^ ]*\.\(dll\|exe\):' |
-	while read a b c d
+	while IFS= read -r ldd_line
 	do
-		case "$c" in api-ms-*) continue;; esac # API set, always provided by Windows
-		case "$a,$b" in
-		*.exe:,*|*.dll:,*) current="${a%:}";;
-		dll,name:) # `objdump -p` / pe-imports.ps1 output
+		case "$ldd_line" in
+		"	dll name: "*)
+			c="${ldd_line#	dll name: }"
+			c="${c%% *}"
+			test -n "$c" || continue
+			case "$c" in api-ms-*) continue;; esac # API set, always provided by Windows
+
 			echo "$c" >>"$used_dlls_file"
 			case "$sys_dlls$LF$dlls" in
 			*"/$c$LF"*) ;; # okay, it's included
@@ -297,6 +302,12 @@ do
 				echo "$c" >>"$missing_dlls_file"
 				;;
 			esac
+			;;
+		/*.dll:* | /*.exe:*)
+			# `objdump -p` writes "<path>:<TAB>file format <fmt>" and
+			# pe-imports.ps1 writes "<path>:"; both are POSIX paths by
+			# the time they reach here.
+			current="${ldd_line%%:*}"
 			;;
 		esac
 	done
