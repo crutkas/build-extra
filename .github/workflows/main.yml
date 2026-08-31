@@ -2,6 +2,10 @@ name: PR build
 
 on: pull_request
 
+# Nothing in this workflow writes to the repository; it builds and inspects.
+permissions:
+  contents: read
+
 env:
   GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
 
@@ -9,9 +13,10 @@ jobs:
   determine-packages:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: determine packages to build
         id: set-matrix
         shell: bash
@@ -48,10 +53,10 @@ jobs:
           define_matrix matrix directories.txt touched.txt packages.txt &&
           show_files packages.txt &&
 
-          test -z "$(git log -L :create_sdk_artifact:please.sh ${{github.event.pull_request.base.sha}}.. -- )" &&
-          test 200 -gt $(($(git diff --numstat ${{github.event.pull_request.base.sha}}.. -- please.sh | cut -f 2))) &&
-          test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- make-file-list.sh)" ||
-          echo "test-sdk-artifacts=true" >>$GITHUB_OUTPUT
+          # Detection lives in a script so that its failure behaviour is
+          # testable, and so that a `git` that fails is an error rather than
+          # something that reads like "nothing changed".
+          sh .github/detect-changes.sh --base=${{github.event.pull_request.base.sha}} &&
 
           git ls-files \*/release.sh | sed 's|[^/]*$||' | sort >releaseable.txt &&
           if grep -q test-sdk-artifacts=true $GITHUB_OUTPUT
@@ -64,10 +69,6 @@ jobs:
           show_files artifacts.txt ||
           exit $?
 
-          test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
-            check-for-missing-dlls.sh pe-imports.ps1 check-payload-architecture.sh \
-            arm64-payload-baseline.txt arm64-payload-exceptions.txt)" ||
-          echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       artifacts: ${{ steps.set-matrix.outputs.artifacts }}
@@ -80,7 +81,9 @@ jobs:
         runner: [windows-latest, windows-11-arm]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: run the packaging-admission test suite
         shell: bash
         run: sh t/run-tests.sh
@@ -98,8 +101,10 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.architecture.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: git-for-windows/setup-git-for-windows-sdk@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: git-for-windows/setup-git-for-windows-sdk@335917db02da4280d3d5e87915d7b86196677f9f # v2
         with:
           flavor: full
           architecture: ${{ matrix.architecture.name }}
@@ -114,7 +119,7 @@ jobs:
           mkdir -p "$top_dir/$artifacts" &&
           mv *.tar.* "$top_dir/$artifacts"/ &&
           echo "result=$artifacts" >>$GITHUB_OUTPUT
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.build.outputs.result }}
           path: ${{ steps.build.outputs.result }}
@@ -154,7 +159,9 @@ jobs:
               name: aarch64
     runs-on: ${{ matrix.architecture.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: initialize bare SDK clone
         shell: bash
         run: |
@@ -192,7 +199,7 @@ jobs:
             echo "name=$artifacts" >>$GITHUB_OUTPUT &&
             ./"${{ matrix.directory }}"/release.sh --output="$PWD/$artifacts/" 0-test
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.build.outputs.name }}
           path: ${{ steps.build.outputs.result }}
@@ -290,7 +297,9 @@ jobs:
               sdk-repo: git-sdk-32
     runs-on: ${{ matrix.arch.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: initialize bare SDK clone
         shell: bash
         run: |
@@ -336,7 +345,7 @@ jobs:
           sh installer/expect-unsigned-test-build.sh \
             --output=$PWD/installer-${{ matrix.arch.name }} \
             --include-self-check 0-test
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: matrix.artifact == 'build-installers'
         with:
           name: installer-${{ matrix.arch.name }}-unsigned-test-only
@@ -410,7 +419,9 @@ jobs:
             runner: windows-11-arm
     runs-on: ${{ matrix.arch.runner }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - name: initialize bare SDK clone
         shell: bash
         run: |
@@ -442,3 +453,31 @@ jobs:
         if: matrix.arch.name == 'aarch64'
         shell: bash
         run: sh ./check-payload-architecture.sh
+  admission:
+    # A stable, non-matrix name that branch protection can require. Matrix legs
+    # produce suffixed check names, and a required name that only exists when a
+    # variant is skipped can be satisfied by that skip; this job cannot.
+    name: admission
+    if: always()
+    needs:
+      - determine-packages
+      - unit-tests
+      - build-packages
+      - build-artifacts
+      - sdk-artifacts
+      - check-for-missing-dlls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: require every leg to have succeeded, or to have been legitimately skipped
+        shell: bash
+        env:
+          DETERMINE: ${{ needs.determine-packages.result }}
+          UNIT: ${{ needs.unit-tests.result }}
+          PACKAGES: ${{ needs.build-packages.result }}
+          ARTIFACTS: ${{ needs.build-artifacts.result }}
+          SDK: ${{ needs.sdk-artifacts.result }}
+          DLLS: ${{ needs.check-for-missing-dlls.result }}
+        run: sh .github/check-admission.sh

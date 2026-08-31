@@ -34,6 +34,10 @@ run "installer/check-release-prerequisites.sh" \
 	sh "$here/test-release-prerequisites.sh"
 run "installer/expect-unsigned-test-build.sh" \
 	sh "$here/test-unsigned-test-build.sh"
+run ".github/detect-changes.sh" \
+	sh "$here/test-detect-changes.sh"
+run ".github/check-admission.sh" \
+	sh "$here/test-check-admission.sh"
 
 if test $status = 0
 then
