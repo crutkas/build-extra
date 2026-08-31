@@ -6,6 +6,13 @@ env:
   GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
 
 jobs:
+  check-installer-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: verify that System directory executables are launched natively
+        shell: bash
+        run: sh -x installer/check-native-sysdir.sh
   determine-packages:
     runs-on: ubuntu-latest
     steps:

@@ -186,6 +186,30 @@ begin
     SetIniString(Section,Key,Value,SaveInfFilename);
 end;
 
+// Same as Exec(), except that executables in the System directory are looked up
+// in the native one rather than in the WOW64-redirected one.
+//
+// Inno Setup only ships an x86 and an x64 `Setup` binary, and `SetupArchitecture`
+// is left unset, therefore Setup is a 32-bit x86 process, also for the ARM64
+// flavor. In such a process WOW64 redirects `{sys}` (i.e. `System32`) to
+// `SysWOW64`, so a plain Exec() of `{sys}\cmd.exe` would start the emulated x86
+// `cmd.exe` on ARM64 Windows, and every executable that this `cmd.exe` in turn
+// looks up in the System directory would be emulated, too.
+//
+// ExecWithNativeSysDir() temporarily turns that redirection off; on 32-bit
+// Windows and in a 64-bit Setup it is a plain alias for Exec(). There is no
+// counterpart for ExecAsOriginalUser(), which is why the ExecAsOriginalUser()
+// call sites are left alone.
+function ExecNative(Filename,Params,WorkingDir:String;ShowCmd:Integer;Wait:TExecWait;var ResultCode:Integer):Boolean;
+begin
+#if Ver >= EncodeVer(7, 0, 0)
+    Result:=ExecWithNativeSysDir(Filename,Params,WorkingDir,ShowCmd,Wait,ResultCode);
+#else
+#pragma warning "Inno Setup 6 has no ExecWithNativeSysDir(): system executables will be launched via WOW64, i.e. emulated on ARM64"
+    Result:=Exec(Filename,Params,WorkingDir,ShowCmd,Wait,ResultCode);
+#endif
+end;
+
 function ExecSilently(Cmd,LogKey,ErrorMessage:String):Boolean;
 var
     OutPath,ErrPath:String;
@@ -193,7 +217,7 @@ var
 begin
     OutPath:=ExpandConstant('{tmp}\')+LogKey+'.out';
     ErrPath:=ExpandConstant('{tmp}\')+LogKey+'.err';
-    if Exec(ExpandConstant('{sys}\cmd.exe'),'/D /C "'+Cmd+' >"'+OutPath+'" 2>"'+ErrPath+'""','',SW_HIDE,ewWaitUntilTerminated,Res) and (Res=0) then
+    if ExecNative(ExpandConstant('{sys}\cmd.exe'),'/D /C "'+Cmd+' >"'+OutPath+'" 2>"'+ErrPath+'""','',SW_HIDE,ewWaitUntilTerminated,Res) and (Res=0) then
         Result:=True
     else begin
         LogError(ErrorMessage+' (output: '+ReadFileAsString(OutPath)+', errors: '+ReadFileAsString(ErrPath)+').');
@@ -208,6 +232,8 @@ var
 begin
     OutPath:=ExpandConstant('{tmp}.')+LogKey+'.out';
     ErrPath:=ExpandConstant('{tmp}.')+LogKey+'.err';
+    // Inno Setup 7 has no ExecAsOriginalUserWithNativeSysDir(), therefore this
+    // `cmd.exe` is subject to WOW64 redirection (see ExecNative() above).
     if not ExecAsOriginalUser(ExpandConstant('{sys}\cmd.exe'),'/D /C "'+Cmd+' >"'+OutPath+'" 2>"'+ErrPath+'""','',SW_HIDE,ewWaitUntilTerminated,Res) then begin
         LogError(ErrorMessage+' (sys error: '+SysErrorMessage(Res)+').');
         Result:=False;

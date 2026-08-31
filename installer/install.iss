@@ -54,7 +54,7 @@ SolidCompression=yes
 #endif
 SourceDir={#SOURCE_DIR}
 #if BITNESS=='64' || INSTALLER_FILENAME_SUFFIX=='arm64'
-ArchitecturesInstallIn64BitMode=x64 arm64
+ArchitecturesInstallIn64BitMode=x64compatible arm64
 #endif
 #ifdef SIGNTOOL
 SignTool=signtool
@@ -3326,7 +3326,7 @@ begin
     if (SecurityOptionsPage<>Nil) then begin
         WizardForm.StatusLabel.Caption:='Configuring security'
         if RdbSecurityOptions[SO_MandatoryASLR].checked then
-            Exec('powershell.exe', ExpandConstant('-ExecutionPolicy Bypass -File "{app}/cmd/aslr-manager.ps1" -Action Disable "usr/bin"'), ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, i);
+            ExecNative('powershell.exe', ExpandConstant('-ExecutionPolicy Bypass -File "{app}/cmd/aslr-manager.ps1" -Action Disable "usr/bin"'), ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, i);
     end;
 
     WizardForm.StatusLabel.Caption:='Configuring experimental options';
@@ -3627,7 +3627,7 @@ begin
     WizardForm.StatusLabel.Caption:='Running post-install script';
     Cmd:=AppDir+'\post-install.bat';
     Log('Line {#__LINE__}: Executing '+Cmd);
-    if (not Exec(Cmd,ExpandConstant('>"{tmp}\post-install.log"'),AppDir,SW_HIDE,ewWaitUntilTerminated,i) or (i<>0)) and FileExists(Cmd) then begin
+    if (not ExecNative(Cmd,ExpandConstant('>"{tmp}\post-install.log"'),AppDir,SW_HIDE,ewWaitUntilTerminated,i) or (i<>0)) and FileExists(Cmd) then begin
         if FileExists(ExpandConstant('{tmp}\post-install.log')) then
             LogError('Line {#__LINE__}: Unable to run post-install scripts:'+#13+#10+ReadFileAsString(ExpandConstant('{tmp}\post-install.log')))
         else
