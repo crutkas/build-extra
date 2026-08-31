@@ -1,0 +1,32 @@
+# Git for Windows ARM64 payload renames.
+#
+# Upstream packages carry their version in the filename, so an ordinary SDK
+# bump retires a seeded path and introduces an unlisted one describing the same
+# binary. Neither of the other two lists can absorb that: the seed is immutable
+# evidence, and the exceptions file takes only architecture-neutral binaries.
+#
+# Each row states that one seeded entry is now shipped under a new name. The
+# check enforces all of it:
+#
+#   - the old side must exist in arm64-payload-baseline.txt with this exact
+#     machine, so a rename can move a binary but never reclassify it;
+#   - the old name must actually be gone from the payload, and the new name
+#     must actually be present with that same machine, so a stale row fails;
+#   - old and new paths are each unique across the file, so many-to-one and
+#     one-to-many mappings are refused;
+#   - every row needs a non-empty reason.
+#
+# A later bump is recorded by editing the new side of the existing row, not by
+# adding another: the old side stays anchored to the seed entry it accounts for.
+#
+# Body format: one entry per line,
+# "<machine><TAB><old-path><TAB><new-path><TAB><reason>", sorted with LC_ALL=C.
+# sha256 covers the body only: every non-comment line, LF-terminated.
+#
+# format-version: 1
+# source: observed against git-sdk-arm64 in the PR #28 CI ratchet run
+# entries: 2
+# sha256: b33678993b962af54bb96a58cba15c00ec0f1958e22c9984001e77851167a155
+#
+amd64	usr/bin/gawk-5.4.0.exe	usr/bin/gawk-5.4.1.exe	upstream MSYS2 gawk version bump; same binary, version in the filename
+amd64	usr/bin/perl5.42.2.exe	usr/bin/perl5.42.3.exe	upstream MSYS2 perl version bump; same binary, version in the filename

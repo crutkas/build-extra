@@ -20,8 +20,8 @@
 # seed-source: ARM64 RTM packaging audit of git-for-windows/build-extra
 # seed-version: v2.55.0.4
 # seed-artifact: arm64-payload-architecture-v2.55.0.4.tsv
-# entries: 90
-# sha256: 5118b2749246ee5e8f5372fe1c4ab84c28c727f578dce49dbd09175d93d6daf7
+# entries: 91
+# sha256: 4981f23f872154f4dd0095ddbd48137fab22e34932dd74ccf880cb8c8e180bd2
 #
 anycpu	clangarm64/bin/Atlassian.Bitbucket.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/bin/Avalonia.Base.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
@@ -68,6 +68,7 @@ anycpu	clangarm64/bin/System.Text.Json.dll	Managed IL-only (AnyCPU) assembly; JI
 anycpu	clangarm64/bin/System.Threading.Tasks.Extensions.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/bin/System.ValueTuple.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/bin/gcmcore.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
+anycpu	clangarm64/bin/git-credential-manager.exe	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/libexec/git-core/Atlassian.Bitbucket.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/libexec/git-core/Avalonia.Base.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR
 anycpu	clangarm64/libexec/git-core/Avalonia.Controls.dll	Managed IL-only (AnyCPU) assembly; JIT-compiled natively by the ARM64 CLR

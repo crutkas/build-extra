@@ -32,6 +32,7 @@ SEED_ENTRIES=433
 SEED_SHA256=a1e536ae97206e0b88e432978aed40a13d19f61c27076fc28052dcd1de9aeb10
 SEED_VERSION=v2.55.0.4
 SEED_ARTIFACT=arm64-payload-architecture-v2.55.0.4.tsv
+SEED_SOURCE='ARM64 RTM packaging audit of git-for-windows/build-extra'
 
 # The only class that may appear in the exceptions file. `anycpu32` is
 # deliberately absent: a 32-bit-preferred assembly starts a 32-bit process
@@ -55,6 +56,7 @@ usage () {
 
 	  --baseline=<file>    default: <script dir>/arm64-payload-baseline.txt
 	  --exceptions=<file>  default: <script dir>/arm64-payload-exceptions.txt
+	  --renames=<file>     default: <script dir>/arm64-payload-renames.txt
 	  --file-list=<file>   payload paths to inspect; default: run make-file-list.sh
 	  --root=<dir>         prefix for payload paths; default: none, i.e. /
 	  --pe-imports=<file>  default: <script dir>/pe-imports.ps1
@@ -62,6 +64,7 @@ usage () {
 	  --seed-entries=<n>   override the pinned seed size; for tests only
 	  --seed-version=<v>   override the pinned seed version; for tests only
 	  --seed-artifact=<a>  override the pinned seed artifact; for tests only
+	  --seed-source=<s>    override the pinned seed source; for tests only
 	EOF
 	exit 2
 }
@@ -75,6 +78,7 @@ die "Could not determine script directory"
 
 baseline_file="$thisdir/arm64-payload-baseline.txt"
 exceptions_file="$thisdir/arm64-payload-exceptions.txt"
+renames_file="$thisdir/arm64-payload-renames.txt"
 pe_imports="$thisdir/pe-imports.ps1"
 file_list=
 root=
@@ -84,6 +88,7 @@ do
 	case "$1" in
 	--baseline=*) baseline_file="${1#*=}";;
 	--exceptions=*) exceptions_file="${1#*=}";;
+	--renames=*) renames_file="${1#*=}";;
 	--file-list=*) file_list="${1#*=}";;
 	--root=*) root="${1#*=}";;
 	--pe-imports=*) pe_imports="${1#*=}";;
@@ -91,6 +96,7 @@ do
 	--seed-entries=*) SEED_ENTRIES="${1#*=}";;
 	--seed-version=*) SEED_VERSION="${1#*=}";;
 	--seed-artifact=*) SEED_ARTIFACT="${1#*=}";;
+	--seed-source=*) SEED_SOURCE="${1#*=}";;
 	-h|--help) usage;;
 	*) echo "Unknown option: $1" >&2; usage;;
 	esac
@@ -106,10 +112,13 @@ die "cygpath is required to hand payload paths to the PE parser"
 test -f "$pe_imports" ||
 die "Not found: $pe_imports"
 
-tmp=/tmp/payload-arch.$$
-# `set -f` is still in effect inside the trap, so a glob there would not be
-# expanded and the cleanup would quietly remove nothing.
-trap "set +f; rm -f \"$tmp\".*" EXIT
+# A private directory, not a PID-derived prefix in the shared /tmp namespace:
+# two runs on one machine must not be able to delete each other's files, and a
+# leak has to be attributable to the run that caused it.
+tmp_dir="$(mktemp -d)" ||
+die "Could not create a temporary directory"
+tmp="$tmp_dir/payload-arch"
+trap "rm -rf \"$tmp_dir\"" EXIT
 
 header_value () { # <file> <key>
 	sed -n "s/^# $2: \\(.*\\)\$/\\1/p" "$1" | head -n 1
@@ -213,8 +222,9 @@ seed_artifact="$(header_value "$baseline_file" seed-artifact)"
 test "$seed_artifact" = "$SEED_ARTIFACT" ||
 die "$baseline_file: seed-artifact is '$seed_artifact' but '$SEED_ARTIFACT' is pinned in $0"
 
-test -n "$(header_value "$baseline_file" seed-source)" ||
-die "$baseline_file: the seed does not record where it came from"
+seed_source="$(header_value "$baseline_file" seed-source)"
+test "$seed_source" = "$SEED_SOURCE" ||
+die "$baseline_file: seed-source is '$seed_source' but '$SEED_SOURCE' is pinned in $0"
 
 cut -f 1 <"$tmp.baseline" | LC_ALL=C sort -u >"$tmp.baseline.classes"
 while IFS= read -r machine
@@ -251,6 +261,51 @@ do
 	die "$exceptions_file line $line_no: the reason is empty"
 done <"$tmp.exceptions.full"
 
+# Renames. Upstream packages carry their version in the filename, so an ordinary
+# SDK bump turns a seeded path into an unlisted one and retires the seeded name
+# at the same time. Neither list can absorb that: the seed is immutable and the
+# exceptions file takes only architecture-neutral binaries. This is the third,
+# narrow thing that can happen -- the same binary under a new name -- and it is
+# stated explicitly, one reviewable row at a time, rather than by loosening
+# either gate.
+validate_list "$renames_file" "$renames_file" 4 "$tmp.renames.full"
+
+cut -f 1,3 <"$tmp.renames.full" >"$tmp.renames.new"
+cut -f 1,2 <"$tmp.renames.full" >"$tmp.renames.old"
+
+cut -f 3 <"$tmp.renames.full" | LC_ALL=C sort >"$tmp.renames.newpaths"
+LC_ALL=C sort -u "$tmp.renames.newpaths" >"$tmp.renames.newpaths.uniq"
+cmp -s "$tmp.renames.newpaths" "$tmp.renames.newpaths.uniq" ||
+die "$renames_file: two renames point at the same new path; a rename must be one-to-one"
+
+line_no=0
+while IFS='	' read -r machine old_path new_path reason
+do
+	line_no=$(($line_no + 1))
+
+	test -n "$(printf '%s' "$reason" | tr -d ' 	')" ||
+	die "$renames_file line $line_no: the reason is empty"
+
+	test "$old_path" != "$new_path" ||
+	die "$renames_file line $line_no: '$old_path' is renamed to itself"
+
+	case "$new_path" in
+	'') die "$renames_file line $line_no: the new path is empty";;
+	/*) die "$renames_file line $line_no: '$new_path' is absolute; paths are repo-relative";;
+	*\\*) die "$renames_file line $line_no: '$new_path' contains a backslash";;
+	./* | ../* | */../* | */./*) die "$renames_file line $line_no: '$new_path' is not canonical";;
+	esac
+
+	case " $FORBIDDEN_BASELINE_CLASSES " in
+	*" $machine "*) die "$renames_file line $line_no: '$machine' cannot be renamed; it is not tracked debt";;
+	esac
+
+	# The old side has to be exactly what the seed recorded, machine and all.
+	# A rename may move a binary, never reclassify it.
+	grep -q -x -F "$machine	$old_path" "$tmp.baseline" ||
+	die "$renames_file line $line_no: the seed has no '$machine	$old_path' to rename; a rename must start from tracked debt of the same class"
+done <"$tmp.renames.full"
+
 LC_ALL=C comm -12 "$tmp.baseline.paths" "$tmp.exceptions.full.paths" >"$tmp.overlap"
 test ! -s "$tmp.overlap" || {
 	echo "A path is listed in both $baseline_file and $exceptions_file:" >&2
@@ -268,26 +323,51 @@ else
 	die "Could not generate the file list"
 fi
 
-sed -n -e 's|^/||' -e '/\.\(dll\|exe\)$/p' "$tmp.all" | LC_ALL=C sort -u >"$tmp.candidates"
+# Which entries look like binaries. The match is case-insensitive because the
+# payload file list is not case-normalised, but it is only ever an optimisation:
+# whatever it does not select is reconciled against file content below, so
+# correctness does not rest on a filename.
+sed -e 's|^/||' "$tmp.all" | LC_ALL=C sort -u >"$tmp.payload"
+grep -i '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.candidates" || :
+grep -i -v '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.rest" || :
+
 candidate_count=$(($(wc -l <"$tmp.candidates")))
 test "$candidate_count" -gt 0 ||
 die "The payload contains no .dll or .exe files; refusing to report success"
 
-# Hand the paths over in a file rather than as arguments. MSYS silently
-# refuses to convert an argument containing a bracket, and the payload really
-# does contain `usr/bin/[.exe`.
-: >"$tmp.absolute"
+# A payload path is repo-relative and canonical, like the list entries. This is
+# the input every count below is derived from, so it is checked rather than
+# assumed.
 while IFS= read -r payload_path
 do
-	printf '%s\n' "$root/$payload_path" >>"$tmp.absolute"
-done <"$tmp.candidates"
+	case "$payload_path" in
+	'') die "The payload list contains an empty path";;
+	/*) die "The payload list contains an absolute path: '$payload_path'";;
+	*\\*) die "The payload list contains a backslash: '$payload_path'";;
+	./* | ../* | */../* | */./*) die "The payload list contains a non-canonical path: '$payload_path'";;
+	esac
+done <"$tmp.payload"
 
-cygpath -w -f "$tmp.absolute" >"$tmp.windows" ||
-die "Could not convert the payload paths to Windows form"
+# Convert a list of payload-relative paths to Windows form. MSYS silently
+# refuses to convert an argument containing a bracket, and the payload really
+# does contain `usr/bin/[.exe`, so the paths travel in a file.
+to_windows () { # <relative-list> <out>
+	: >"$2.abs"
+	while IFS= read -r payload_path
+	do
+		printf '%s\n' "$root/$payload_path" >>"$2.abs"
+	done <"$1"
 
-windows_count=$(($(wc -l <"$tmp.windows")))
-test "$windows_count" -eq "$candidate_count" ||
-die "Converted $windows_count of $candidate_count payload paths; refusing to report success"
+	cygpath -w -f "$2.abs" >"$2" ||
+	die "Could not convert payload paths to Windows form"
+
+	converted=$(($(wc -l <"$2")))
+	expected=$(($(wc -l <"$1")))
+	test "$converted" -eq "$expected" ||
+	die "Converted $converted of $expected payload paths; refusing to report success"
+}
+
+to_windows "$tmp.candidates" "$tmp.windows"
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass \
 	-File "$pe_imports" -Machine -PathFile "$(cygpath -w "$tmp.windows")" >"$tmp.out" ||
@@ -296,6 +376,41 @@ die "pe-imports.ps1 failed while classifying the payload"
 out_n=$(($(wc -l <"$tmp.out")))
 test "$out_n" -eq "$candidate_count" ||
 die "pe-imports.ps1 described $out_n of $candidate_count binaries; refusing to report success"
+
+# Negative reconciliation. Every count above is derived from the selected set,
+# so those counts agree with each other by construction and prove nothing about
+# what was left out. Ask the payload itself instead: anything not selected that
+# begins with `MZ` is an image that escaped classification.
+if test -s "$tmp.rest"
+then
+	to_windows "$tmp.rest" "$tmp.rest.windows"
+
+	powershell.exe -NoProfile -ExecutionPolicy Bypass \
+		-File "$pe_imports" -Magic -PathFile "$(cygpath -w "$tmp.rest.windows")" >"$tmp.magic" ||
+	die "pe-imports.ps1 failed while scanning the unselected payload"
+
+	magic_n=$(($(wc -l <"$tmp.magic")))
+	rest_n=$(($(wc -l <"$tmp.rest")))
+	test "$magic_n" -eq "$rest_n" ||
+	die "Scanned $magic_n of $rest_n unselected payload entries; refusing to report success"
+
+	# Pair by position: the parser echoes a converted path, not ours.
+	: >"$tmp.escaped"
+	exec 3<"$tmp.rest" 4<"$tmp.magic"
+	while IFS= read -r payload_path <&3 && IFS= read -r magic_line <&4
+	do
+		case "${magic_line%%	*}" in
+		mz) printf '%s\n' "$payload_path" >>"$tmp.escaped";;
+		esac
+	done
+	exec 3<&- 4<&-
+
+	test ! -s "$tmp.escaped" || {
+		echo "Payload entries are PE images but were not classified:" >&2
+		sed 's/^/  /' <"$tmp.escaped" >&2
+		die "Every image in the payload must be classified; extension matching missed these"
+	}
+fi
 
 # Join by position: pe-imports.ps1 emits exactly one line per input, in order.
 # Its echoed path is in Windows form, so it is not comparable to the payload
@@ -317,10 +432,33 @@ observed_count=$(($(wc -l <"$tmp.observed")))
 
 LC_ALL=C sort "$tmp.baseline" >"$tmp.baseline.byline"
 LC_ALL=C sort "$tmp.exceptions" >"$tmp.exceptions.byline"
-LC_ALL=C sort -u "$tmp.baseline.byline" "$tmp.exceptions.byline" >"$tmp.known"
+LC_ALL=C sort "$tmp.renames.new" >"$tmp.renames.new.byline"
+LC_ALL=C sort "$tmp.renames.old" >"$tmp.renames.old.byline"
+LC_ALL=C sort -u "$tmp.baseline.byline" "$tmp.exceptions.byline" \
+	"$tmp.renames.new.byline" >"$tmp.known"
 
 LC_ALL=C comm -23 "$tmp.observed" "$tmp.known" >"$tmp.unlisted"
-LC_ALL=C comm -13 "$tmp.observed" "$tmp.baseline.byline" >"$tmp.gone"
+LC_ALL=C comm -13 "$tmp.observed" "$tmp.baseline.byline" >"$tmp.gone.raw"
+
+# A rename is only real if the old name has actually gone and the new one has
+# actually arrived. Anything else is a stale row that would quietly excuse a
+# binary nobody is tracking any more.
+LC_ALL=C comm -12 "$tmp.observed" "$tmp.renames.old.byline" >"$tmp.rename.old.still"
+test ! -s "$tmp.rename.old.still" || {
+	echo "$renames_file records a rename away from a binary that is still shipped:" >&2
+	sed 's/^/  /' <"$tmp.rename.old.still" >&2
+	die "Remove the rename, or rename the binary that actually moved"
+}
+
+LC_ALL=C comm -13 "$tmp.observed" "$tmp.renames.new.byline" >"$tmp.rename.new.missing"
+test ! -s "$tmp.rename.new.missing" || {
+	echo "$renames_file records a rename to a binary that is not in the payload:" >&2
+	sed 's/^/  /' <"$tmp.rename.new.missing" >&2
+	die "A rename must point at something that is actually shipped, with the class the seed recorded"
+}
+
+# The renamed-away seed entries are accounted for, so they are not reductions.
+LC_ALL=C comm -23 "$tmp.gone.raw" "$tmp.renames.old.byline" >"$tmp.gone"
 
 # A path that is listed but now classifies differently appears in both sets at
 # once. That is drift, not a reduction, and reporting it as one would let an

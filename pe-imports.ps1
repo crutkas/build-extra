@@ -19,6 +19,10 @@
 # conversion, which silently refuses to convert a path containing a bracket
 # such as `usr/bin/[.exe`.
 #
+# With -Magic, only the first two bytes of each input are read and one
+# "mz|other|unreadable<TAB><file>" line is written per input. That is what lets
+# a caller ask whether anything it declined to classify is in fact an image.
+#
 # PE format reference:
 # https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
 #
@@ -31,6 +35,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$Machine,
+    [switch]$Magic,
     [string]$RequireMachine,
     [string]$AllowList,
     [string]$PathFile,
@@ -337,7 +342,9 @@ function Get-PeInfo {
     return $result
 }
 
-$allowed = @{}
+# Ordinal, not the default case-insensitive hashtable comparer: an allowlist
+# spelled ARM64EC.DLL must not exempt arm64ec.dll.
+$allowed = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
 if ($AllowList -ne '') {
     if (-not (Test-Path -LiteralPath $AllowList)) {
         Write-Error "pe-imports: ${AllowList}: allowlist not found"
@@ -346,7 +353,7 @@ if ($AllowList -ne '') {
     foreach ($line in @(Get-Content -LiteralPath $AllowList)) {
         $trimmed = $line.Trim()
         if ($trimmed -eq '' -or $trimmed.StartsWith('#')) { continue }
-        $allowed[$trimmed] = $true
+        $null = $allowed.Add($trimmed)
     }
 }
 
@@ -357,6 +364,28 @@ if ($RequireMachine -ne '' -and -not ($MachineNames.Values -contains $RequireMac
 }
 
 $failed = $false
+
+# Read only the first two bytes. This is for the negative reconciliation in
+# check-payload-architecture.sh, which has to ask "is anything I did not select
+# actually an image?" of every remaining payload entry, and must not read whole
+# files to answer it.
+function Test-MzMagic {
+    param([string]$File)
+
+    $stream = $null
+    try {
+        $stream = [System.IO.File]::Open($File, [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $first = $stream.ReadByte()
+        $second = $stream.ReadByte()
+        if ($first -eq 0x4D -and $second -eq 0x5A) { return 'mz' }
+        return 'other'
+    } catch {
+        return 'unreadable'
+    } finally {
+        if ($stream -ne $null) { $stream.Dispose() }
+    }
+}
 
 $inputs = New-Object System.Collections.ArrayList
 if ($PathFile -ne '') {
@@ -373,6 +402,11 @@ foreach ($p in @($Path)) {
 }
 
 foreach ($file in $inputs) {
+    if ($Magic) {
+        Write-Output ("{0}`t{1}" -f (Test-MzMagic -File $file), $file)
+        continue
+    }
+
     $info = Get-PeInfo -File $file
 
     if ($Machine) {
@@ -380,7 +414,7 @@ foreach ($file in $inputs) {
     }
 
     if ($RequireMachine -ne '') {
-        if ($allowed.ContainsKey($file)) { continue }
+        if ($allowed.Contains($file)) { continue }
         if ($info.Machine -ne $RequireMachine) {
             $detail = $info.Machine
             if ($info.Detail -ne '') { $detail = "$($info.Machine): $($info.Detail)" }
