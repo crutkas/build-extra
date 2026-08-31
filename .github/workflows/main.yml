@@ -6,6 +6,20 @@ env:
   GIT_CONFIG_PARAMETERS: "'checkout.workers=56'"
 
 jobs:
+  test-arm64-sdk-bootstrap-source:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: test native Git isolation
+        shell: pwsh
+        run: .github/actions/bootstrap-git-for-windows-sdk-arm64/tests/run-native-git-isolation.ps1
+      - name: test immutable ARM64 SDK bootstrap source
+        shell: pwsh
+        run: .github/actions/bootstrap-git-for-windows-sdk-arm64/tests/run.ps1
   determine-packages:
     runs-on: ubuntu-latest
     steps:
