@@ -276,6 +276,121 @@ not_ok "says the pattern list could not be applied" "$work/err"
 expect_exit 1 "a missing log fails" "$norepo" iscc-log "$work/no-such.log" --known-warnings="$known"
 expect_exit 1 "a missing known-warnings file fails" "$norepo" iscc-log "$work/clean.log" --known-warnings="$work/no-such-patterns"
 
+echo "# the reviewed patterns against real compiler output"
+
+# t/fixtures/iscc-diagnostics.log is not written by hand: it is the output of
+# this repository's own installer/InnoSetup/ISCC.exe compiling a script that
+# provokes each accepted diagnostic. If the reviewed patterns ever stop
+# matching the wording the compiler actually emits, this fails.
+real="$top/t/fixtures/iscc-diagnostics.log"
+expect_exit 0 "every diagnostic in the captured compiler log is accounted for" \
+	"$norepo" iscc-log "$real" --known-warnings="$known"
+
+for wording in \
+	'Architecture identifier' \
+	'Constant "pf" has been renamed' \
+	'Support function "IsX64" is deprecated' \
+	"Variable 'UNUSEDLOCAL' never used" \
+	"Variable 'UNUSEDGLOBAL' never used"
+do
+	grep -q "$wording" "$work/err" &&
+	ok "reports the real diagnostic: $wording" ||
+	not_ok "reports the real diagnostic: $wording" "$work/err"
+done
+
+# Each reviewed pattern has to be load-bearing. Dropping any one of them must
+# fail the captured log, so the list cannot accumulate entries that match
+# nothing while a real diagnostic slips through some other entry.
+pattern_lines="$(grep -c -v -e '^#' -e '^$' "$known")"
+test "$pattern_lines" -eq 4 &&
+ok "the reviewed list has the 4 patterns these tests bind" ||
+not_ok "the reviewed list has the 4 patterns these tests bind (found $pattern_lines)" /dev/null
+
+n=0
+while test "$n" -lt "$pattern_lines"
+do
+	n=$(($n + 1))
+	grep -v -e '^#' -e '^$' "$known" |
+	sed "${n}d" >"$work/minus-one.txt"
+	expect_exit 1 "dropping reviewed pattern $n fails the captured log" \
+		"$norepo" iscc-log "$real" --known-warnings="$work/minus-one.txt"
+done
+
+# The directive that was removed from install.iss rather than accepted must not
+# be admitted if it ever comes back.
+removed="$top/t/fixtures/iscc-removed-directive.log"
+expect_exit 1 "the removed obsolete directive is not accepted if it returns" \
+	"$norepo" iscc-log "$removed" --known-warnings="$known"
+grep -q 'LZMAUseSeparateProcess' "$work/err" &&
+ok "names the obsolete directive" ||
+not_ok "names the obsolete directive" "$work/err"
+
+grep -q 'LZMAUseSeparateProcess' "$top/installer/install.iss" &&
+not_ok "install.iss no longer sets the obsolete directive" /dev/null ||
+ok "install.iss no longer sets the obsolete directive"
+
+# A near miss must not be accepted: the reviewed patterns are anchored and name
+# an exact diagnostic, so a different variable-hint shape or a trailing
+# addendum is a new diagnostic that a human has not looked at.
+cat >"$work/nearmiss.log" <<-\EOF
+	Warning: Line 22, Column 3: [Hint] Function 'UNUSEDFUNC' never used
+EOF
+expect_exit 1 "an unreviewed hint of a different shape still fails" \
+	"$norepo" iscc-log "$work/nearmiss.log" --known-warnings="$known"
+
+cat >"$work/suffixed.log" <<-\EOF
+	Warning: Line 22, Column 3: [Hint] Variable 'X' never used and also something else
+EOF
+expect_exit 1 "a reviewed diagnostic with unreviewed text appended still fails" \
+	"$norepo" iscc-log "$work/suffixed.log" --known-warnings="$known"
+
+cat >"$work/unanchored.log" <<-\EOF
+	Error: Architecture identifier "x64" is deprecated. Substituting "x64os",
+EOF
+expect_exit 1 "reviewed warning wording does not excuse an error line" \
+	"$norepo" iscc-log "$work/unanchored.log" --known-warnings="$known"
+
+grep -q '^\^Warning: *$' "$known" &&
+not_ok "the reviewed list contains no blanket wildcard" /dev/null ||
+ok "the reviewed list contains no blanket wildcard"
+
+echo "# the signing predicate has one definition"
+
+expect_exit 1 "--print-helper fails when no helper is configured" \
+	"$norepo" signing --print-helper
+test -s "$work/out" &&
+not_ok "--print-helper prints nothing when there is nothing to print" "$work/out" ||
+ok "--print-helper prints nothing when there is nothing to print"
+
+expect_exit 0 "--print-helper reports the helper the release script would use" \
+	"$signed" signing --print-helper
+printed="$(cat "$work/out")"
+test "$printed" = '!true' &&
+ok "the printed helper is exactly what the signing check accepted" ||
+not_ok "the printed helper is exactly what the signing check accepted ($printed)" "$work/err"
+
+# The release script asks for the helper through this one predicate, so a
+# helper the check rejects must never be printed as usable.
+expect_exit 1 "--print-helper rejects a whitespace-only helper too" \
+	"$blank" signing --print-helper
+expect_exit 1 "--print-helper rejects an empty helper too" \
+	"$empty" signing --print-helper
+
+# --allow-unsigned relaxes the verdict, never the reported fact.
+expect_exit 1 "--print-helper is not relaxed by --allow-unsigned" \
+	"$norepo" signing --print-helper --allow-unsigned
+
+# The release script must ask this one predicate rather than reading the Git
+# configuration itself, otherwise the two can disagree about what counts as a
+# configured helper.
+grep -q 'check-release-prerequisites.sh signing --print-helper' "$top/installer/release.sh" &&
+ok "installer/release.sh asks the shared predicate for the helper" ||
+not_ok "installer/release.sh asks the shared predicate for the helper" /dev/null
+
+grep -q 'git config.*signtool' "$top/installer/release.sh" &&
+not_ok "installer/release.sh does not re-implement the signing predicate" /dev/null ||
+ok "installer/release.sh does not re-implement the signing predicate"
+
 echo "# usage"
 
 expect_exit 2 "an unknown check is a usage error" "$norepo" no-such-check

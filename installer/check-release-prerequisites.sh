@@ -20,9 +20,11 @@ usage () {
 	cat >&2 <<-EOF
 	Usage: $0 <check> [options]
 
-	  signing [--allow-unsigned]
+	  signing [--allow-unsigned] [--print-helper]
 	      Verify that a signing helper is configured. With --allow-unsigned,
-	      report the absence via exit code 3 instead of failing.
+	      report the absence via exit code 3 instead of failing. With
+	      --print-helper, print the helper and exit 0 only if one is set;
+	      this is the single predicate every caller must use.
 
 	  compiler [--iscc=<file>]
 	      Verify that the Inno Setup compiler is present and executable.
@@ -43,22 +45,36 @@ usage () {
 	exit 2
 }
 
+# The one place that decides whether signing is configured. An alias set to
+# whitespace is as useless as an unset one, and would otherwise pass a `test -n`
+# and then expand to nothing. Callers must ask here rather than re-deriving it:
+# two views of this question disagreeing is how an installer gets told to sign
+# and marked unsigned at the same time.
+signing_helper () {
+	printf '%s' "$(git config alias.signtool)" | tr -d ' 	'
+}
+
 check_signing () {
 	allow_unsigned=
+	print_only=
 
 	while test $# -gt 0
 	do
 		case "$1" in
 		--allow-unsigned) allow_unsigned=t;;
+		--print-helper) print_only=t;;
 		*) echo "Unknown option: $1" >&2; usage;;
 		esac
 		shift
 	done
 
-	# An alias set to whitespace is as useless as an unset one, and would
-	# otherwise pass a `test -n` and then expand to nothing.
-	helper="$(git config alias.signtool)"
-	helper="$(printf '%s' "$helper" | tr -d ' 	')"
+	helper="$(signing_helper)"
+
+	test -z "$print_only" || {
+		test -n "$helper" || return 1
+		printf '%s\n' "$helper"
+		return 0
+	}
 
 	if test -n "$helper"
 	then

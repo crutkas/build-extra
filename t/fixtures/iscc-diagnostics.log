@@ -1,0 +1,15 @@
+Inno Setup 7 Command-Line Compiler
+Compiler engine version: Inno Setup 7.0.2
+
+Parsing [Setup] section, line 4
+Reading [Code] section
+Compiling [Code] section
+Creating setup files
+Warning: Architecture identifier "x64" is deprecated. Substituting "x64os", but note that "x64compatible" is preferred in most cases. See the "Architecture Identifiers" topic in help file for more information.
+Warning: Constant "pf" has been renamed. Use "commonpf" instead or consider using its "auto" form.
+Warning: Line 24, Column 6: [Hint] Support function "IsX64" is deprecated. Use "IsX64OS" instead, but note that "IsX64Compatible" is preferred in most cases. See the "Architecture Identifiers" topic in help file for more information.
+Warning: Line 22, Column 3: [Hint] Variable 'UNUSEDLOCAL' never used
+Warning: Line 13, Column 3: [Hint] Variable 'UNUSEDGLOBAL' never used
+
+Successful compile (0.469 sec). Resulting Setup program filename is:
+D:\out\Git-0-test-arm64.exe

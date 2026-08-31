@@ -427,12 +427,20 @@ printf "%s\n%s\n%s\n%s\n%s\n%s%s" \
 	"$inno_defines" \
 	>config.iss
 
+# Ask the one predicate rather than re-deriving it: a second, subtly different
+# view of "is signing configured" is how an installer gets told to sign and
+# marked unsigned in the same run.
 signtool=
-test -z "$(git config alias.signtool)" ||
-signtool="//Ssigntool=\"git signtool \\\$f\" //DSIGNTOOL"
+if sh ./check-release-prerequisites.sh signing --print-helper >/dev/null
+then
+	signtool="//Ssigntool=\"git signtool \\\$f\" //DSIGNTOOL"
+fi
 
 echo "Launching Inno Setup compiler ..." &&
-eval ./InnoSetup/ISCC.exe "$signtool" install.iss >install.log || {
+# Capture stderr too. The compiler writes warnings to stdout but errors to
+# stderr, so a log of stdout alone contained no error to show on failure and
+# nothing for the diagnostics gate to catch.
+eval ./InnoSetup/ISCC.exe "$signtool" install.iss >install.log 2>&1 || {
 	cat install.log >&2
 	die "Could not make installer"
 }

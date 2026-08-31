@@ -1,15 +1,44 @@
 # Inno Setup compiler diagnostics that have been reviewed and accepted.
 #
 # check-release-prerequisites.sh fails the build on any Warning or Error line in
-# the compiler log that is not matched here, so that a compiler diagnostic can
-# never again be written to install.log and read by nobody.
+# the compiler log that is not matched here, so a compiler diagnostic can never
+# again be written to install.log and read by nobody.
 #
 # One basic regular expression per line, matched against the whole log line.
-# Add an entry only together with a comment saying why the diagnostic is
-# expected and what would remove it.
+# Every entry is anchored and names the exact diagnostic it accepts; a blanket
+# `^Warning:` would defeat the point of the gate. Add an entry only together
+# with a comment saying why the diagnostic is expected and what would remove it.
+#
+# The wording below is not guessed. It was captured from this repository's own
+# vendored compiler -- installer/InnoSetup/ISCC.exe, Inno Setup 7.0.2 -- while
+# compiling a script that provokes each family, and that capture is checked in
+# as t/fixtures/iscc-diagnostics.log so these patterns stay honest.
+#
+# One diagnostic was removed rather than accepted: the `LZMAUseSeparateProcess`
+# directive was obsolete and ignored by this compiler, so it is gone from
+# install.iss. It is deliberately absent from this file, so that if it ever
+# comes back the build fails.
 
 # install.iss sets `ArchitecturesInstallIn64BitMode=x64 arm64`, and Inno Setup
 # 6.3 deprecated the bare `x64` identifier in favour of `x64compatible`.
 # Changing it is a behavioural change to installer architecture selection and is
-# deliberately out of scope here.
-^Warning: Architecture identifier "x64" is deprecated\.
+# deliberately out of scope for this change.
+^Warning: Architecture identifier "x64" is deprecated\. Substituting "x64os",
+
+# install.iss uses `DefaultDirName={pf}\...`. The suggested replacements are not
+# equivalent: `{autopf}` resolves to a per-user directory when Setup is not
+# elevated, which would move where a non-administrator installation lands. That
+# is a user-visible change and needs its own change with its own testing.
+^Warning: Constant "pf" has been renamed\. Use "commonpf" instead
+
+# install.iss calls `IsX64` in the 32-bit end-of-support notice. The suggested
+# replacements differ in meaning on ARM64 -- `IsX64OS` versus `IsX64Compatible`
+# -- so choosing between them is an architecture-selection decision, again out
+# of scope here.
+^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsX64" is deprecated\.
+
+# Unused locals and globals in the [Code] section. These are hints about dead
+# declarations in a 174 KB Pascal script that this change does not otherwise
+# touch, and each removal risks a behavioural change that cannot be caught
+# without compiling the real payload.
+^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Variable '[A-Za-z0-9_]*' never used$
