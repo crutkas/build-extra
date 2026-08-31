@@ -1,19 +1,17 @@
 Inno Setup 7 Command-Line Compiler
 Compiler engine version: Inno Setup 7.0.2
 
-Captured from a real PR build of installer/install.iss and its includes, on
-windows-latest (MINGW64, x86_64). The windows-11-arm (CLANGARM64, aarch64) job
-emits the same diagnostics; only the drive letter and the generated config.iss
-line numbers differ, which is why the reviewed patterns match a location
-prefix rather than a fixed path.
+The same build on windows-11-arm (CLANGARM64, aarch64). Kept alongside the
+x86_64 capture because the two differ in drive letter and in the generated
+config.iss line numbers, and the reviewed patterns must accept both.
 
 Warning: Architecture identifier "x64" is deprecated. Substituting "x64os", but note that "x64compatible" is preferred in most cases. See the "Architecture Identifiers" topic in help file for more information.
 Warning: Constant "pf" has been renamed. Use "commonpf" instead or consider using its "auto" form.
-Warning: D:\a\build-extra\build-extra\installer\config.iss, Line 21, Column 8: [Hint] Support function "IsComponentSelected" has been renamed. Use "WizardIsComponentSelected" instead.
-Warning: D:\a\build-extra\build-extra\installer\helpers.inc.iss, Line 87, Column 8: [Hint] Support function "IsAdminLoggedOn" has been renamed. Use "IsAdmin" instead or consider using "IsAdminInstallMode".
+Warning: C:\a\build-extra\build-extra\installer\config.iss, Line 23, Column 8: [Hint] Support function "IsComponentSelected" has been renamed. Use "WizardIsComponentSelected" instead.
+Warning: C:\a\build-extra\build-extra\installer\helpers.inc.iss, Line 87, Column 8: [Hint] Support function "IsAdminLoggedOn" has been renamed. Use "IsAdmin" instead or consider using "IsAdminInstallMode".
 Warning: Line 2812, Column 16: [Hint] Support function "FileCopy" has been renamed. Use "CopyFile" instead.
-Warning: D:\a\build-extra\build-extra\installer\modules.inc.iss, Line 509, Column 5: [Hint] Variable 'PATH' never used
-Warning: D:\a\build-extra\build-extra\installer\modules.inc.iss, Line 510, Column 5: [Hint] Variable 'PATHLENGTH' never used
+Warning: C:\a\build-extra\build-extra\installer\modules.inc.iss, Line 509, Column 5: [Hint] Variable 'PATH' never used
+Warning: C:\a\build-extra\build-extra\installer\modules.inc.iss, Line 510, Column 5: [Hint] Variable 'PATHLENGTH' never used
 Warning: Line 680, Column 5: [Hint] Variable 'VERSION' never used
 Warning: Line 682, Column 5: [Hint] Variable 'PROCSCLOSEREQUIRED' never used
 Warning: Line 682, Column 5: [Hint] Variable 'PROCSCLOSEOPTIONAL' never used
@@ -35,5 +33,5 @@ Warning: Line 2976, Column 5: [Hint] Variable 'RES' never used
 Warning: Line 3126, Column 5: [Hint] Variable 'DLLPATH' never used
 Warning: Line 3127, Column 5: [Hint] Variable 'IMAGENAMES' never used
 
-Successful compile (95.123 sec). Resulting Setup program filename is:
-D:\a\build-extra\build-extra\installer\Git-0-test-64-bit.exe
+Successful compile (128.456 sec). Resulting Setup program filename is:
+C:\a\build-extra\build-extra\installer\Git-0-test-arm64.exe

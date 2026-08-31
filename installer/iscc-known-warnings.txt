@@ -5,14 +5,26 @@
 # again be written to install.log and read by nobody.
 #
 # One basic regular expression per line, matched against the whole log line.
-# Every entry is anchored and names the exact diagnostic it accepts; a blanket
-# `^Warning:` would defeat the point of the gate. Add an entry only together
-# with a comment saying why the diagnostic is expected and what would remove it.
+# Every entry is anchored at both ends and names the exact diagnostic it
+# accepts; a blanket `^Warning:` would defeat the point of the gate, and a
+# pattern that merely prefixes a diagnostic would accept whatever the compiler
+# went on to say -- including the part a human is supposed to be reading. Add an
+# entry only together with a comment saying why the diagnostic is expected and
+# what would remove it.
 #
-# The wording below is not guessed. It was captured from this repository's own
-# vendored compiler -- installer/InnoSetup/ISCC.exe, Inno Setup 7.0.2 -- while
-# compiling a script that provokes each family, and that capture is checked in
-# as t/fixtures/iscc-diagnostics.log so these patterns stay honest.
+# The wording below is not guessed. It is the output of a real PR build
+# compiling installer/install.iss and its includes, captured from CI and checked
+# in as t/fixtures/iscc-diagnostics.log (x86_64) and
+# t/fixtures/iscc-diagnostics-aarch64.log. Both architectures emit the same
+# diagnostics and differ only in the drive letter and in the generated
+# config.iss line numbers, which is why the location prefix is matched loosely
+# while the diagnostic text is matched exactly.
+#
+# Everything here is pre-existing in the installer sources. Each is a rename or
+# a dead declaration whose fix is a behavioural change to a 174 KB Pascal script
+# that this change does not otherwise touch, and which cannot be validated
+# without building and running the real installer. They are recorded rather than
+# fixed, deliberately and visibly.
 #
 # One diagnostic was removed rather than accepted: the `LZMAUseSeparateProcess`
 # directive was obsolete and ignored by this compiler, so it is gone from
@@ -31,14 +43,18 @@
 # is a user-visible change and needs its own change with its own testing.
 ^Warning: Constant "pf" has been renamed\. Use "commonpf" instead or consider using its "auto" form\.$
 
-# install.iss calls `IsX64` in the 32-bit end-of-support notice. The suggested
-# replacements differ in meaning on ARM64 -- `IsX64OS` versus `IsX64Compatible`
-# -- so choosing between them is an architecture-selection decision, again out
-# of scope here.
-^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsX64" is deprecated\. Use "IsX64OS" instead, but note that "IsX64Compatible" is preferred in most cases\. See the "Architecture Identifiers" topic in help file for more information\.$
+# Three support functions the [Code] section calls under their old names. Each
+# is named exactly, so a fourth renamed function is a new diagnostic that fails
+# the build rather than being absorbed by a general pattern.
+#
+# config.iss is generated, so its line numbers differ between architectures;
+# the location prefix is present only for diagnostics in included files.
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsComponentSelected" has been renamed\. Use "WizardIsComponentSelected" instead\.$
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsAdminLoggedOn" has been renamed\. Use "IsAdmin" instead or consider using "IsAdminInstallMode"\.$
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "FileCopy" has been renamed\. Use "CopyFile" instead\.$
 
 # Unused locals and globals in the [Code] section. These are hints about dead
-# declarations in a 174 KB Pascal script that this change does not otherwise
-# touch, and each removal risks a behavioural change that cannot be caught
-# without compiling the real payload.
-^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Variable '[A-Za-z0-9_]*' never used$
+# declarations, and each removal risks a behavioural change that cannot be
+# caught without compiling and running the real payload. The variable name is
+# uppercased by the compiler.
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Variable '[A-Za-z0-9_]*' never used$

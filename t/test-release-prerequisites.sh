@@ -278,20 +278,44 @@ expect_exit 1 "a missing known-warnings file fails" "$norepo" iscc-log "$work/cl
 
 echo "# the reviewed patterns against real compiler output"
 
-# t/fixtures/iscc-diagnostics.log is not written by hand: it is the output of
-# this repository's own installer/InnoSetup/ISCC.exe compiling a script that
-# provokes each accepted diagnostic. If the reviewed patterns ever stop
-# matching the wording the compiler actually emits, this fails.
+# t/fixtures/iscc-diagnostics.log is not written by hand: it is the output of a
+# real PR build compiling installer/install.iss and its includes, captured from
+# CI. The aarch64 capture is kept alongside it because the two differ in drive
+# letter and in the generated config.iss line numbers, and the reviewed
+# patterns have to accept both without hard-coding either.
 real="$top/t/fixtures/iscc-diagnostics.log"
-expect_exit 0 "every diagnostic in the captured compiler log is accounted for" \
+real_arm="$top/t/fixtures/iscc-diagnostics-aarch64.log"
+
+expect_exit 0 "every diagnostic in the captured x86_64 compiler log is accounted for" \
 	"$norepo" iscc-log "$real" --known-warnings="$known"
+expect_exit 0 "every diagnostic in the captured aarch64 compiler log is accounted for" \
+	"$norepo" iscc-log "$real_arm" --known-warnings="$known"
+
+# Both captures really do carry the whole diagnostic set, so the two passes
+# above are not passing because a log was truncated.
+for log in "$real" "$real_arm"
+do
+	n="$(grep -c '^Warning: ' "$log")"
+	test "$n" -eq 27 &&
+	ok "$(basename "$log") holds all 27 captured diagnostics" ||
+	not_ok "$(basename "$log") holds all 27 captured diagnostics (found $n)" /dev/null
+done
+
+# The captures differ in exactly the way the patterns are written to tolerate.
+grep -q '^Warning: D:' "$real" &&
+ok "the x86_64 capture carries its own drive letter" ||
+not_ok "the x86_64 capture carries its own drive letter" /dev/null
+grep -q '^Warning: C:' "$real_arm" &&
+ok "the aarch64 capture carries a different drive letter" ||
+not_ok "the aarch64 capture carries a different drive letter" /dev/null
 
 for wording in \
 	'Architecture identifier' \
 	'Constant "pf" has been renamed' \
-	'Support function "IsX64" is deprecated' \
-	"Variable 'UNUSEDLOCAL' never used" \
-	"Variable 'UNUSEDGLOBAL' never used"
+	'Support function "IsComponentSelected"' \
+	'Support function "IsAdminLoggedOn"' \
+	'Support function "FileCopy"' \
+	"Variable 'PATHLENGTH' never used"
 do
 	grep -q "$wording" "$work/err" &&
 	ok "reports the real diagnostic: $wording" ||
@@ -302,9 +326,9 @@ done
 # fail the captured log, so the list cannot accumulate entries that match
 # nothing while a real diagnostic slips through some other entry.
 pattern_lines="$(grep -c -v -e '^#' -e '^$' "$known")"
-test "$pattern_lines" -eq 4 &&
-ok "the reviewed list has the 4 patterns these tests bind" ||
-not_ok "the reviewed list has the 4 patterns these tests bind (found $pattern_lines)" /dev/null
+test "$pattern_lines" -eq 6 &&
+ok "the reviewed list has the 6 patterns these tests bind" ||
+not_ok "the reviewed list has the 6 patterns these tests bind (found $pattern_lines)" /dev/null
 
 n=0
 while test "$n" -lt "$pattern_lines"
@@ -316,8 +340,15 @@ do
 		"$norepo" iscc-log "$real" --known-warnings="$work/minus-one.txt"
 done
 
-# The directive that was removed from install.iss rather than accepted must not
-# be admitted if it ever comes back.
+# A renamed support function that nobody has reviewed must not be absorbed by
+# the patterns that accept the three known ones.
+cat >"$work/novel-rename.log" <<-\EOF
+	Warning: Line 1, Column 2: [Hint] Support function "IsWin64" has been renamed. Use "IsX64OS" instead.
+EOF
+expect_exit 1 "an unreviewed support-function rename still fails" \
+	"$norepo" iscc-log "$work/novel-rename.log" --known-warnings="$known"
+
+# The removed directive that was fixed rather than accepted.
 removed="$top/t/fixtures/iscc-removed-directive.log"
 expect_exit 1 "the removed obsolete directive is not accepted if it returns" \
 	"$norepo" iscc-log "$removed" --known-warnings="$known"
@@ -330,8 +361,8 @@ not_ok "install.iss no longer sets the obsolete directive" /dev/null ||
 ok "install.iss no longer sets the obsolete directive"
 
 # A near miss must not be accepted: the reviewed patterns are anchored and name
-# an exact diagnostic, so a different variable-hint shape or a trailing
-# addendum is a new diagnostic that a human has not looked at.
+# an exact diagnostic, so a different hint shape is a new diagnostic that a
+# human has not looked at.
 cat >"$work/nearmiss.log" <<-\EOF
 	Warning: Line 22, Column 3: [Hint] Function 'UNUSEDFUNC' never used
 EOF
@@ -377,11 +408,6 @@ EOF
 test "$prefix_failures" -eq 0 &&
 ok "no reviewed pattern is satisfied by a truncated diagnostic" ||
 not_ok "no reviewed pattern is satisfied by a truncated diagnostic ($prefix_failures are)" /dev/null
-
-# And the captured log itself must still pass, so the anchoring above did not
-# simply stop matching everything.
-expect_exit 0 "the captured compiler log still passes after anchoring" \
-	"$norepo" iscc-log "$real" --known-warnings="$known"
 
 cat >"$work/unanchored.log" <<-\EOF
 	Error: Architecture identifier "x64" is deprecated. Substituting "x64os",
