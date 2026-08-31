@@ -1,0 +1,60 @@
+# Inno Setup compiler diagnostics that have been reviewed and accepted.
+#
+# check-release-prerequisites.sh fails the build on any Warning or Error line in
+# the compiler log that is not matched here, so a compiler diagnostic can never
+# again be written to install.log and read by nobody.
+#
+# One basic regular expression per line, matched against the whole log line.
+# Every entry is anchored at both ends and names the exact diagnostic it
+# accepts; a blanket `^Warning:` would defeat the point of the gate, and a
+# pattern that merely prefixes a diagnostic would accept whatever the compiler
+# went on to say -- including the part a human is supposed to be reading. Add an
+# entry only together with a comment saying why the diagnostic is expected and
+# what would remove it.
+#
+# The wording below is not guessed. It is the output of a real PR build
+# compiling installer/install.iss and its includes, captured from CI and checked
+# in as t/fixtures/iscc-diagnostics.log (x86_64) and
+# t/fixtures/iscc-diagnostics-aarch64.log. Both architectures emit the same
+# diagnostics and differ only in the drive letter and in the generated
+# config.iss line numbers, which is why the location prefix is matched loosely
+# while the diagnostic text is matched exactly.
+#
+# Everything here is pre-existing in the installer sources. Each is a rename or
+# a dead declaration whose fix is a behavioural change to a 174 KB Pascal script
+# that this change does not otherwise touch, and which cannot be validated
+# without building and running the real installer. They are recorded rather than
+# fixed, deliberately and visibly.
+#
+# One diagnostic was removed rather than accepted: the `LZMAUseSeparateProcess`
+# directive was obsolete and ignored by this compiler, so it is gone from
+# install.iss. It is deliberately absent from this file, so that if it ever
+# comes back the build fails.
+
+# install.iss sets `ArchitecturesInstallIn64BitMode=x64 arm64`, and Inno Setup
+# 6.3 deprecated the bare `x64` identifier in favour of `x64compatible`.
+# Changing it is a behavioural change to installer architecture selection and is
+# deliberately out of scope for this change.
+^Warning: Architecture identifier "x64" is deprecated\. Substituting "x64os", but note that "x64compatible" is preferred in most cases\. See the "Architecture Identifiers" topic in help file for more information\.$
+
+# install.iss uses `DefaultDirName={pf}\...`. The suggested replacements are not
+# equivalent: `{autopf}` resolves to a per-user directory when Setup is not
+# elevated, which would move where a non-administrator installation lands. That
+# is a user-visible change and needs its own change with its own testing.
+^Warning: Constant "pf" has been renamed\. Use "commonpf" instead or consider using its "auto" form\.$
+
+# Three support functions the [Code] section calls under their old names. Each
+# is named exactly, so a fourth renamed function is a new diagnostic that fails
+# the build rather than being absorbed by a general pattern.
+#
+# config.iss is generated, so its line numbers differ between architectures;
+# the location prefix is present only for diagnostics in included files.
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsComponentSelected" has been renamed\. Use "WizardIsComponentSelected" instead\.$
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsAdminLoggedOn" has been renamed\. Use "IsAdmin" instead or consider using "IsAdminInstallMode"\.$
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "FileCopy" has been renamed\. Use "CopyFile" instead\.$
+
+# Unused locals and globals in the [Code] section. These are hints about dead
+# declarations, and each removal risks a behavioural change that cannot be
+# caught without compiling and running the real payload. The variable name is
+# uppercased by the compiler.
+^Warning: \(.*, \)\?Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Variable '[A-Za-z0-9_]*' never used$
