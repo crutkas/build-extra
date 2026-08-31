@@ -1,0 +1,73 @@
+{
+  "deniedCampaignCommits": [
+    {
+      "source": "refs/heads/crutkas-arm64-denied-campaign",
+      "mergeBase": "0000000000000000000000000000000000000000",
+      "root": "a527000000000000000000000000000000000000",
+      "tip": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "commitCount": 2
+    }
+  ],
+  "candidate": {
+    "cleanCommits": [
+      "dddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "descendantCommits": [
+      "a527000000000000000000000000000000000000",
+      "cccccccccccccccccccccccccccccccccccccccc"
+    ],
+    "selfDeclaredAncestry": [
+      "cccccccccccccccccccccccccccccccccccccccc"
+    ]
+  },
+  "api": {
+    "/repos/crutkas/build-extra/branches?per_page=100&page=1": [
+      {
+        "name": "main",
+        "commit": {
+          "sha": "0000000000000000000000000000000000000000"
+        }
+      },
+      {
+        "name": "crutkas-arm64-denied-campaign",
+        "commit": {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    ],
+    "/repos/crutkas/build-extra/pulls?state=all&per_page=100&page=1": [],
+    "/repos/crutkas/build-extra/git/ref/heads/crutkas-arm64-denied-campaign": {
+      "ref": "refs/heads/crutkas-arm64-denied-campaign",
+      "object": {
+        "type": "commit",
+        "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    "/repos/crutkas/build-extra/compare/0000000000000000000000000000000000000000...bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?per_page=100&page=1": {
+      "status": "ahead",
+      "base_commit": {
+        "sha": "0000000000000000000000000000000000000000"
+      },
+      "merge_base_commit": {
+        "sha": "0000000000000000000000000000000000000000"
+      },
+      "total_commits": 2,
+      "commits": [
+        {
+          "sha": "a527000000000000000000000000000000000000"
+        },
+        {
+          "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ]
+    },
+    "/repos/crutkas/build-extra/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "parents": [
+        {
+          "sha": "a527000000000000000000000000000000000000"
+        }
+      ]
+    }
+  }
+}

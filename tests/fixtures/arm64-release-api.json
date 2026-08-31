@@ -1,0 +1,98 @@
+{
+  "lock": {
+    "schemaVersion": 1,
+    "architecture": "aarch64",
+    "repository": "example/project",
+    "release": {
+      "id": 1234,
+      "tagName": "v1.2.3",
+      "immutable": true,
+      "assetCount": 2
+    },
+    "tag": {
+      "objectSha": "1111111111111111111111111111111111111111",
+      "peeledCommitSha": "2222222222222222222222222222222222222222",
+      "peeledTreeSha": "3333333333333333333333333333333333333333"
+    },
+    "assets": [
+      {
+        "id": 5678,
+        "name": "input-arm64.zip",
+        "size": 123456,
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "id": 5679,
+        "name": "input-arm64.zip.sig",
+        "size": 512,
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    ]
+  },
+  "evidence": {
+    "schemaVersion": 1,
+    "method": "independent-redownload",
+    "repository": "example/project",
+    "releaseId": 1234,
+    "tagObjectSha": "1111111111111111111111111111111111111111",
+    "peeledCommitSha": "2222222222222222222222222222222222222222",
+    "assets": [
+      {
+        "id": 5678,
+        "name": "input-arm64.zip",
+        "size": 123456,
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "id": 5679,
+        "name": "input-arm64.zip.sig",
+        "size": 512,
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    ]
+  },
+  "api": {
+    "/repos/example/project": {
+      "full_name": "example/project"
+    },
+    "/repos/example/project/releases/1234": {
+      "id": 1234,
+      "tag_name": "v1.2.3",
+      "immutable": true,
+      "assets": [
+        {
+          "id": 5679,
+          "name": "input-arm64.zip.sig",
+          "size": 512,
+          "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        {
+          "id": 5678,
+          "name": "input-arm64.zip",
+          "size": 123456,
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ]
+    },
+    "/repos/example/project/git/ref/tags/v1.2.3": {
+      "ref": "refs/tags/v1.2.3",
+      "object": {
+        "type": "tag",
+        "sha": "1111111111111111111111111111111111111111"
+      }
+    },
+    "/repos/example/project/git/tags/1111111111111111111111111111111111111111": {
+      "sha": "1111111111111111111111111111111111111111",
+      "object": {
+        "type": "commit",
+        "sha": "2222222222222222222222222222222222222222"
+      }
+    },
+    "/repos/example/project/git/commits/2222222222222222222222222222222222222222": {
+      "sha": "2222222222222222222222222222222222222222",
+      "tree": {
+        "sha": "3333333333333333333333333333333333333333"
+      }
+    }
+  }
+}
