@@ -114,6 +114,14 @@ make_pe "$root/usr/libexec/old32.exe" 0x014C --32
 make_pe "$root/clangarm64/bin/Managed.dll" 0x014C --32 --anycpu
 make_pe "$root/clangarm64/bin/hybrid.dll" 0xAA64 --hybrid
 make_pe "$root/clangarm64/bin/Preferred32.exe" 0x014C --32 --anycpu32
+
+# Non-binary payload entries really exist in a payload, so the fixtures create
+# them. A listed file that is not on disk is a hard failure -- the same answer
+# the selected half already gives -- so "missing" cannot become a way out of
+# either half of the reconciliation.
+mkdir -p "$root/etc" "$root/usr/share/doc"
+echo '[core]' >"$root/etc/gitconfig"
+echo 'readme' >"$root/usr/share/doc/README"
 ok "built PE fixtures"
 
 cat >"$work/file-list" <<-\EOF
@@ -493,6 +501,52 @@ expect_exit 1 "a rename with no reason fails" \
 	--baseline="$work/rseed" --exceptions="$work/exceptions" \
 	--renames="$work/ren-noreason" $rpin
 
+echo "# no path is claimed by two lists at once"
+
+# A path asserted to be renamed tracked debt and also asserted to be an
+# architecture-neutral exception is two contradictory claims about one binary,
+# and both tuples would land in the known set -- so whichever way the file
+# really classifies it would be accepted and drift could never be detected.
+printf 'anycpu\tusr/bin/gawk-5.4.1.exe\tclaimed twice\n' >"$work/exc-claim-body"
+write_list "$work/exc-claim" "$work/exc-claim-body"
+expect_exit 1 "a path in both the renames and the exceptions fails" \
+	--root="$root" --file-list="$work/file-list-renamed" \
+	--baseline="$work/rseed" --exceptions="$work/exc-claim" \
+	--renames="$work/ren-good" $rpin
+said 'exactly one list' "says a path belongs to exactly one list"
+
+printf 'anycpu\tusr/bin/gawk-5.4.0.exe\tclaimed twice\n' >"$work/exc-oldclaim-body"
+write_list "$work/exc-oldclaim" "$work/exc-oldclaim-body"
+expect_exit 1 "a renamed-from path that is also an exception fails" \
+	--root="$root" --file-list="$work/file-list-renamed" \
+	--baseline="$work/rseed" --exceptions="$work/exc-oldclaim" \
+	--renames="$work/ren-good" $rpin
+
+# A rename target the seed already tracks needs no rename, and counting it
+# twice would let one binary satisfy two entries.
+printf 'amd64\tusr/bin/gawk-5.4.0.exe\namd64\tusr/bin/gawk-5.4.1.exe\ni386\tusr/libexec/old32.exe\n' >"$work/seed-both-body"
+write_list "$work/seed-both" "$work/seed-both-body"
+expect_exit 1 "a rename to a path the seed already tracks fails" \
+	--root="$root" --file-list="$work/file-list-renamed" \
+	--baseline="$work/seed-both" --exceptions="$work/exceptions" \
+	--renames="$work/ren-good" \
+	--seed-sha256="$(sha_of "$work/seed-both-body")" --seed-entries=3 \
+	--seed-version=test --seed-artifact=test.tsv --seed-source=test-source
+said 'already seeded' "says the seed already tracks the new name"
+
+# Chained renames: a path that is both renamed to and renamed from means the
+# two rows disagree about whether it is shipped.
+printf 'amd64\tusr/bin/gawk-5.4.0.exe\tusr/bin/gawk-5.4.1.exe\tfirst hop\namd64\tusr/bin/gawk-5.4.1.exe\tusr/bin/gawk-5.4.2.exe\tsecond hop\n' >"$work/ren-chain-body"
+write_list "$work/ren-chain" "$work/ren-chain-body"
+expect_exit 1 "chained renames fail" \
+	--root="$root" --file-list="$work/file-list-renamed" \
+	--baseline="$work/rseed" --exceptions="$work/exceptions" \
+	--renames="$work/ren-chain" $rpin
+# The seed-membership requirement catches this first: the intermediate name is
+# not tracked debt, so the second hop has nothing to rename from. The explicit
+# chain check below it is defence in depth for a future reordering.
+said 'seed has no' "says the intermediate name is not tracked debt"
+
 echo "# no image escapes classification"
 
 make_pe "$root/usr/bin/UPPER.EXE" 0x8664
@@ -515,6 +569,8 @@ expect_exit 1 "mixed-case entries are actually required to be listed" \
 	--baseline="$work/seed" --exceptions="$work/exceptions" \
 	--renames="$work/renames" $pin
 
+echo "# an image with no recognised extension is a hard failure"
+
 # An image with no recognised extension must not slip past the predicate.
 make_pe "$root/usr/bin/oddball.bin" 0x8664
 printf 'usr/bin/native.exe\nusr/bin/oddball.bin\n' >"$work/file-list-odd"
@@ -525,11 +581,46 @@ expect_exit 1 "an MZ image outside the extension set is a hard failure" \
 said 'not classified' "names the image that escaped the predicate"
 said 'usr/bin/oddball.bin' "names the file itself"
 
+# An entry the scan cannot read is not evidence of anything either. An
+# unreadable `.exe` is already a hard failure, so an unreadable entry with an
+# unrecognised extension must be one too -- otherwise "unreadable" is a way out
+# of both halves of the reconciliation.
+printf 'usr/bin/native.exe\nusr/bin/absent.bin\n' >"$work/file-list-unreadable"
+expect_exit 1 "an unreadable unselected entry is a hard failure" \
+	--root="$root" --file-list="$work/file-list-unreadable" \
+	--baseline="$work/seed" --exceptions="$work/exceptions" \
+	--renames="$work/renames" $pin
+said 'could not be read' "says the entry could not be examined"
+said 'usr/bin/absent.bin' "names the entry it could not read"
+
+# The corresponding `.exe` case, so the two halves really do agree.
+printf 'usr/bin/native.exe\nusr/bin/absent.exe\n' >"$work/file-list-absent-exe"
+expect_exit 1 "an unreadable selected entry is a hard failure too" \
+	--root="$root" --file-list="$work/file-list-absent-exe" \
+	--baseline="$work/seed" --exceptions="$work/exceptions" \
+	--renames="$work/renames" $pin
+
 printf 'usr/bin/native.exe\netc/gitconfig\n' >"$work/file-list-plain"
 expect_exit 0 "a non-image with no recognised extension is not a failure" \
 	--root="$root" --file-list="$work/file-list-plain" \
 	--baseline="$work/seed" --exceptions="$work/exceptions" \
 	--renames="$work/renames" $pin
+
+# The two halves of the split must account for the whole payload; if one of
+# them silently came back empty because the tool failed rather than because
+# nothing matched, the reconciliation above would be skipped entirely.
+said_out () { # <pattern> <description>
+	if grep -q "$1" "$work/out" "$work/err"
+	then
+		ok "$2"
+	else
+		not_ok "$2" "$work/err"
+	fi
+}
+run_checker --root="$root" --file-list="$work/file-list-plain" \
+	--baseline="$work/seed" --exceptions="$work/exceptions" \
+	--renames="$work/renames" $pin
+said_out 'Inspected 1 binaries' "the unselected half does not swallow the selected one"
 
 echo "# payload paths are canonical"
 
@@ -653,25 +744,101 @@ said 'no .dll or .exe files' "the committed lists got as far as inspecting the p
 
 echo "# temporary files are cleaned up"
 
-# The checker now works in a private mktemp directory rather than under a
-# PID-derived prefix, so the leak test counts entries in TMPDIR rather than
-# looking for a fixed name.
-before=$(ls -1 "${TMPDIR:-/tmp}" 2>/dev/null | wc -l)
-run_checker $common
-after=$(ls -1 "${TMPDIR:-/tmp}" 2>/dev/null | wc -l)
+# The checker allocates a private mktemp directory, which honours TMPDIR, so
+# point it at one of ours and count only what it puts there. Counting the whole
+# shared temp directory would report leaks caused by unrelated processes and
+# would mask a real leak that coincided with an unrelated deletion -- and this
+# suite backs a branch-protection check, so it cannot be that flaky.
+private_tmp="$work/private-tmp"
+mkdir -p "$private_tmp"
+before=$(ls -1 "$private_tmp" | wc -l)
+TMPDIR="$private_tmp" run_checker $common
+after=$(ls -1 "$private_tmp" | wc -l)
 test "$before" = "$after" &&
 ok "leaves no temporary files behind" ||
 not_ok "leaves no temporary files behind (had $before, now $after)"
 
-# And the old naming really is gone, so the check above is not passing because
-# it is looking in the wrong place.
-test -z "$(ls -d /tmp/payload-arch.* 2>/dev/null)" &&
-ok "no run left a shared-namespace temporary behind" ||
-not_ok "no run left a shared-namespace temporary behind"
+# That the count is scoped is only meaningful if the checker really did work
+# there, so prove the directory was used at all.
+TMPDIR="$private_tmp" sh "$checker" --root="$root" --file-list="$work/no-such-list" \
+	$common >/dev/null 2>&1
+test "$(ls -1 "$private_tmp" | wc -l)" = "$before" &&
+ok "cleans up even when it fails early" ||
+not_ok "cleans up even when it fails early"
 
 grep -q 'mktemp -d' "$checker" &&
 ok "the checker allocates a private temporary directory" ||
 not_ok "the checker allocates a private temporary directory"
+
+grep -q '/tmp/payload-arch' "$checker" &&
+not_ok "the checker no longer uses a shared-namespace temporary name" ||
+ok "the checker no longer uses a shared-namespace temporary name"
+
+echo "# the payload split cannot fail quietly"
+
+# grep exits 1 for "nothing matched" and 2 for "the tool failed". Discarding
+# the status with `|| :` conflates them, and on exit 2 the unselected half comes
+# back empty -- which reads as "nothing was excluded" and skips the entire
+# negative reconciliation while the run still reports success. There is no way
+# to make the real grep exit 2 from a fixture, so this binds the shape.
+grep -q '>"\$tmp\.candidates" || :' "$checker" &&
+not_ok "the selected half does not discard the tool's status" ||
+ok "the selected half does not discard the tool's status"
+
+grep -q '>"\$tmp\.rest" || :' "$checker" &&
+not_ok "the unselected half does not discard the tool's status" ||
+ok "the unselected half does not discard the tool's status"
+
+test "$(grep -c '^\*) die "Could not' "$checker")" -ge 2 &&
+ok "both halves of the split fail closed on a tool error" ||
+not_ok "both halves of the split fail closed on a tool error"
+
+# The split reconciliation is defence in depth: `grep P` and `grep -v P` really
+# do partition their input, so no payload can make them disagree. It is bound
+# here by fault injection instead -- a grep that quietly drops one line from the
+# unselected half, which is exactly what a future non-complementary refactor
+# would look like. Without the reconciliation this is a silent no-op; with it,
+# it is a hard failure.
+stub_dir="$work/stub-bin"
+mkdir -p "$stub_dir"
+real_grep="$(command -v grep)"
+cat >"$stub_dir/grep" <<-EOF
+	#!/bin/sh
+	# Pass everything through except the negated split, from which one line
+	# vanishes -- with a zero exit status, so only a content check can see it.
+	for arg
+	do
+		case "\$arg" in
+		-*v*) drop=t;;
+		esac
+	done
+	if test -n "\${drop-}" && test "\$1" = -i
+	then
+		"$real_grep" "\$@" | sed '1d'
+		exit 0
+	fi
+	exec "$real_grep" "\$@"
+EOF
+chmod +x "$stub_dir/grep"
+
+PATH="$stub_dir:$PATH" sh "$checker" $common >"$work/out" 2>"$work/err"
+actual=$?
+test "$actual" -ne 0 &&
+ok "a split that silently loses a payload entry is a hard failure" ||
+not_ok "a split that silently loses a payload entry is a hard failure (exit $actual)" "$work/err"
+said 'not fully accounted for' "says the payload was not fully accounted for"
+
+# And the stub really is reached, so the check above is not passing for some
+# unrelated reason: without the reconciliation the same stub is invisible.
+# The extracted copy lives outside the repository, so it is told where the
+# parser is rather than resolving it beside itself.
+sed -e '/^LC_ALL=C sort -u "\$tmp.candidates" "\$tmp.rest" >"\$tmp.split"$/,+5d' \
+	"$checker" >"$work/checker-no-split.sh"
+PATH="$stub_dir:$PATH" sh "$work/checker-no-split.sh" $common \
+	--pe-imports="$top/pe-imports.ps1" >/dev/null 2>"$work/err"
+test $? = 0 &&
+ok "without the reconciliation the same fault goes unnoticed" ||
+not_ok "without the reconciliation the same fault goes unnoticed" "$work/err"
 
 echo ""
 if test $failures -gt 0

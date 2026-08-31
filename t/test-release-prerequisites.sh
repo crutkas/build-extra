@@ -344,6 +344,45 @@ EOF
 expect_exit 1 "a reviewed diagnostic with unreviewed text appended still fails" \
 	"$norepo" iscc-log "$work/suffixed.log" --known-warnings="$known"
 
+# Every pattern has to have that property, not just the one this happened to
+# reach. A pattern that is a strict prefix of the diagnostic it accepts would
+# take any continuation, including the part that says what the compiler
+# actually did -- which is the part a human is supposed to be reviewing.
+suffix_failures=0
+while IFS= read -r diagnostic
+do
+	printf '%s and also something nobody reviewed\n' "$diagnostic" >"$work/one-suffixed.log"
+	sh "$checker" iscc-log "$work/one-suffixed.log" --known-warnings="$known" \
+		>/dev/null 2>&1 &&
+	suffix_failures=$(($suffix_failures + 1))
+done <<-EOF
+$(grep '^Warning: ' "$real")
+EOF
+test "$suffix_failures" -eq 0 &&
+ok "no reviewed pattern accepts arbitrary text appended to its diagnostic" ||
+not_ok "no reviewed pattern accepts arbitrary text appended to its diagnostic ($suffix_failures do)" /dev/null
+
+# The complementary direction: truncating a reviewed diagnostic must also fail,
+# so a pattern cannot be satisfied by a prefix of what it claims to accept.
+prefix_failures=0
+while IFS= read -r diagnostic
+do
+	printf '%s\n' "$(printf '%s' "$diagnostic" | cut -c 1-40)" >"$work/one-cut.log"
+	sh "$checker" iscc-log "$work/one-cut.log" --known-warnings="$known" \
+		>/dev/null 2>&1 &&
+	prefix_failures=$(($prefix_failures + 1))
+done <<-EOF
+$(grep '^Warning: ' "$real")
+EOF
+test "$prefix_failures" -eq 0 &&
+ok "no reviewed pattern is satisfied by a truncated diagnostic" ||
+not_ok "no reviewed pattern is satisfied by a truncated diagnostic ($prefix_failures are)" /dev/null
+
+# And the captured log itself must still pass, so the anchoring above did not
+# simply stop matching everything.
+expect_exit 0 "the captured compiler log still passes after anchoring" \
+	"$norepo" iscc-log "$real" --known-warnings="$known"
+
 cat >"$work/unanchored.log" <<-\EOF
 	Error: Architecture identifier "x64" is deprecated. Substituting "x64os",
 EOF

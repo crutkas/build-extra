@@ -23,19 +23,19 @@
 # 6.3 deprecated the bare `x64` identifier in favour of `x64compatible`.
 # Changing it is a behavioural change to installer architecture selection and is
 # deliberately out of scope for this change.
-^Warning: Architecture identifier "x64" is deprecated\. Substituting "x64os",
+^Warning: Architecture identifier "x64" is deprecated\. Substituting "x64os", but note that "x64compatible" is preferred in most cases\. See the "Architecture Identifiers" topic in help file for more information\.$
 
 # install.iss uses `DefaultDirName={pf}\...`. The suggested replacements are not
 # equivalent: `{autopf}` resolves to a per-user directory when Setup is not
 # elevated, which would move where a non-administrator installation lands. That
 # is a user-visible change and needs its own change with its own testing.
-^Warning: Constant "pf" has been renamed\. Use "commonpf" instead
+^Warning: Constant "pf" has been renamed\. Use "commonpf" instead or consider using its "auto" form\.$
 
 # install.iss calls `IsX64` in the 32-bit end-of-support notice. The suggested
 # replacements differ in meaning on ARM64 -- `IsX64OS` versus `IsX64Compatible`
 # -- so choosing between them is an architecture-selection decision, again out
 # of scope here.
-^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsX64" is deprecated\.
+^Warning: Line [0-9][0-9]*, Column [0-9][0-9]*: \[Hint\] Support function "IsX64" is deprecated\. Use "IsX64OS" instead, but note that "IsX64Compatible" is preferred in most cases\. See the "Architecture Identifiers" topic in help file for more information\.$
 
 # Unused locals and globals in the [Code] section. These are hints about dead
 # declarations in a 174 KB Pascal script that this change does not otherwise

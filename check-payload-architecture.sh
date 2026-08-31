@@ -313,6 +313,47 @@ test ! -s "$tmp.overlap" || {
 	die "Each path must appear in exactly one list"
 }
 
+# The renames file makes claims about paths too, and those claims have to be
+# exclusive as well. A path asserted to be renamed tracked debt and also
+# asserted to be an architecture-neutral exception is two contradictory
+# statements about one binary -- and worse, both tuples land in the known set
+# below, so whichever way the file actually classifies it is accepted and the
+# drift check can never fire for it.
+cut -f 3 <"$tmp.renames.full" | LC_ALL=C sort -u >"$tmp.renames.new.paths"
+cut -f 2 <"$tmp.renames.full" | LC_ALL=C sort -u >"$tmp.renames.old.paths"
+
+LC_ALL=C comm -12 "$tmp.renames.new.paths" "$tmp.exceptions.full.paths" >"$tmp.overlap"
+test ! -s "$tmp.overlap" || {
+	echo "A path is renamed to in $renames_file and also listed in $exceptions_file:" >&2
+	sed 's/^/  /' <"$tmp.overlap" >&2
+	die "Each path must appear in exactly one list"
+}
+
+LC_ALL=C comm -12 "$tmp.renames.old.paths" "$tmp.exceptions.full.paths" >"$tmp.overlap"
+test ! -s "$tmp.overlap" || {
+	echo "A path is renamed from in $renames_file and also listed in $exceptions_file:" >&2
+	sed 's/^/  /' <"$tmp.overlap" >&2
+	die "Each path must appear in exactly one list"
+}
+
+# A rename target that is already seeded debt in its own right needs no rename,
+# and counting it twice would let one binary satisfy two entries.
+LC_ALL=C comm -12 "$tmp.renames.new.paths" "$tmp.baseline.paths" >"$tmp.overlap"
+test ! -s "$tmp.overlap" || {
+	echo "A path is renamed to in $renames_file and already seeded in $baseline_file:" >&2
+	sed 's/^/  /' <"$tmp.overlap" >&2
+	die "A rename must introduce a new name, not point at one the seed already tracks"
+}
+
+# And a rename cannot be chained: if a new name is itself renamed away, the two
+# rows disagree about whether that path is shipped.
+LC_ALL=C comm -12 "$tmp.renames.new.paths" "$tmp.renames.old.paths" >"$tmp.overlap"
+test ! -s "$tmp.overlap" || {
+	echo "A path is both renamed to and renamed from in $renames_file:" >&2
+	sed 's/^/  /' <"$tmp.overlap" >&2
+	die "Renames must not chain; record the rename that actually happened"
+}
+
 if test -n "$file_list"
 then
 	test -f "$file_list" ||
@@ -327,9 +368,35 @@ fi
 # payload file list is not case-normalised, but it is only ever an optimisation:
 # whatever it does not select is reconciled against file content below, so
 # correctness does not rest on a filename.
+#
+# grep exits 1 for "nothing matched" and 2 for "the tool failed", and the two
+# must not be conflated. On exit 2 the output file is empty, which reads exactly
+# like "nothing was excluded" and would skip the reconciliation below entirely
+# while the run still reported success.
 sed -e 's|^/||' "$tmp.all" | LC_ALL=C sort -u >"$tmp.payload"
-grep -i '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.candidates" || :
-grep -i -v '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.rest" || :
+
+grep -i '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.candidates"
+case $? in
+0 | 1) ;;
+*) die "Could not select the payload binaries; refusing to report success";;
+esac
+
+grep -i -v '\.\(dll\|exe\)$' "$tmp.payload" >"$tmp.rest"
+case $? in
+0 | 1) ;;
+*) die "Could not determine which payload entries were not selected; refusing to report success";;
+esac
+
+# The two halves have to add up to the whole. Comparing contents rather than
+# counts: `wc -l` undercounts a final line with no newline, so equal counts are
+# not the same statement as "nothing was lost", and this is the check that
+# everything downstream rests on.
+LC_ALL=C sort -u "$tmp.candidates" "$tmp.rest" >"$tmp.split"
+cmp -s "$tmp.split" "$tmp.payload" || {
+	echo "The payload did not split cleanly into binaries and everything else:" >&2
+	LC_ALL=C comm -3 "$tmp.split" "$tmp.payload" | sed 's/^/  /' >&2
+	die "Refusing to report success on a payload that was not fully accounted for"
+}
 
 candidate_count=$(($(wc -l <"$tmp.candidates")))
 test "$candidate_count" -gt 0 ||
@@ -396,14 +463,27 @@ then
 
 	# Pair by position: the parser echoes a converted path, not ours.
 	: >"$tmp.escaped"
+	: >"$tmp.unreadable"
 	exec 3<"$tmp.rest" 4<"$tmp.magic"
 	while IFS= read -r payload_path <&3 && IFS= read -r magic_line <&4
 	do
 		case "${magic_line%%	*}" in
+		other) ;;
 		mz) printf '%s\n' "$payload_path" >>"$tmp.escaped";;
+		*) printf '%s\n' "$payload_path" >>"$tmp.unreadable";;
 		esac
 	done
 	exec 3<&- 4<&-
+
+	# A file the scan could not read is not evidence of anything. Accepting it
+	# would make "unreadable" a way out of both halves of the reconciliation:
+	# an unreadable `.exe` is already a hard failure, so an unreadable entry
+	# with an unrecognised extension must be one too.
+	test ! -s "$tmp.unreadable" || {
+		echo "Payload entries could not be read while scanning for images:" >&2
+		sed 's/^/  /' <"$tmp.unreadable" >&2
+		die "Every payload entry must be classified; these could not be examined"
+	}
 
 	test ! -s "$tmp.escaped" || {
 		echo "Payload entries are PE images but were not classified:" >&2
