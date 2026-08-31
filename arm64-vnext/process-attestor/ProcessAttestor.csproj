@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>win-arm64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <AssemblyName>arm64-vnext-process-attestor-2026-08-31-v1</AssemblyName>
+    <RootNamespace>Arm64VNext.ProcessAttestor</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <Target Name="AddSourceRevisionToAssemblyMetadata"
+          BeforeTargets="GetAssemblyAttributes"
+          DependsOnTargets="InitializeSourceControlInformation">
+    <ItemGroup>
+      <AssemblyMetadata Include="SourceRevisionId" Value="$(SourceRevisionId)" />
+    </ItemGroup>
+  </Target>
+</Project>
