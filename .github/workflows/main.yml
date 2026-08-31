@@ -66,11 +66,15 @@ jobs:
 
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- check-for-missing-dlls.sh)" ||
           echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
+
+          test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- 7-Zip/ portable/release.sh sdk-installer/release.sh)" ||
+          echo "verify-sfx=true" >>$GITHUB_OUTPUT
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       artifacts: ${{ steps.set-matrix.outputs.artifacts }}
       test-sdk-artifacts: ${{ steps.set-matrix.outputs.test-sdk-artifacts }}
       check-for-missing-dlls: ${{ steps.set-matrix.outputs.check-for-missing-dlls }}
+      verify-sfx: ${{ steps.set-matrix.outputs.verify-sfx }}
   build-packages:
     needs: determine-packages
     if: needs.determine-packages.outputs.matrix != '[""]'
@@ -406,3 +410,12 @@ jobs:
       - name: check for missing DLLs (MinGit)
         shell: bash
         run: MINIMAL_GIT=1 ./check-for-missing-dlls.sh
+  verify-sfx:
+    needs: determine-packages
+    if: needs.determine-packages.outputs.verify-sfx == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: verify 7-Zip SFX architecture gate
+        shell: bash
+        run: sh 7-Zip/t/test-verify-sfx-machine.sh

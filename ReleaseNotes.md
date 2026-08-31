@@ -50,6 +50,7 @@ Following the [MSYS2 project](https://www.msys2.org/news/#2026-02-28-dropping-su
 
 * The experimental `git survey` command (which was never upstreamed to the core Git project) was deprecated and [converted into a small shim on top of `git repo structure`](https://github.com/git-for-windows/git/pull/6268). In the future, `git repo structure` should be used instead, as the `git survey` command will be retired eventually.
 * Git for Windows' installer [is now a 64-bit executable](https://github.com/git-for-windows/build-extra/pull/726) (x64 instead of 86).
+* The ARM64 Portable Git and Git SDK self-extracting archives (`PortableGit-*-arm64.7z.exe` and `git-sdk-installer-*-arm64.7z.exe`) now use a native ARM64 7-Zip self-extractor instead of the x86 one, so their extraction runs as a native ARM64 process rather than under x86 emulation.
 * Comes with the MSYS2 runtime (Git for Windows flavor) based on [Cygwin v3.6.10](https://inbox.sourceware.org/cygwin-announce/f9d2b89b-c99c-4d02-b0cf-61adea84566b@dronecode.org.uk/).
 * Comes with [OpenSSH v10.5.P1](https://github.com/openssh/openssh-portable/releases/tag/V_10_5_P1).
 
