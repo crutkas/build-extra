@@ -1,0 +1,537 @@
+{
+  "archiveExpectations": {
+    "allowedAbsoluteSymlinks": [
+      {
+        "path": "dev/fd",
+        "target": "/proc/self/fd"
+      },
+      {
+        "path": "dev/stderr",
+        "target": "/proc/self/fd/2"
+      },
+      {
+        "path": "dev/stdin",
+        "target": "/proc/self/fd/0"
+      },
+      {
+        "path": "dev/stdout",
+        "target": "/proc/self/fd/1"
+      },
+      {
+        "path": "etc/mtab",
+        "target": "/proc/mounts"
+      }
+    ],
+    "architectureCounts": {
+      "anycpu": 90,
+      "arm64": 209,
+      "x64": 432,
+      "x86": 1
+    },
+    "hardlinkCount": 90,
+    "memberCount": 7950,
+    "peCount": 732,
+    "x64PathSha256": "efce93fd01bfe066e3e119b5c4459dcb2c72a1c00af339dc40fe8f81c7336eae"
+  },
+  "expected": {
+    "candidateCount": 160,
+    "candidatePathSha256": "90d0631cf5c1f2d1306531dce4ef782b3012c8904ffaaa96f25eb947fe375b31",
+    "evidenceBackedCandidateCount": 114,
+    "modeledCount": 46,
+    "ownerVersionGroupCount": 82,
+    "recommendationCount": 71,
+    "residualCount": 272,
+    "residualPathSha256": "08bf91fe84bb49712b970170cb510186dc88594607d0bcaa547b79a527cb301c",
+    "ruleCount": 11,
+    "sourceOverlapCount": 0,
+    "totalCount": 432
+  },
+  "legacyOverlap": {
+    "activeRuleCount": 0,
+    "pathCount": 17,
+    "pathSha256": "6f02d6c4b836286c8f5a8b385eda84165df41c6805578f2da6b9295ebf1e4e9d",
+    "paths": [
+      "usr/bin/awk.exe",
+      "usr/bin/gawk-5.4.0.exe",
+      "usr/bin/gawk.exe",
+      "usr/lib/awk/grcat.exe",
+      "usr/lib/awk/pwcat.exe",
+      "usr/lib/gawk/filefuncs.dll",
+      "usr/lib/gawk/fnmatch.dll",
+      "usr/lib/gawk/fork.dll",
+      "usr/lib/gawk/inplace.dll",
+      "usr/lib/gawk/intdiv.dll",
+      "usr/lib/gawk/ordchr.dll",
+      "usr/lib/gawk/readdir.dll",
+      "usr/lib/gawk/readfile.dll",
+      "usr/lib/gawk/revoutput.dll",
+      "usr/lib/gawk/revtwoway.dll",
+      "usr/lib/gawk/rwarray.dll",
+      "usr/lib/gawk/time.dll"
+    ],
+    "resolution": "The active model assigns all gawk-owned paths only to candidate-gawk. BusyBox semantic-proof and gap rules contain none of these paths."
+  },
+  "ownership": {
+    "canonicalMappingSha256": "e8a15c057e86f1c4bbfb08d061aeeee26f859d22038514ba2eb023d0cf9257e3",
+    "commit": "7a77c0c5ff81d1c979302c9cc49a62f26f68d17c",
+    "databaseArchiveTarSha256": "08def496d94247b4f8bb620b643b58dd2271d53a0f2adf7f841d26a54be91c11",
+    "databasePath": "var/lib/pacman/local",
+    "databaseTree": "e5af31a4d268b8e3b6d70ba8dc627eac118acfcf",
+    "packageCount": 312,
+    "recordBlobCount": 624,
+    "repository": "git-for-windows/git-sdk-arm64",
+    "rootTree": "075f3eaa668d257b56e571419a2e396eec10b9e8"
+  },
+  "products": [
+    {
+      "expectedCount": 46,
+      "id": "installer",
+      "ruleIds": [
+        "modeled-runtime-foundation"
+      ]
+    },
+    {
+      "expectedCount": 46,
+      "id": "portable",
+      "ruleIds": [
+        "modeled-runtime-foundation"
+      ]
+    },
+    {
+      "expectedCount": 13,
+      "id": "mingit",
+      "paths": [
+        "usr/bin/chattr.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/getfacl.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/msys-ncursesw6.dll",
+        "usr/bin/msys-readline8.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/profiler.exe",
+        "usr/bin/sh.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ]
+    },
+    {
+      "expectedCount": 9,
+      "id": "busybox-mingit",
+      "paths": [
+        "usr/bin/chattr.exe",
+        "usr/bin/cygwin-console-helper.exe",
+        "usr/bin/gencat.exe",
+        "usr/bin/gmondump.exe",
+        "usr/bin/lsattr.exe",
+        "usr/bin/msys-2.0.dll",
+        "usr/bin/newgrp.exe",
+        "usr/bin/profiler.exe",
+        "usr/libexec/getprocaddr64.exe"
+      ]
+    }
+  ],
+  "release": {
+    "asset": {
+      "apiDigest": "sha256:7cc28b4431c9448c310d0093fbba5646517cd702690a9b965014d7df85319ad9",
+      "apiUrl": "https://api.github.com/repos/git-for-windows/git/releases/assets/510402464",
+      "createdAt": "2026-08-11T17:07:57Z",
+      "downloadSha256": "7cc28b4431c9448c310d0093fbba5646517cd702690a9b965014d7df85319ad9",
+      "id": 510402464,
+      "name": "Git-2.55.0.4-arm64.tar.bz2",
+      "size": 171467184,
+      "updatedAt": "2026-08-11T17:08:04Z"
+    },
+    "createdAt": "2026-07-22T12:22:21Z",
+    "id": 368726166,
+    "peeledCommit": "a93524749d7806870fd2b4b00a3812da1d6e5f4a",
+    "peeledCommitTree": "ef6c48ad0494a3de6a4a2875e32eb8412dae2eb7",
+    "publishedAt": "2026-08-11T17:35:02Z",
+    "repository": "git-for-windows/git",
+    "tag": "v2.55.0.windows.4",
+    "tagObject": "76e15f45d670eab29f6d55611c252b3f2b70188c"
+  },
+  "rules": [
+    {
+      "action": "native-mingw-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "39ffc22208aa99e287a9f433431fb9a56f443b62",
+        "pullRequest": 3,
+        "repository": "crutkas/build-extra",
+        "tree": "bdc84a726f6a21ac279900d18be4d0f7000b8066"
+      },
+      "expectedCount": 11,
+      "id": "candidate-native-leaf-tools",
+      "ledgerClass": "evidence-backed-candidate",
+      "paths": [
+        "usr/bin/bunzip2.exe",
+        "usr/bin/bzcat.exe",
+        "usr/bin/bzip2.exe",
+        "usr/bin/bzip2recover.exe",
+        "usr/bin/nettle-hash.exe",
+        "usr/bin/nettle-lfib-stream.exe",
+        "usr/bin/nettle-pbkdf2.exe",
+        "usr/bin/p11-kit.exe",
+        "usr/bin/pkcs1-conv.exe",
+        "usr/bin/sexp-conv.exe",
+        "usr/bin/trust.exe"
+      ]
+    },
+    {
+      "action": "busybox-substitution-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "50de8f12409d8cc8e16aef190629073db1a8606d",
+        "pullRequest": 4,
+        "repository": "crutkas/build-extra",
+        "tree": "228594c4a9a31d98f7d56b9e8c208168fb73cb94"
+      },
+      "expectedCount": 59,
+      "id": "candidate-busybox-substitution",
+      "ledgerClass": "evidence-backed-candidate",
+      "paths": [
+        "usr/bin/[.exe",
+        "usr/bin/arch.exe",
+        "usr/bin/base32.exe",
+        "usr/bin/base64.exe",
+        "usr/bin/basename.exe",
+        "usr/bin/cat.exe",
+        "usr/bin/cksum.exe",
+        "usr/bin/cmp.exe",
+        "usr/bin/comm.exe",
+        "usr/bin/cp.exe",
+        "usr/bin/cut.exe",
+        "usr/bin/diff.exe",
+        "usr/bin/dirname.exe",
+        "usr/bin/echo.exe",
+        "usr/bin/env.exe",
+        "usr/bin/expand.exe",
+        "usr/bin/expr.exe",
+        "usr/bin/false.exe",
+        "usr/bin/find.exe",
+        "usr/bin/fold.exe",
+        "usr/bin/head.exe",
+        "usr/bin/join.exe",
+        "usr/bin/ln.exe",
+        "usr/bin/md5sum.exe",
+        "usr/bin/mkdir.exe",
+        "usr/bin/mktemp.exe",
+        "usr/bin/mv.exe",
+        "usr/bin/nl.exe",
+        "usr/bin/nproc.exe",
+        "usr/bin/od.exe",
+        "usr/bin/paste.exe",
+        "usr/bin/printf.exe",
+        "usr/bin/rm.exe",
+        "usr/bin/rmdir.exe",
+        "usr/bin/seq.exe",
+        "usr/bin/sha1sum.exe",
+        "usr/bin/sha256sum.exe",
+        "usr/bin/sha384sum.exe",
+        "usr/bin/sha512sum.exe",
+        "usr/bin/sort.exe",
+        "usr/bin/split.exe",
+        "usr/bin/sum.exe",
+        "usr/bin/tac.exe",
+        "usr/bin/tail.exe",
+        "usr/bin/tee.exe",
+        "usr/bin/test.exe",
+        "usr/bin/touch.exe",
+        "usr/bin/tr.exe",
+        "usr/bin/true.exe",
+        "usr/bin/truncate.exe",
+        "usr/bin/tsort.exe",
+        "usr/bin/uname.exe",
+        "usr/bin/unexpand.exe",
+        "usr/bin/uniq.exe",
+        "usr/bin/unlink.exe",
+        "usr/bin/unzip.exe",
+        "usr/bin/wc.exe",
+        "usr/bin/xargs.exe",
+        "usr/bin/yes.exe"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "f5fc22b61661d339583cb1b64f714c211448e1ed",
+        "pullRequest": 6,
+        "repository": "crutkas/build-extra",
+        "tree": "0e5a9d01c3d1b20556423c6563129da2a8b6c773"
+      },
+      "expectedCount": 14,
+      "id": "candidate-win32-openssh",
+      "ledgerClass": "evidence-backed-candidate",
+      "owners": [
+        "libcbor@0.11.0-1",
+        "libedit@20240808_3.1-1",
+        "libfido2@1.15.0-1",
+        "openssh@10.3p1-1"
+      ]
+    },
+    {
+      "action": "native-mingw-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "bc3ec5555a95355dfc6832dcd5e38ada98ff6e45",
+        "pullRequest": 9,
+        "repository": "crutkas/build-extra",
+        "tree": "6a96f33c69718f425aa6f282259a0b63ea719760"
+      },
+      "expectedCount": 6,
+      "id": "candidate-dos2unix",
+      "ledgerClass": "evidence-backed-candidate",
+      "owners": [
+        "dos2unix@7.5.6-1"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829",
+        "pullRequest": 10,
+        "repository": "crutkas/build-extra",
+        "tree": "1469c06c647fe41a293c82171ffdfae166b75db7"
+      },
+      "expectedCount": 17,
+      "id": "candidate-gawk",
+      "ledgerClass": "evidence-backed-candidate",
+      "owners": [
+        "gawk@5.4.0-1"
+      ]
+    },
+    {
+      "action": "native-port-candidate",
+      "evidence": {
+        "admission": "unresolved",
+        "head": "d012f9f8a8d05a3a51a40fe33668295a3e31c221",
+        "pullRequest": 7,
+        "repository": "crutkas/MINGW-packages",
+        "tree": "ecb252648ac26a6228a1327d139ca074df95e864"
+      },
+      "expectedCount": 7,
+      "id": "candidate-vim",
+      "ledgerClass": "evidence-backed-candidate",
+      "owners": [
+        "vim@9.2.0725-1"
+      ]
+    },
+    {
+      "action": "modeled-native-port",
+      "evidence": null,
+      "expectedCount": 46,
+      "id": "modeled-runtime-foundation",
+      "ledgerClass": "modeled-unresolved",
+      "owners": [
+        "bash@5.3.015-1",
+        "libreadline@8.3.003-1",
+        "msys2-runtime@3.6.9-2",
+        "ncurses@6.6-2"
+      ]
+    },
+    {
+      "action": "native-port",
+      "evidence": null,
+      "expectedCount": 133,
+      "id": "residual-native-port",
+      "ledgerClass": "residual",
+      "owners": [
+        "gdbm@1.26-1",
+        "gnupg@2.4.9-1",
+        "less@704-1",
+        "nano@9.1-1",
+        "perl@5.42.2-1",
+        "pinentry@1.3.2-1",
+        "winpty@0.4.3-3"
+      ],
+      "paths": [
+        "usr/bin/b2sum.exe",
+        "usr/bin/basenc.exe",
+        "usr/bin/chcon.exe",
+        "usr/bin/chgrp.exe",
+        "usr/bin/chown.exe",
+        "usr/bin/chroot.exe",
+        "usr/bin/csplit.exe",
+        "usr/bin/diff3.exe",
+        "usr/bin/dir.exe",
+        "usr/bin/dircolors.exe",
+        "usr/bin/fmt.exe",
+        "usr/bin/funzip.exe",
+        "usr/bin/gkill.exe",
+        "usr/bin/hostid.exe",
+        "usr/bin/hostname.exe",
+        "usr/bin/locate.exe",
+        "usr/bin/mkfifo.exe",
+        "usr/bin/mknod.exe",
+        "usr/bin/nice.exe",
+        "usr/bin/nohup.exe",
+        "usr/bin/numfmt.exe",
+        "usr/bin/pathchk.exe",
+        "usr/bin/pinky.exe",
+        "usr/bin/pr.exe",
+        "usr/bin/ptx.exe",
+        "usr/bin/runcon.exe",
+        "usr/bin/sdiff.exe",
+        "usr/bin/sha224sum.exe",
+        "usr/bin/stdbuf.exe",
+        "usr/bin/tty.exe",
+        "usr/bin/unzipsfx.exe",
+        "usr/bin/users.exe",
+        "usr/bin/vdir.exe",
+        "usr/bin/who.exe",
+        "usr/bin/zipinfo.exe",
+        "usr/libexec/frcode.exe"
+      ]
+    },
+    {
+      "action": "dependency-removal",
+      "evidence": null,
+      "expectedCount": 62,
+      "id": "residual-dependency-removal",
+      "ledgerClass": "residual",
+      "owners": [
+        "apr-util@1.6.3-2",
+        "apr@1.7.6-2",
+        "heimdal-libs@7.8.0-5",
+        "libassuan@3.0.2-1",
+        "libgcrypt@1.12.2-1",
+        "libgpg-error@1.61-1",
+        "libksba@1.8.0-1",
+        "libnpth@1.8-1",
+        "libopenssl@3.5.7-1",
+        "libsasl@2.1.28-5",
+        "libserf@1.3.10-2",
+        "libtasn1@4.21.0-1",
+        "subversion@1.14.5-3"
+      ],
+      "paths": [
+        "usr/lib/coreutils/libstdbuf.dll"
+      ]
+    },
+    {
+      "action": "busybox-semantic-proof",
+      "evidence": {
+        "admission": "unresolved",
+        "artifactDigest": "sha256:60d1511ff3d5af40136a0879abff0622d31efcec066157d236d3603a48a36ce4",
+        "artifactId": 9672860669,
+        "head": "7731cd019b7fa0c8e77b99cecced2a93c5962e4f",
+        "jobId": 98742752010,
+        "pullRequest": 15,
+        "repository": "crutkas/build-extra",
+        "tree": "438fcfe91c28c30507b9015c211a7f21c470b165",
+        "workflowRun": 33138152773
+      },
+      "expectedCount": 24,
+      "id": "residual-busybox-semantic-proof",
+      "ledgerClass": "residual",
+      "paths": [
+        "usr/bin/chmod.exe",
+        "usr/bin/date.exe",
+        "usr/bin/dd.exe",
+        "usr/bin/df.exe",
+        "usr/bin/du.exe",
+        "usr/bin/factor.exe",
+        "usr/bin/groups.exe",
+        "usr/bin/id.exe",
+        "usr/bin/install.exe",
+        "usr/bin/link.exe",
+        "usr/bin/logname.exe",
+        "usr/bin/ls.exe",
+        "usr/bin/printenv.exe",
+        "usr/bin/pwd.exe",
+        "usr/bin/readlink.exe",
+        "usr/bin/realpath.exe",
+        "usr/bin/shred.exe",
+        "usr/bin/shuf.exe",
+        "usr/bin/sleep.exe",
+        "usr/bin/stat.exe",
+        "usr/bin/stty.exe",
+        "usr/bin/sync.exe",
+        "usr/bin/timeout.exe",
+        "usr/bin/whoami.exe"
+      ]
+    },
+    {
+      "action": "unassigned",
+      "evidence": null,
+      "expectedCount": 53,
+      "id": "residual-unassigned",
+      "ledgerClass": "residual",
+      "owners": [
+        "dash@0.5.13.4-1",
+        "file@5.48-1",
+        "gcc-libs@15.3.0-1",
+        "gmp@6.3.0-2",
+        "grep@1~3.0-7",
+        "gzip@1.14-2",
+        "iconv@1.19-1",
+        "libbz2@1.0.8-4",
+        "libexpat@2.8.2-1",
+        "libffi@3.6.0-1",
+        "libgdbm@1.26-1",
+        "libgnutls@3.8.13-2",
+        "libhogweed@4.0-1",
+        "libiconv@1.19-1",
+        "libidn2@2.3.8-1",
+        "libintl@0.22.5-1",
+        "liblz4@1.10.0-1",
+        "liblzma@5.8.3-1",
+        "libnettle@4.0-1",
+        "libp11-kit@0.26.2-1",
+        "libpcre2_8@10.47-1",
+        "libpcre@8.45-5",
+        "libpsl@0.21.5-2",
+        "libsqlite@3.53.3-1",
+        "libunistring@1.4.2-1",
+        "libutil-linux@2.40.2-2",
+        "libxcrypt@4.5.2-1",
+        "libzstd@1.5.7-1",
+        "mintty@1~3.8.3-1",
+        "mpfr@4.2.2-1",
+        "openssl@3.5.7-1",
+        "patch@2.7.6-3",
+        "perl-Clone@0.50-2",
+        "perl-HTML-Parser@3.85-1",
+        "perl-Net-SSLeay@1.96-1",
+        "perl-TermReadKey@2.38-8",
+        "rebase@4.5.0-5",
+        "sed@4.9-1",
+        "ssh-pageant@1.4.r15.gc804ba4-1",
+        "tar@1.35-3",
+        "tig@2.6.1-1",
+        "util-linux@2.40.2-2",
+        "which@2.25-1",
+        "zlib@1.3.2-1"
+      ],
+      "paths": [
+        "usr/lib/pkcs11/p11-kit-trust.dll",
+        "usr/libexec/p11-kit/p11-kit-remote.exe",
+        "usr/libexec/p11-kit/p11-kit-server.exe"
+      ]
+    }
+  ],
+  "scanner": {
+    "path": "arm64-validation/Arm64Ledger.psm1",
+    "referenceScanners": [
+      {
+        "gitBlobSha1": "b8ef9d058996fd32278583ed3352135d51096b93",
+        "path": "check-payload-architecture.sh",
+        "repository": "crutkas/build-extra",
+        "sha256": "6b5ffd3f2e6e9a9f13397c42c3871cd49c11b59d197bbb3c5af4eeae77183d99",
+        "sourceCommit": "9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19"
+      },
+      {
+        "gitBlobSha1": "d82f853bb433b6fe33b818af6e40266903454770",
+        "path": "pe-imports.ps1",
+        "repository": "crutkas/build-extra",
+        "sha256": "30adb26e7a4df9946a1c7b145e6613f3efb116745ad09a0978f89cb592932d84",
+        "sourceCommit": "9e8e3eb929ae5c7fe8a2d899be2eefdc07356c19"
+      }
+    ]
+  },
+  "schemaVersion": 1
+}

@@ -1,0 +1,62 @@
+{
+  "artifacts": [
+    {
+      "path": "archive-links.tsv",
+      "sha256": "91a5ac776e0290484377bc5cb5cadc0c33b4ec46bf3dd7b93caadb0306c135ce",
+      "size": 13709
+    },
+    {
+      "path": "archive-summary.json",
+      "sha256": "e28c5fcb5c3545f549fb5e38624af6e0632ff601bc95c8da990c933d07e34363",
+      "size": 1112
+    },
+    {
+      "path": "backlog.json",
+      "sha256": "4ee887b74643dffea7608b80df99e486b94b009526a534c29d7e1a5efba34329",
+      "size": 147571
+    },
+    {
+      "path": "pe-manifest.tsv",
+      "sha256": "f348abf190c3688f872b6b15bb13ebbfb2deb16ef816086de075fcabbefaf765",
+      "size": 104547
+    },
+    {
+      "path": "provenance.json",
+      "sha256": "2e913d993944d8d19442f4aefc6c1dc7be9290feb67e4145cf599704804957be",
+      "size": 3248
+    },
+    {
+      "path": "source-rules.tsv",
+      "sha256": "6d642fba3a23e7f4731f8ffa557f6123dd0648c0236bc26922c544c64dc6fce6",
+      "size": 43185
+    },
+    {
+      "path": "x64-ownership.tsv",
+      "sha256": "8c010fb1a0915f9dd4afefcdf5ed700fc8628a97be063e111dce450d23a4a8d1",
+      "size": 18449
+    },
+    {
+      "path": "x64-paths.txt",
+      "sha256": "efce93fd01bfe066e3e119b5c4459dcb2c72a1c00af339dc40fe8f81c7336eae",
+      "size": 11282
+    }
+  ],
+  "canonicalSerialization": {
+    "encoding": "UTF-8 without BOM",
+    "jsonObjectKeys": "UTF-8 bytewise ascending",
+    "lineEndings": "LF",
+    "pathOrder": "UTF-8 bytewise ascending",
+    "terminalLf": true
+  },
+  "scanner": {
+    "gitBlobSha1": "7fe8aa4eeb3fdb54fdd5bc9f436ec1c323a4bf42",
+    "path": "arm64-validation/Arm64Ledger.psm1",
+    "sha256": "b1e3754a5f73be512d898c8c180fc04413baaeeca4813933a365e2eb05073eac"
+  },
+  "schemaVersion": 1,
+  "sourceModel": {
+    "gitBlobSha1": "7ba6086e5e21e349524b930946a2ab464a36f988",
+    "path": "arm64-validation/ledger-model-v2.55.0.4.json",
+    "sha256": "20a9e2a6042849d2641301e45614c90aed57c7069a2ccdc80c415c264e7b1810"
+  }
+}
