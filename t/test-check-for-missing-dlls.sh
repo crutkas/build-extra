@@ -366,6 +366,47 @@ set_file_list <"$work/empty"
 expect_exit 1 "an empty file list fails rather than reporting success" \
 	"$work/objdump-full" "$work/pe-cover-all.ps1"
 
+echo "# payload names are matched without regard to case"
+
+# The payload file list is not case-normalised, and this script's only defence
+# is that it lowercases the list before matching. Nothing exercised that, so a
+# change that dropped the normalisation would leave every mixed-case binary
+# silently unexamined while all the reconciliation counts still agreed -- they
+# would all have been derived from the same narrowed set.
+
+# A mixed-case library has to satisfy a lowercase binary's import.
+set_file_list <<-\EOF
+	usr/bin/tool.exe
+	usr/bin/MSYS-2.0.DLL
+EOF
+expect_exit 0 "a mixed-case DLL satisfies an import spelled in lower case" \
+	"$work/objdump-full" "$work/pe-cover-all.ps1"
+
+# And a payload spelled entirely in upper case still gets inspected, rather
+# than being reported as containing no binaries at all.
+set_file_list <<-\EOF
+	usr/bin/TOOL.EXE
+	usr/bin/MSYS-2.0.DLL
+EOF
+expect_exit 0 "an all-upper-case payload is still inspected" \
+	"$work/objdump-full" "$work/pe-cover-all.ps1"
+
+set_file_list <<-\EOF
+	usr/bin/Tool.Exe
+	usr/bin/Msys-2.0.Dll
+EOF
+expect_exit 0 "a mixed-case payload is still inspected" \
+	"$work/objdump-full" "$work/pe-cover-all.ps1"
+
+# The case-folding must not become a way to lose a real missing import: a
+# mixed-case binary whose dependency is absent is still a failure.
+set_file_list <<-\EOF
+	usr/bin/TOOL.EXE
+EOF
+expect_exit 1 "a mixed-case binary with an unsatisfied import is still reported" \
+	"$work/objdump-full" "$work/pe-cover-all.ps1"
+said 'is missing msys-2.0.dll' "names the missing DLL for the mixed-case binary"
+
 echo "# the missing-DLL detection still works"
 
 set_file_list <<-\EOF
@@ -401,6 +442,62 @@ expect_exit 1 "an import of a path containing a space is still reported" \
 	"$work/objdump-space" "$work/pe-cover-all.ps1"
 said '/usr/bin/with space.exe is missing only-space-wants-this.dll' \
 	"attributes it to the file with the space, not to the one before it"
+
+echo "# MinGW and MSYS2 binaries are satisfied from different directories"
+
+# MSYSTEM is CLANGARM64 above, so $MINGW_PREFIX is clangarm64.  A MinGW binary
+# has to be satisfied out of clangarm64/bin, and an MSYS2 binary out of
+# usr/bin; neither may borrow from the other.  Without this the branch that
+# selects the satisfying set for MinGW payloads is never exercised, and a
+# mutation that collapses the two goes unnoticed.
+cat >"$work/objdump-mingw" <<-\EOF
+	#!/bin/sh
+	shift
+	for f
+	do
+		echo ""
+		printf '%s:     file format pei-aarch64-little\n' "$f"
+		echo ""
+		case "$f" in
+		*/clangarm64/bin/git.exe) printf '\tDLL Name: libpcre2-8-0.dll\n';;
+		*/usr/bin/tool.exe) printf '\tDLL Name: msys-2.0.dll\n';;
+		*) printf '\tDLL Name: KERNEL32.dll\n';;
+		esac
+	done
+EOF
+chmod +x "$work/objdump-mingw"
+
+set_file_list <<-\EOF
+	clangarm64/bin/git.exe
+	clangarm64/bin/libpcre2-8-0.dll
+	usr/bin/tool.exe
+	usr/bin/msys-2.0.dll
+EOF
+expect_exit 0 "a MinGW binary satisfied from the MinGW bin directory passes" \
+	"$work/objdump-mingw" "$work/pe-cover-all.ps1"
+
+# The same import with the library moved into usr/bin must fail: an MSYS2
+# directory cannot satisfy a MinGW binary.
+set_file_list <<-\EOF
+	clangarm64/bin/git.exe
+	usr/bin/libpcre2-8-0.dll
+	usr/bin/tool.exe
+	usr/bin/msys-2.0.dll
+EOF
+expect_exit 1 "a MinGW binary cannot be satisfied out of usr/bin" \
+	"$work/objdump-mingw" "$work/pe-cover-all.ps1"
+said '/clangarm64/bin/git.exe is missing libpcre2-8-0.dll' \
+	"names the MinGW binary and the library it cannot reach"
+
+# And the converse: an MSYS2 binary cannot borrow from the MinGW directory.
+set_file_list <<-\EOF
+	clangarm64/bin/msys-2.0.dll
+	usr/bin/tool.exe
+EOF
+expect_exit 1 "an MSYS2 binary cannot be satisfied out of the MinGW bin directory" \
+	"$work/objdump-mingw" "$work/pe-cover-all.ps1"
+said '/usr/bin/tool.exe is missing msys-2.0.dll' \
+	"names the MSYS2 binary and the library it cannot reach"
 
 echo ""
 if test $failures -gt 0

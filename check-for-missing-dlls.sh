@@ -70,17 +70,18 @@ OBJDUMP="${OBJDUMP-/usr/bin/objdump}"
 { test -x "$OBJDUMP" || command -v "$OBJDUMP" >/dev/null 2>&1; } ||
 die "objdump not found at '$OBJDUMP'; refusing to inspect the payload without it"
 
-used_dlls_file=/tmp/used-dlls.$$.txt
+# A private directory rather than PID-derived names in the shared /tmp
+# namespace: two runs on one machine must not be able to delete each other''s
+# files, and a leak has to be attributable to the run that caused it.
+scratch_dir="$(mktemp -d)" ||
+die "Could not create a temporary directory"
+used_dlls_file="$scratch_dir/used-dlls.txt"
 >"$used_dlls_file"
-missing_dlls_file=/tmp/missing-dlls.$$.txt
+missing_dlls_file="$scratch_dir/missing-dlls.txt"
 >"$missing_dlls_file"
-unused_dlls_file=/tmp/unused-dlls.$$.txt
-tmp_file=/tmp/tmp.$$.txt
-trap "rm -f \"$used_dlls_file\" \"$missing_dlls_file\" \"$unused_dlls_file\" \
-	\"$tmp_file\" \"$tmp_file.raw\" \"$tmp_file.all\" \"$tmp_file.ldd\" \
-	\"$tmp_file.pe\" \"$tmp_file.pe.fixed\" \"$tmp_file.pe.raw\" \
-	\"$tmp_file.expected\" \"$tmp_file.seen\" \"$tmp_file.todo\" \
-	\"$tmp_file.win\" \"$tmp_file.candidates\" \"$tmp_file.dirs\"" EXIT
+unused_dlls_file="$scratch_dir/unused-dlls.txt"
+tmp_file="$scratch_dir/tmp.txt"
+trap "rm -rf \"$scratch_dir\"" EXIT
 
 # Report the binaries a parser described, by extracting the file names we asked
 # about from its own output. `objdump` writes "<path>:<TAB>file format <fmt>"
