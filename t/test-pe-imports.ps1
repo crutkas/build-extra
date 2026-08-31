@@ -254,6 +254,67 @@ $bracket = New-Pe -Name '[.exe' -MachineValue 0x8664
 $r = Invoke-PeImports -Arguments @('-Machine', '-PathFile', $pathFile)
 Assert-Equal 'amd64' (($r.Stdout -split "`n")[0].Split("`t")[0]) 'a path containing a bracket is read literally'
 
+Write-Host "# -Magic classifies by content, not by name"
+
+function Get-Magic {
+    param([string]$Path)
+    $r = Invoke-PeImports -Arguments @('-Magic', $Path)
+    if ($r.ExitCode -ne 0) { return "exit$($r.ExitCode)" }
+    return ($r.Stdout -split "`n")[0].Split("`t")[0]
+}
+
+# The payload ratchet uses this to prove that no image escaped the extension
+# predicate, so it has to answer from the first two bytes and nothing else.
+Assert-Equal 'mz' (Get-Magic $arm64) 'a valid PE is an image'
+Assert-Equal 'mz' (Get-Magic (New-Pe -Name 'amd64-magic.exe' -MachineValue 0x8664)) 'an AMD64 PE is an image'
+
+# Truncated to two bytes: still an image as far as this predicate goes, which is
+# the fail-closed answer -- the ratchet must classify it, not skip it.
+Assert-Equal 'mz' (Get-Magic (New-Pe -Name 'stub-only.dll' -MachineValue 0xAA64 -TruncateTo 2)) `
+    'an MZ stub with nothing behind it is still an image'
+
+# A DOS header whose PE offset points nowhere is still MZ, and -Machine must
+# reject it while -Magic still reports it. That combination is what makes an
+# extensionless image a hard failure rather than a silent pass.
+$halfPe = New-Pe -Name 'half.dll' -MachineValue 0xAA64 -TruncateTo 0x40
+Assert-Equal 'mz' (Get-Magic $halfPe) 'a header with no PE signature behind it is still an image'
+Assert-Equal 'truncated' (Get-Machine $halfPe) '-Machine calls the same file truncated rather than a machine'
+$r = Invoke-PeImports -Arguments @('-RequireMachine', 'arm64', $halfPe)
+Assert-Equal 1 $r.ExitCode '-RequireMachine rejects the file that -Magic calls an image'
+
+$script = Join-Path $work 'plain.txt'
+Set-Content -Path $script -Value 'this is not an executable' -Encoding Ascii
+Assert-Equal 'other' (Get-Magic $script) 'a text file is not an image'
+
+$oneByte = Join-Path $work 'one.bin'
+[System.IO.File]::WriteAllBytes($oneByte, [byte[]]@(0x4D))
+Assert-Equal 'other' (Get-Magic $oneByte) 'a single M is not an image'
+
+$empty = Join-Path $work 'empty.bin'
+[System.IO.File]::WriteAllBytes($empty, [byte[]]@())
+Assert-Equal 'other' (Get-Magic $empty) 'an empty file is not an image'
+
+$zm = Join-Path $work 'zm.bin'
+[System.IO.File]::WriteAllBytes($zm, [byte[]]@(0x5A, 0x4D, 0x90, 0x00))
+Assert-Equal 'other' (Get-Magic $zm) 'the magic is not accepted byte-swapped'
+
+$r = Invoke-PeImports -Arguments @('-Magic', (Join-Path $work 'no-such-file.dll'))
+Assert-Equal 0 $r.ExitCode '-Magic survives a file that is not there'
+Assert-Equal 'unreadable' (($r.Stdout -split "`n")[0].Split("`t")[0]) `
+    'an unreadable file is reported as such rather than as absent'
+
+# -Magic answers for every path it is given, in order, so the caller can pair
+# results with inputs positionally.
+$magicList = Join-Path $work 'magic-list.txt'
+Set-Content -Path $magicList -Value @($arm64, $script, $zm) -Encoding Ascii
+$r = Invoke-PeImports -Arguments @('-Magic', '-PathFile', $magicList)
+Assert-Equal 0 $r.ExitCode '-Magic reads a path file'
+$lines = @(($r.Stdout -split "`n") | Where-Object { $_.Trim() -ne '' })
+Assert-Equal 3 $lines.Count '-Magic answers once per input'
+Assert-Equal 'mz'    $lines[0].Split("`t")[0] '-Magic keeps the first answer with the first input'
+Assert-Equal 'other' $lines[1].Split("`t")[0] '-Magic keeps the second answer with the second input'
+Assert-Equal 'other' $lines[2].Split("`t")[0] '-Magic keeps the third answer with the third input'
+
 Write-Host "# default mode still speaks objdump"
 
 $r = Invoke-PeImports -Arguments @($arm64)
