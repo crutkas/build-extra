@@ -3,6 +3,71 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $validator = Join-Path $repoRoot "validate-arm64-bundle.ps1"
+
+function Invoke-CheckedGit {
+    $output = & git -C $repoRoot @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($args -join ' ') failed with exit $LASTEXITCODE"
+    }
+    return ($output | Out-String).Trim()
+}
+
+# Hard-coded SHAs are absent from a shallow CI clone, so derive both commits
+# here. The unreachable one pins its identity and dates explicitly so the
+# object never depends on ambient Git config, which a clean CI runner lacks.
+$script:reachableBuildCommit = Invoke-CheckedGit rev-parse HEAD
+$script:unreachableBuildCommit = & {
+    $names = @(
+        "GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE",
+        "GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME",
+        "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL")
+    $previous = @{}
+    foreach ($name in $names) {
+        $previous[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    try {
+        foreach ($name in @("GIT_AUTHOR_DATE", "GIT_COMMITTER_DATE")) {
+            [Environment]::SetEnvironmentVariable($name, "1700000000 +0000")
+        }
+        foreach ($name in @("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME")) {
+            [Environment]::SetEnvironmentVariable($name, "ARM64 validator test")
+        }
+        foreach ($name in @("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL")) {
+            [Environment]::SetEnvironmentVariable(
+                $name, "validator-test@example.com")
+        }
+        $tree = Invoke-CheckedGit rev-parse "HEAD^{tree}"
+        Invoke-CheckedGit commit-tree -m "synthetic unreachable commit" $tree
+    } finally {
+        foreach ($name in $names) {
+            # Restoring a previously unset variable to $null would leave it as
+            # an empty string, which Git rejects as an empty ident.
+            if ($null -eq $previous[$name]) {
+                Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+            } else {
+                [Environment]::SetEnvironmentVariable($name, $previous[$name])
+            }
+        }
+    }
+}
+if ($script:unreachableBuildCommit -notmatch "^[0-9a-f]{40}$" -or
+    [string]::Equals(
+        $script:unreachableBuildCommit,
+        $script:reachableBuildCommit,
+        [StringComparison]::Ordinal)) {
+    throw "Synthetic unreachable commit was not created"
+}
+# Prove the fixture really is unreachable from every ref in this repository.
+& git -C $repoRoot merge-base --is-ancestor `
+    $script:unreachableBuildCommit HEAD 2>$null
+if ($LASTEXITCODE -eq 0) {
+    throw "Synthetic unreachable commit is reachable from HEAD"
+}
+if (@(Invoke-CheckedGit for-each-ref --contains `
+        $script:unreachableBuildCommit --format="%(refname)" |
+    Where-Object { $_.Length -gt 0 }).Count -ne 0) {
+    throw "Synthetic unreachable commit is reachable from a ref"
+}
 $utf8 = [Text.UTF8Encoding]::new($false)
 $suite = Join-Path ([IO.Path]::GetTempPath()) (
     "arm64-bundle-validator-tests-" + [Guid]::NewGuid().ToString("N"))
@@ -239,16 +304,14 @@ function New-PayloadEntry {
         $ClrFlags,
         $LinkTarget = $null
     )
+    # The validator owns classification; the producer manifest carries only
+    # scope, identity and ownership. The classification arguments are accepted
+    # so existing fixtures stay readable, but they are deliberately dropped.
     return [ordered]@{
         path = $Path
         type = $Type
         bytes = $Bytes
         sha256 = $Sha256
-        architecture = $Architecture
-        machine = $Machine
-        personality = $Personality
-        imports = @($Imports)
-        clrFlags = $ClrFlags
         linkTarget = $LinkTarget
     }
 }
@@ -269,9 +332,13 @@ function New-TestFixture {
         Join-Path $toolRoot "opt\bin") -Force)
     $gitPath = Join-Path $payloadRoot "bin\git.exe"
     $bashPath = Join-Path $payloadRoot "usr\bin\bash.exe"
+    $gpgPath = Join-Path $payloadRoot "usr\bin\gpg.exe"
+    $sshPath = Join-Path $payloadRoot "usr\bin\ssh.exe"
     $noticePath = Join-Path $payloadRoot "notice.txt"
     New-TestPe $gitPath 0xaa64
     New-TestPe $bashPath 0xa641 -Imports @("msys-2.0.dll")
+    New-TestPe $gpgPath 0xaa64
+    New-TestPe $sshPath 0xaa64
     [IO.File]::WriteAllText($noticePath, "synthetic payload`n", $utf8)
     $objdumpPath = Join-Path $toolRoot `
         "opt\bin\aarch64-pc-cygwin-objdump.exe"
@@ -281,7 +348,7 @@ function New-TestFixture {
 
     $native = [ordered]@{
         id = "native"
-        role = "payload"
+        role = "base-bundle"
         status = "resolved"
         resolution = [ordered]@{ method = "github-release" }
         release = [ordered]@{
@@ -329,7 +396,11 @@ function New-TestFixture {
             name = "msys-package"
             version = "1.0.0-1"
             personality = "mixed"
-            provides = @("usr/bin/bash.exe")
+            provides = @(
+                "usr/bin/bash.exe",
+                "usr/bin/gpg.exe",
+                "usr/bin/ssh.exe"
+            )
         }
         overlay = [ordered]@{
             enabled = $true
@@ -373,6 +444,31 @@ function New-TestFixture {
             mappings = @()
         }
     }
+    $collector = [ordered]@{
+        id = "collector"
+        role = "validation-tool"
+        status = "resolved"
+        resolution = [ordered]@{ method = "github-raw-commit" }
+        release = [ordered]@{
+            repository = "crutkas/runtime-collector"
+            targetCommit = "5555555555555555555555555555555555555555"
+            sourcePath = "collect-runtime-evidence.ps1"
+        }
+        asset = [ordered]@{
+            url = "https://raw.githubusercontent.com/crutkas/runtime-collector/5555555555555555555555555555555555555555/collect-runtime-evidence.ps1"
+            name = "collect-runtime-evidence.ps1"
+            bytes = 1234
+            sha256 = "5555555555555555555555555555555555555555555555555555555555555555"
+        }
+        package = $null
+        overlay = [ordered]@{
+            enabled = $false
+            destination = $null
+            include = @()
+            exclude = @()
+            mappings = @()
+        }
+    }
     $sourceLockPath = Join-Path $payloadRoot `
         "preview-evidence\source-lock.json"
     [IO.File]::WriteAllText(
@@ -387,7 +483,7 @@ function New-TestFixture {
         }
         sourceDateEpoch = 1787846400
         nativeShellClosure = @("bin/git.exe")
-        inputs = @($tools, $msys, $native)
+        inputs = @($tools, $collector, $msys, $native)
     }
 
     $nativeProvenance = Copy-Identity $native
@@ -408,8 +504,14 @@ function New-TestFixture {
     $msysFile = New-ArchiveMember "usr/bin/bash.exe" "file" `
         ([IO.FileInfo]::new($bashPath).Length) (Get-Sha256 $bashPath) `
         $true "usr/bin/bash.exe"
+    $gpgFile = New-ArchiveMember "usr/bin/gpg.exe" "file" `
+        ([IO.FileInfo]::new($gpgPath).Length) (Get-Sha256 $gpgPath) `
+        $true "usr/bin/gpg.exe"
+    $sshFile = New-ArchiveMember "usr/bin/ssh.exe" "file" `
+        ([IO.FileInfo]::new($sshPath).Length) (Get-Sha256 $sshPath) `
+        $true "usr/bin/ssh.exe"
     $msysProvenance.archiveMembers = @(
-        $usrDirectory, $usrBinDirectory, $msysFile)
+        $usrDirectory, $usrBinDirectory, $msysFile, $gpgFile, $sshFile)
 
     $toolProvenance = Copy-Identity $tools
     $toolProvenance.archiveMembers = @(
@@ -424,6 +526,12 @@ function New-TestFixture {
             2887699 `
             "bb0d53db4128aff7f6b20c46be4e3625b1d82134476d7b03e58ed22015136e6e" `
             $false $null)
+    )
+    $collectorProvenance = Copy-Identity $collector
+    $collectorProvenance.archiveMembers = @(
+            (New-ArchiveMember "collect-runtime-evidence.ps1" "file" 1234 `
+                "5555555555555555555555555555555555555555555555555555555555555555" `
+                $false $null)
     )
     $snapshot = [ordered]@{
         log = [ordered]@{
@@ -446,8 +554,12 @@ function New-TestFixture {
             repository = "crutkas/bundle-assembler"
             commit = "4444444444444444444444444444444444444444"
         }
-        inputs = @($toolProvenance, $msysProvenance, $nativeProvenance)
-        overlayOrder = @("msys", "native")
+        inputs = @(
+            $toolProvenance,
+            $collectorProvenance,
+            $msysProvenance,
+            $nativeProvenance)
+        overlayOrder = @("native", "msys")
         replacements = @()
         finalMembers = @(
             (New-FinalMember $nativeDirectory "native"),
@@ -455,7 +567,9 @@ function New-TestFixture {
             (New-FinalMember $noticeFile "native"),
             (New-FinalMember $usrDirectory "msys"),
             (New-FinalMember $usrBinDirectory "msys"),
-            (New-FinalMember $msysFile "msys")
+            (New-FinalMember $msysFile "msys"),
+            (New-FinalMember $gpgFile "msys"),
+            (New-FinalMember $sshFile "msys")
         )
         pseudoReloc = [ordered]@{
             scanner = [ordered]@{
@@ -481,6 +595,7 @@ function New-TestFixture {
         provenanceSha256 = ("0" * 64)
         payloadManifestSha256 = ("0" * 64)
         rootInventorySha256 = ("0" * 64)
+        staticReportSha256 = ("0" * 64)
         host = [ordered]@{
             os = "Windows"
             architecture = "ARM64"
@@ -494,7 +609,11 @@ function New-TestFixture {
             cutoffUtc = "2026-08-27T15:55:35Z"
             before = $snapshot
             after = $snapshot
-            commands = @()
+            commands = @(
+                "enumerate-database-manifest",
+                "hash-database-manifest",
+                "hash-package-log",
+                "stat-package-log")
         }
     }
     $payload = [ordered]@{
@@ -520,7 +639,13 @@ function New-TestFixture {
                 $null @() $null),
             (New-PayloadEntry "usr/bin/bash.exe" "file" `
                 ([IO.FileInfo]::new($bashPath).Length) (Get-Sha256 $bashPath) `
-                "arm64ec" "0xA641" "msys" @("msys-2.0.dll") $null)
+                "arm64ec" "0xA641" "msys" @("msys-2.0.dll") $null),
+            (New-PayloadEntry "usr/bin/gpg.exe" "file" `
+                ([IO.FileInfo]::new($gpgPath).Length) (Get-Sha256 $gpgPath) `
+                "arm64" "0xAA64" "mingw" @() $null),
+            (New-PayloadEntry "usr/bin/ssh.exe" "file" `
+                ([IO.FileInfo]::new($sshPath).Length) (Get-Sha256 $sshPath) `
+                "arm64" "0xAA64" "mingw" @() $null)
         )
     }
     $fixture = [ordered]@{
@@ -535,6 +660,25 @@ function New-TestFixture {
         AssemblyPath = Join-Path $fixtureRoot "assembly-run-evidence.json"
         RuntimePath = Join-Path $fixtureRoot "runtime-evidence.json"
         ReportPath = Join-Path $fixtureRoot "validation-report.json"
+        StaticReportPath = Join-Path $fixtureRoot "static-report.json"
+        Classification = @{
+            "bin/git.exe" = [ordered]@{
+                architecture = "arm64"
+                personality = "none"
+            }
+            "usr/bin/bash.exe" = [ordered]@{
+                architecture = "arm64ec"
+                personality = "msys"
+            }
+            "usr/bin/gpg.exe" = [ordered]@{
+                architecture = "arm64"
+                personality = "mingw"
+            }
+            "usr/bin/ssh.exe" = [ordered]@{
+                architecture = "arm64"
+                personality = "mingw"
+            }
+        }
         Lock = $lock
         Provenance = $provenance
         Payload = $payload
@@ -570,14 +714,27 @@ function New-RuntimeEvidence {
         "rebase" = "git-rebase"
         "git-svn" = "git-svn"
     }
+    $scenarioCommands = [ordered]@{
+        "Git Bash" = @(
+            "usr/bin/bash.exe", "--noprofile", "--norc", "-lc", "exit 0")
+        "Git" = @("bin/git.exe", "--version")
+        "SSH" = @("usr/bin/ssh.exe", "-V")
+        "GPG" = @("usr/bin/gpg.exe", "--version")
+        "hook" = @(
+            "usr/bin/bash.exe", "--noprofile", "--norc", "-lc", "exit 0")
+        "submodule" = @(
+            "bin/git.exe", "submodule", "status", "--recursive")
+        "rebase" = @(
+            "usr/bin/bash.exe", "--noprofile", "--norc", "-lc",
+            "git rebase --show-current-patch")
+        "git-svn" = @(
+            "usr/bin/bash.exe", "--noprofile", "--norc", "-lc",
+            "git svn --version")
+    }
     $index = 0
     foreach ($name in $scenarioRoles.Keys) {
         $personality = $scenarioRoles[$name]
-        $relative = if ($personality -ceq "msys") {
-            "usr\bin\bash.exe"
-        } else {
-            "bin\git.exe"
-        }
+        $relative = $scenarioCommands[$name][0]
         $path = Join-Path $Fixture.Root $relative
         $hash = Get-Sha256 $path
         $start = "2026-08-27T16:{0:D2}:00Z" -f $index
@@ -623,7 +780,8 @@ function New-RuntimeEvidence {
             id = $name
             status = "pass"
             reason = $null
-            command = @($path, "--synthetic-test")
+            command = @($path) + @($scenarioCommands[$name] |
+                Select-Object -Skip 1)
             behavior = [ordered]@{
                 operation = $scenarioOperations[$name]
                 passed = $true
@@ -651,6 +809,7 @@ function New-RuntimeEvidence {
         provenanceSha256 = ("0" * 64)
         payloadManifestSha256 = ("0" * 64)
         rootInventorySha256 = ("0" * 64)
+        staticReportSha256 = ("0" * 64)
         validator = [ordered]@{
             repository = "crutkas/build-extra"
             commit = $script:validatorCommit
@@ -664,9 +823,11 @@ function New-RuntimeEvidence {
             architecture = "ARM64"
         }
         collector = [ordered]@{
+            inputId = "collector"
             repository = "crutkas/runtime-collector"
             commit = "5555555555555555555555555555555555555555"
-            path = "collect-runtime-evidence.ps1"
+            sourcePath = "collect-runtime-evidence.ps1"
+            url = "https://raw.githubusercontent.com/crutkas/runtime-collector/5555555555555555555555555555555555555555/collect-runtime-evidence.ps1"
             bytes = 1234
             sha256 = "5555555555555555555555555555555555555555555555555555555555555555"
             method = "ETW-Kernel-Process-ImageLoad"
@@ -685,6 +846,20 @@ function Sync-DigestGraph {
     $Fixture.Payload.lockSha256 = Get-Sha256 $Fixture.LockPath
     $Fixture.Payload.provenanceSha256 = Get-Sha256 $Fixture.ProvenancePath
     Write-Json $Fixture.PayloadPath $Fixture.Payload
+    # The static report is an input to Runtime, so generate it before the
+    # evidence documents that must bind its digest.
+    & pwsh -NoProfile -File $validator -Mode Preview `
+        -Root $Fixture.Root -Lock $Fixture.LockPath `
+        -Provenance $Fixture.ProvenancePath `
+        -PayloadManifest $Fixture.PayloadPath `
+        -ToolRoot $Fixture.ToolRoot `
+        -Report $Fixture.StaticReportPath *> $null
+    $staticReportSha256 = if (
+        Test-Path -LiteralPath $Fixture.StaticReportPath) {
+        Get-Sha256 $Fixture.StaticReportPath
+    } else {
+        ("0" * 64)
+    }
     $sourceLockSha256 = Get-Sha256 $Fixture.SourceLockPath
     $Fixture.Assembly.sourceLockSha256 = $sourceLockSha256
     $Fixture.Assembly.lockSha256 = Get-Sha256 $Fixture.LockPath
@@ -692,6 +867,7 @@ function Sync-DigestGraph {
     $Fixture.Assembly.payloadManifestSha256 = Get-Sha256 $Fixture.PayloadPath
     $Fixture.Assembly.rootInventorySha256 =
         Get-RootInventorySha256 $Fixture.Root
+    $Fixture.Assembly.staticReportSha256 = $staticReportSha256
     Write-Json $Fixture.AssemblyPath $Fixture.Assembly
     $Fixture.Runtime.sourceLockSha256 = $sourceLockSha256
     $Fixture.Runtime.lockSha256 = Get-Sha256 $Fixture.LockPath
@@ -699,6 +875,7 @@ function Sync-DigestGraph {
     $Fixture.Runtime.payloadManifestSha256 = Get-Sha256 $Fixture.PayloadPath
     $Fixture.Runtime.rootInventorySha256 =
         Get-RootInventorySha256 $Fixture.Root
+    $Fixture.Runtime.staticReportSha256 = $staticReportSha256
     Write-Json $Fixture.RuntimePath $Fixture.Runtime
 }
 
@@ -720,11 +897,6 @@ function Update-PayloadFile {
         Where-Object path -CEQ $Path)[0]
     $payloadEntry.bytes = $bytes
     $payloadEntry.sha256 = $hash
-    $payloadEntry.architecture = $Architecture
-    $payloadEntry.machine = $Machine
-    $payloadEntry.personality = $Personality
-    $payloadEntry.imports = @($Imports)
-    $payloadEntry.clrFlags = $ClrFlags
     $final = @($Fixture.Provenance.finalMembers |
         Where-Object destinationPath -CEQ $Path)[0]
     $final.bytes = $bytes
@@ -735,13 +907,18 @@ function Update-PayloadFile {
         Where-Object sourceMember -CEQ $final.sourceMember)[0]
     $archive.bytes = $bytes
     $archive.sha256 = $hash
+    $Fixture.Classification[$Path] = [ordered]@{
+        architecture = $Architecture
+        personality = $Personality
+    }
 
     $Fixture.Provenance.pseudoReloc.candidates = @(
         $Fixture.Payload.entries |
             Where-Object {
                 $_.type -ceq "file" -and
-                $_.architecture -ceq "arm64" -and
-                $_.personality -ceq "msys"
+                $null -ne $Fixture.Classification[$_.path] -and
+                $Fixture.Classification[$_.path].architecture -ceq "arm64" -and
+                $Fixture.Classification[$_.path].personality -ceq "msys"
             } |
             ForEach-Object {
                 $owner = @($Fixture.Provenance.finalMembers |
@@ -839,8 +1016,12 @@ function Invoke-Validator {
         [ValidateSet("Preview", "Final", "Runtime")][string]$Mode,
         [string]$RootOverride,
         [string]$RuntimeOverride,
+        [string]$ReportOverride,
+        [string]$ValidatorOverride,
         [string]$NmMode = "absent",
-        [switch]$OmitRuntime
+        [switch]$OmitRuntime,
+        [switch]$OmitStaticReport,
+        [string]$StaticReportOverride
     )
 
     $rootArgument = if ($PSBoundParameters.ContainsKey("RootOverride")) {
@@ -848,23 +1029,63 @@ function Invoke-Validator {
     } else {
         $Fixture.Root
     }
+    $reportArgument = if ($PSBoundParameters.ContainsKey("ReportOverride")) {
+        $ReportOverride
+    } else {
+        $Fixture.ReportPath
+    }
+    $validatorArgument = if (
+        $PSBoundParameters.ContainsKey("ValidatorOverride")) {
+        $ValidatorOverride
+    } elseif ($Mode -ceq "Runtime") {
+        $script:runtimeValidator
+    } else {
+        $validator
+    }
+    if ($Mode -ceq "Runtime" -and -not $OmitStaticReport -and
+        -not $PSBoundParameters.ContainsKey("StaticReportOverride") -and
+        -not (Test-Path -LiteralPath $Fixture.StaticReportPath)) {
+        # Runtime consumes a real prior static report, so produce one from the
+        # same inputs first.
+        $staticArguments = @(
+            "-NoProfile", "-File", $validator,
+            "-Mode", "Preview",
+            "-Root", $rootArgument,
+            "-Lock", $Fixture.LockPath,
+            "-Provenance", $Fixture.ProvenancePath,
+            "-PayloadManifest", $Fixture.PayloadPath,
+            "-ToolRoot", $Fixture.ToolRoot,
+            "-Report", $Fixture.StaticReportPath)
+        $previousStaticMode = $env:FAKE_NM_MODE
+        $env:FAKE_NM_MODE = $NmMode
+        try {
+            & pwsh @staticArguments *> $null
+        } finally {
+            $env:FAKE_NM_MODE = $previousStaticMode
+        }
+    }
     $arguments = @(
         "-NoProfile",
-        "-File", $(if ($Mode -ceq "Runtime") {
-            $script:runtimeValidator
-        } else {
-            $validator
-        }),
+        "-File", $validatorArgument,
         "-Mode", $Mode,
         "-Root", $rootArgument,
         "-Lock", $Fixture.LockPath,
         "-Provenance", $Fixture.ProvenancePath,
         "-PayloadManifest", $Fixture.PayloadPath,
         "-ToolRoot", $Fixture.ToolRoot,
-        "-Report", $Fixture.ReportPath
+        "-Report", $reportArgument
     )
     if ($Mode -ceq "Runtime") {
         $arguments += @("-AssemblyEvidence", $Fixture.AssemblyPath)
+        if (-not $OmitStaticReport) {
+            $staticArgument = if (
+                $PSBoundParameters.ContainsKey("StaticReportOverride")) {
+                $StaticReportOverride
+            } else {
+                $Fixture.StaticReportPath
+            }
+            $arguments += @("-StaticReport", $staticArgument)
+        }
         if (-not $OmitRuntime) {
             $runtimeArgument = if (
                 $PSBoundParameters.ContainsKey("RuntimeOverride")) {
@@ -877,6 +1098,10 @@ function Invoke-Validator {
     } elseif ($PSBoundParameters.ContainsKey("RuntimeOverride")) {
         $arguments += @("-RuntimeEvidence", $RuntimeOverride)
     }
+    if ($Mode -cne "Runtime" -and
+        $PSBoundParameters.ContainsKey("StaticReportOverride")) {
+        $arguments += @("-StaticReport", $StaticReportOverride)
+    }
     $previousMode = $env:FAKE_NM_MODE
     $env:FAKE_NM_MODE = $NmMode
     try {
@@ -886,9 +1111,9 @@ function Invoke-Validator {
         $env:FAKE_NM_MODE = $previousMode
     }
     $report = $null
-    if (Test-Path -LiteralPath $Fixture.ReportPath) {
+    if (Test-Path -LiteralPath $reportArgument -PathType Leaf) {
         try {
-            $report = Get-Content -LiteralPath $Fixture.ReportPath -Raw |
+            $report = Get-Content -LiteralPath $reportArgument -Raw |
                 ConvertFrom-Json
         } catch {
             $report = $null
@@ -939,7 +1164,10 @@ function Invoke-Case {
         [string]$NmMode = "absent",
         [string]$RootOverride,
         [string]$RuntimeOverride,
-        [switch]$SkipSync
+        [string]$ValidatorOverride,
+        [switch]$SkipSync,
+        [switch]$OmitStaticReport,
+        [string]$StaticReportOverride
     )
 
     $fixture = New-TestFixture $Name
@@ -959,6 +1187,15 @@ function Invoke-Case {
     }
     if ($PSBoundParameters.ContainsKey("RuntimeOverride")) {
         $invoke.RuntimeOverride = $RuntimeOverride
+    }
+    if ($PSBoundParameters.ContainsKey("ValidatorOverride")) {
+        $invoke.ValidatorOverride = $ValidatorOverride
+    }
+    if ($OmitStaticReport) {
+        $invoke.OmitStaticReport = $true
+    }
+    if ($PSBoundParameters.ContainsKey("StaticReportOverride")) {
+        $invoke.StaticReportOverride = $StaticReportOverride
     }
     $result = Invoke-Validator @invoke
     Assert-Result $Name $result $ExpectedCode $ExpectedText $ReadyForFinal
@@ -987,6 +1224,9 @@ try {
     & git -C $runtimeRepo config user.name "ARM64 validator test"
     & git -C $runtimeRepo config user.email "validator-test@example.com"
     & git -C $runtimeRepo config core.autocrlf false
+    & git -C $runtimeRepo branch -M crutkas-validator-test
+    & git -C $runtimeRepo remote add origin `
+        "https://github.com/crutkas/build-extra.git"
     & git -C $runtimeRepo add -- validate-arm64-bundle.ps1 `
         arm64-validation/check-aarch64-pseudo-relocs.ps1 `
         arm64-x64-payload-baseline.txt
@@ -997,6 +1237,15 @@ try {
     $script:runtimeValidator = Join-Path $runtimeRepo `
         "validate-arm64-bundle.ps1"
     $script:validatorCommit = (& git -C $runtimeRepo rev-parse HEAD).Trim()
+    & git -C $runtimeRepo update-ref `
+        refs/remotes/origin/crutkas-validator-test $script:validatorCommit
+    $validatorTree = (& git -C $runtimeRepo rev-parse "HEAD^{tree}").Trim()
+    $script:validatorOtherCommit = (& git -C $runtimeRepo commit-tree `
+        $validatorTree -p $script:validatorCommit -m "Other branch fixture").Trim()
+    & git -C $runtimeRepo update-ref `
+        refs/remotes/origin/crutkas-other-test $script:validatorOtherCommit
+    $script:validatorDanglingCommit = (& git -C $runtimeRepo commit-tree `
+        $validatorTree -m "Dangling fixture").Trim()
     $script:validatorBytes = [IO.FileInfo]::new(
         $script:runtimeValidator).Length
     $script:validatorSha256 = Get-Sha256 $script:runtimeValidator
@@ -1039,6 +1288,27 @@ public static class FakeArm64Tool
             Console.WriteLine(
                 "0000000140001198 D __RUNTIME_PSEUDO_RELOC_LIST_END__");
         }
+        else if (mode == "empty")
+        {
+            Console.WriteLine(
+                "0000000140001180 D __RUNTIME_PSEUDO_RELOC_LIST__");
+            Console.WriteLine(
+                "0000000140001180 D __RUNTIME_PSEUDO_RELOC_LIST_END__");
+        }
+        else if (mode == "v1")
+        {
+            Console.WriteLine(
+                "0000000140001180 D __RUNTIME_PSEUDO_RELOC_LIST__");
+            Console.WriteLine(
+                "0000000140001188 D __RUNTIME_PSEUDO_RELOC_LIST_END__");
+        }
+        else if (mode == "malformed")
+        {
+            Console.WriteLine(
+                "0000000140001180 D __RUNTIME_PSEUDO_RELOC_LIST__");
+            Console.WriteLine(
+                "0000000140001183 D __RUNTIME_PSEUDO_RELOC_LIST_END__");
+        }
         return 0;
     }
 }
@@ -1054,10 +1324,151 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         -not [IO.File]::Exists($script:fakeTool)) {
         throw "Could not compile the deterministic fake pseudo-reloc tools"
     }
+    $pseudoValidatorRoot = Join-Path $suite "pseudo-validator"
+    [void](New-Item -ItemType Directory -Path (
+        Join-Path $pseudoValidatorRoot "arm64-validation") -Force)
+    $script:pseudoValidator = Join-Path $pseudoValidatorRoot `
+        "validate-arm64-bundle.ps1"
+    $fakeToolBytes = [IO.FileInfo]::new($script:fakeTool).Length
+    $fakeToolSha256 = Get-Sha256 $script:fakeTool
+    $pseudoValidatorText = [IO.File]::ReadAllText($validator).
+        Replace("2887699", [string]$fakeToolBytes).
+        Replace(
+            "bb0d53db4128aff7f6b20c46be4e3625b1d82134476d7b03e58ed22015136e6e",
+            $fakeToolSha256).
+        Replace("1257877", [string]$fakeToolBytes).
+        Replace(
+            "80b4716108b362ba05f48cd9228d20a4193897b4a5eeb8eb19e80f4c83e3e90a",
+            $fakeToolSha256)
+    [IO.File]::WriteAllText(
+        $script:pseudoValidator, $pseudoValidatorText, $utf8)
+    Copy-Item -LiteralPath (
+        Join-Path $repoRoot "arm64-validation\check-aarch64-pseudo-relocs.ps1") `
+        -Destination (Join-Path $pseudoValidatorRoot `
+            "arm64-validation\check-aarch64-pseudo-relocs.ps1")
+    Copy-Item -LiteralPath (
+        Join-Path $repoRoot "arm64-x64-payload-baseline.txt") `
+        -Destination (Join-Path $pseudoValidatorRoot `
+            "arm64-x64-payload-baseline.txt")
+
+    $tokens = $null
+    $parseErrors = $null
+    $validatorAst = [Management.Automation.Language.Parser]::ParseFile(
+        $validator, [ref]$tokens, [ref]$parseErrors)
+    if ($parseErrors.Count -ne 0) {
+        throw "Validator helper regression could not parse the validator"
+    }
+    foreach ($helperName in @(
+        "Test-OrdinalStringEqual",
+        "Test-OrdinalStringSequenceEqual",
+        "Throw-ValidationError",
+        "Assert-PropertyOrder")) {
+        $helper = @($validatorAst.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                [string]::Equals(
+                    $node.Name,
+                    $helperName,
+                    [StringComparison]::Ordinal)
+        }, $true))
+        if ($helper.Count -ne 1) {
+            throw "Validator is missing the exact '$helperName' helper"
+        }
+        . ([scriptblock]::Create($helper[0].Extent.Text))
+    }
+    $boundaryLeft = @(
+        "schemaVersion`0sourceLock",
+        "sourceDateEpoch")
+    $boundaryRight = @(
+        "schemaVersion",
+        "sourceLock`0sourceDateEpoch")
+    if (-not [string]::Equals(
+            [string]::Join("`0", $boundaryLeft),
+            [string]::Join("`0", $boundaryRight),
+            [StringComparison]::Ordinal)) {
+        throw "Boundary regression did not construct a joined-string collision"
+    }
+    if (Test-OrdinalStringSequenceEqual $boundaryLeft $boundaryRight) {
+        throw "Ordinal sequence equality collapsed array element boundaries"
+    }
+    $propertyObject = [pscustomobject][ordered]@{
+        "schemaVersion`0sourceLock" = 1
+        sourceDateEpoch = 1787846400
+    }
+    $propertyOrderRejected = $false
+    try {
+        Assert-PropertyOrder $propertyObject $boundaryRight `
+            "property boundary regression" 20
+    } catch {
+        $propertyOrderRejected = [string]::Equals(
+            [string]$_.Exception.Data["Category"],
+            "ordering",
+            [StringComparison]::Ordinal)
+    }
+    if (-not $propertyOrderRejected) {
+        throw "Property order comparison collapsed property boundaries"
+    }
+    $passed++
 
     Invoke-Case "preview-pass" Preview $null 0 "" $true | Out-Null
     Invoke-Case "final-pass" Final $null 0 "" $true | Out-Null
     Invoke-Case "runtime-pass" Runtime $null 0 "" $true | Out-Null
+
+    Invoke-Case "producer-classification-field-rejected" Preview {
+        param($f)
+        @($f.Payload.entries |
+            Where-Object path -CEQ "bin/git.exe")[0]["architecture"] = "arm64"
+    } 20 "payload manifest entry" $null | Out-Null
+
+    Invoke-Case "runtime-missing-static-report" Runtime $null 40 `
+        "-StaticReport is required only for -Mode Runtime" $null `
+        -OmitStaticReport | Out-Null
+
+    Invoke-Case "static-report-rejected-in-static-mode" Preview $null 20 `
+        "-StaticReport applies only to -Mode Runtime" $null `
+        -StaticReportOverride "does-not-matter.json" | Out-Null
+
+    $tamperedStatic = Invoke-Case "runtime-tampered-static-report" Runtime {
+        param($f)
+        Sync-DigestGraph $f
+        $report = Get-Content -LiteralPath $f.StaticReportPath -Raw |
+            ConvertFrom-Json
+        $report.digests.rootInventorySha256 = ("a" * 64)
+        Write-Json $f.StaticReportPath $report
+    } 40 "does not bind this run" $null -SkipSync
+    $tamperedStatic | Out-Null
+
+    Invoke-Case "runtime-static-report-digest-unbound" Runtime {
+        param($f)
+        Sync-DigestGraph $f
+        $f.Runtime.staticReportSha256 = ("b" * 64)
+        Write-Json $f.RuntimePath $f.Runtime
+    } 40 "staticReportSha256 does not match its bound input" $null `
+        -SkipSync | Out-Null
+
+    $classificationCase = Invoke-Case "static-report-owns-classification" `
+        Preview $null 0 "" $true
+    $classificationReport = $classificationCase.Result.Report
+    $gitClassification = @($classificationReport.classifications |
+        Where-Object path -CEQ "bin/git.exe")[0]
+    $bashClassification = @($classificationReport.classifications |
+        Where-Object path -CEQ "usr/bin/bash.exe")[0]
+    if ($null -eq $gitClassification -or
+        $gitClassification.architecture -cne "arm64" -or
+        $gitClassification.machine -cne "0xAA64" -or
+        $null -eq $bashClassification -or
+        $bashClassification.architecture -cne "arm64ec" -or
+        $bashClassification.machine -cne "0xA641" -or
+        $bashClassification.personality -cne "msys" -or
+        @($bashClassification.imports) -cnotcontains "msys-2.0.dll") {
+        throw "Static report does not carry authoritative classifications"
+    }
+    if ($null -eq $classificationReport.digests.rootInventorySha256 -or
+        $classificationReport.digests.rootInventorySha256.Length -ne 64) {
+        throw "Static report does not carry the root inventory digest"
+    }
+    $script:passed++
+
 
     Invoke-Case "runtime-amd64-assembly-host" Runtime {
         param($f)
@@ -1096,6 +1507,228 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         $provenanceInput.package = $null
     } 0 "" $true | Out-Null
 
+    $rawBuildExtraMutation = {
+        param($f)
+        $input = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $input.resolution.method = "github-raw-commit"
+        $input.release = [ordered]@{
+            repository = "crutkas/build-extra"
+            targetCommit = $script:reachableBuildCommit
+            sourcePath = "fixtures/native.pkg"
+        }
+        $input.asset.url =
+            "https://raw.githubusercontent.com/crutkas/build-extra/$script:reachableBuildCommit/fixtures/native.pkg"
+        $input.asset.name = "native.pkg"
+        $input.package = $null
+        $provenanceInput = @($f.Provenance.inputs |
+            Where-Object id -CEQ "native")[0]
+        $provenanceInput.release = $input.release
+        $provenanceInput.asset = $input.asset
+        $provenanceInput.package = $null
+    }
+    Invoke-Case "raw-build-extra-reachable-commit" Preview `
+        $rawBuildExtraMutation 0 "" $true | Out-Null
+    Invoke-Case "raw-build-extra-nonexistent-commit" Preview {
+        param($f)
+        & $rawBuildExtraMutation $f
+        $input = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $input.release.targetCommit = ("a" * 40)
+        $input.asset.url =
+            "https://raw.githubusercontent.com/crutkas/build-extra/$('a' * 40)/fixtures/native.pkg"
+    } 20 "does not resolve to a local commit object" $null | Out-Null
+    Invoke-Case "raw-build-extra-unreachable-commit" Preview {
+        param($f)
+        & $rawBuildExtraMutation $f
+        $input = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $input.release.targetCommit = $script:unreachableBuildCommit
+        $input.asset.url =
+            "https://raw.githubusercontent.com/crutkas/build-extra/$script:unreachableBuildCommit/fixtures/native.pkg"
+    } 20 "not reachable from the checked-out authoritative" $null | Out-Null
+
+    $derivedTreeMutation = {
+        param($f)
+        $input = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $input.role = "base-bundle"
+        $input.resolution = [ordered]@{
+            method = "derived-tree"
+            build = [ordered]@{
+                repository = "crutkas/build-extra"
+                commit = $script:reachableBuildCommit
+            }
+            sdkSource = $null
+            manifest = [ordered]@{
+                path = "preview-evidence/base-tree-manifest.v1.json"
+                sha256 = ("0" * 64)
+            }
+        }
+        $input.release = $null
+        $input.asset = $null
+        $input.package = $null
+        $provenanceInput = @($f.Provenance.inputs |
+            Where-Object id -CEQ "native")[0]
+        $provenanceInput.release = $null
+        $provenanceInput.asset = $null
+        $provenanceInput.package = $null
+        $manifestPath = Join-Path $f.Root `
+            "preview-evidence\base-tree-manifest.v1.json"
+        Write-Json $manifestPath ([ordered]@{
+            schemaVersion = 1
+            entries = @($provenanceInput.archiveMembers | ForEach-Object {
+                [ordered]@{
+                    path = $_.sourceMember
+                    type = $_.type
+                    bytes = $_.bytes
+                    sha256 = $_.sha256
+                    linkTarget = $_.linkTarget
+                }
+            })
+        })
+        $input.resolution.manifest.sha256 = Get-Sha256 $manifestPath
+    }
+    Invoke-Case "derived-tree-base-accepted" Preview $derivedTreeMutation 0 `
+        "" $true | Out-Null
+
+    Invoke-Case "derived-tree-nonexistent-commit-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].
+            resolution.build.commit = ("a" * 40)
+    } 20 "does not resolve to a local commit object" $null | Out-Null
+
+    Invoke-Case "derived-tree-unreachable-commit-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].
+            resolution.build.commit = $script:unreachableBuildCommit
+    } 20 "not reachable from the checked-out authoritative" $null | Out-Null
+
+    Invoke-Case "derived-tree-manifest-hash-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].
+            resolution.manifest.sha256 = ("1" * 64)
+    } 20 "base tree manifest does not match its exact file bytes" $null |
+        Out-Null
+
+    Invoke-Case "derived-tree-extra-member-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        $input = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $manifestPath = Join-Path $f.Root `
+            "preview-evidence\base-tree-manifest.v1.json"
+        $document = Get-Content -Raw $manifestPath | ConvertFrom-Json
+        $document.entries = @($document.entries) + [ordered]@{
+            path = "zz-extra.txt"
+            type = "file"
+            bytes = 1
+            sha256 = ("2" * 64)
+            linkTarget = $null
+        }
+        Write-Json $manifestPath $document
+        $input.resolution.manifest.sha256 = Get-Sha256 $manifestPath
+    } 20 "does not cover its base tree manifest exactly" $null | Out-Null
+
+    Invoke-Case "derived-tree-fake-asset-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].asset =
+            [ordered]@{
+                url = "https://github.com/crutkas/native-package/releases/download/v1.0.0/native.pkg.tar.zst"
+                name = "native.pkg.tar.zst"
+                bytes = 100
+                sha256 = ("3" * 64)
+            }
+    } 20 "must set asset to null" $null | Out-Null
+
+    Invoke-Case "derived-tree-payload-role-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].role = "payload"
+    } 20 "only derive a tree for a base-bundle role" $null | Out-Null
+
+    Invoke-Case "derived-tree-foreign-build-repository-rejected" Preview {
+        param($f)
+        & $derivedTreeMutation $f
+        @($f.Lock.inputs | Where-Object id -CEQ "native")[0].
+            resolution.build.repository = "crutkas/other-repo"
+    } 20 "must be crutkas/build-extra" $null | Out-Null
+
+    Invoke-Case "base-sorts-after-payload-but-applies-first" Preview $null 0 `
+        "" $true | Out-Null
+
+    Invoke-Case "non-base-first-overlay-order-rejected" Preview {
+        param($f)
+        $f.Provenance.overlayOrder = @("msys", "native")
+    } 20 "must start with the one base-bundle" $null | Out-Null
+
+    $undeclaredHardlinkFixture = New-TestFixture "undeclared-hardlink"
+    [void](New-Item -ItemType HardLink `
+        -Path (Join-Path $undeclaredHardlinkFixture.Root "notice.txt") `
+        -Target (Join-Path $undeclaredHardlinkFixture.Base "outside.txt") `
+        -ErrorAction SilentlyContinue)
+    $outsideTarget = Join-Path $undeclaredHardlinkFixture.Base "outside.txt"
+    [IO.File]::WriteAllText($outsideTarget, "synthetic payload`n", $utf8)
+    Remove-Item -LiteralPath (
+        Join-Path $undeclaredHardlinkFixture.Root "notice.txt") -Force
+    [void](New-Item -ItemType HardLink `
+        -Path (Join-Path $undeclaredHardlinkFixture.Root "notice.txt") `
+        -Target $outsideTarget)
+    Sync-DigestGraph $undeclaredHardlinkFixture
+    $undeclaredHardlinkResult = Invoke-Validator `
+        $undeclaredHardlinkFixture Preview
+    Assert-Result "undeclared-hardlink" $undeclaredHardlinkResult 20 `
+        "shares its file identity outside Root" $null
+
+    $internalHardlinkFixture = New-TestFixture "undeclared-internal-hardlink"
+    [void](New-Item -ItemType HardLink `
+        -Path (Join-Path $internalHardlinkFixture.Root "notice-alias.txt") `
+        -Target (Join-Path $internalHardlinkFixture.Root "notice.txt"))
+    Sync-DigestGraph $internalHardlinkFixture
+    $internalHardlinkResult = Invoke-Validator `
+        $internalHardlinkFixture Preview
+    Assert-Result "undeclared-internal-hardlink" $internalHardlinkResult 20 `
+        "undeclared hardlink name or file identity" $null
+
+    Invoke-Case "trailing-space-member-rejected" Preview {
+        param($f)
+        @($f.Provenance.inputs | Where-Object id -CEQ "native")[0].
+            archiveMembers[2].sourceMember = "notice.txt "
+    } 20 "component ending in a dot or space" $null | Out-Null
+
+    Invoke-Case "trailing-dot-member-rejected" Preview {
+        param($f)
+        @($f.Provenance.inputs | Where-Object id -CEQ "native")[0].
+            archiveMembers[2].sourceMember = "notice.txt."
+    } 20 "component ending in a dot or space" $null | Out-Null
+
+    $streamFixture = New-TestFixture "alternate-data-stream"
+    Set-Content -LiteralPath (Join-Path $streamFixture.Root "notice.txt") `
+        -Stream "evil" -Value "hidden payload"
+    Sync-DigestGraph $streamFixture
+    $streamResult = Invoke-Validator $streamFixture Preview
+    Assert-Result "alternate-data-stream" $streamResult 20 `
+        "alternate data stream" $null
+
+    $directoryStreamFixture = New-TestFixture "directory-alternate-data-stream"
+    $directoryStreamPath = Join-Path $directoryStreamFixture.Root "bin"
+    $directoryStreamSupported = $false
+    try {
+        Set-Content -LiteralPath $directoryStreamPath -Stream "evil" `
+            -Value "hidden directory payload" -ErrorAction Stop
+        $directoryStreamSupported = $true
+    } catch {
+        if ($_.Exception.Message -notmatch "(?i)(not supported|not valid)") {
+            throw
+        }
+    }
+    if ($directoryStreamSupported) {
+        Sync-DigestGraph $directoryStreamFixture
+        $directoryStreamResult = Invoke-Validator `
+            $directoryStreamFixture Preview
+        Assert-Result "directory-alternate-data-stream" `
+            $directoryStreamResult 20 "alternate data stream" $null
+    }
+
     Invoke-Case "source-lock-hash-mismatch" Preview {
         param($f)
         [IO.File]::WriteAllText(
@@ -1120,6 +1753,46 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
             "*Report must be outside the staged payload Root*" -or
         (Get-Sha256 $unsafeReportFixture.ReportPath) -cne $payloadHashBefore) {
         throw "unsafe-report did not reject the output path without mutation"
+    }
+    $passed++
+
+    $writeFailureFixture = New-TestFixture "report-write-failure"
+    $reportDirectory = Join-Path $writeFailureFixture.Base "report-directory"
+    [void](New-Item -ItemType Directory -Path $reportDirectory)
+    $writeFailureResult = Invoke-Validator $writeFailureFixture Preview `
+        -ReportOverride $reportDirectory
+    if ($writeFailureResult.Code -ne 10 -or
+        $writeFailureResult.Output -cnotlike
+            "*Could not write validation report*") {
+        throw "report-write-failure did not force a nonzero exit"
+    }
+    $passed++
+
+    $checkoutReportFixture = New-TestFixture "checkout-report"
+    $scannerDependency = Join-Path $repoRoot `
+        "arm64-validation\check-aarch64-pseudo-relocs.ps1"
+    $scannerHashBefore = Get-Sha256 $scannerDependency
+    $checkoutReportResult = Invoke-Validator $checkoutReportFixture Preview `
+        -ReportOverride $scannerDependency
+    if ($checkoutReportResult.Code -ne 10 -or
+        $checkoutReportResult.Output -cnotlike
+            "*validator input or dependency*" -or
+        (Get-Sha256 $scannerDependency) -cne $scannerHashBefore) {
+        throw "checkout-report did not protect a validator dependency"
+    }
+    $passed++
+
+    $gitReportFixture = New-TestFixture "git-metadata-report"
+    $gitDirectory = (& git -C $repoRoot rev-parse --absolute-git-dir).Trim()
+    $gitHeadPath = Join-Path $gitDirectory "HEAD"
+    $gitHeadHashBefore = Get-Sha256 $gitHeadPath
+    $gitReportResult = Invoke-Validator $gitReportFixture Preview `
+        -ReportOverride $gitHeadPath
+    if ($gitReportResult.Code -ne 10 -or
+        $gitReportResult.Output -cnotlike
+            "*inside the validator checkout*" -or
+        (Get-Sha256 $gitHeadPath) -cne $gitHeadHashBefore) {
+        throw "git-metadata-report did not protect worktree metadata"
     }
     $passed++
 
@@ -1441,17 +2114,17 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         $input.archiveMembers = @(
             $input.archiveMembers + $collided |
                 Sort-Object { $_.sourceMember })
-        # overlayOrder applies msys before native, so native overlays last
+        # overlayOrder applies native before msys, so msys overlays last
         # and owns the colliding destination.
         $winner = @($f.Provenance.finalMembers |
             Where-Object destinationPath -CEQ "usr")[0]
-        $winner.inputId = "native"
+        $winner.inputId = "msys"
         $f.Provenance.replacements = @(
             [ordered]@{
                 destinationPath = "usr"
-                replacedInputId = "msys"
+                replacedInputId = "native"
                 replacedSourceMember = "usr"
-                winnerInputId = "native"
+                winnerInputId = "msys"
                 winnerSourceMember = "usr"
             }
         )
@@ -1486,13 +2159,41 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         param($f)
         $f.Assembly.externalObservation.commands = @(
             "pacman -Sw --noconfirm bash")
-    } 40 "forbidden pacman command" $null | Out-Null
+    } 40 "exactly the four read-only operations" $null | Out-Null
 
     Invoke-Case "full-path-pacman-rejected" Runtime {
         param($f)
         $f.Assembly.externalObservation.commands = @(
             "C:\msys64\usr\bin\pacman.exe -Sw bash")
-    } 40 "forbidden pacman command" $null | Out-Null
+    } 40 "exactly the four read-only operations" $null | Out-Null
+
+    Invoke-Case "readonly-observation-accepted" Runtime {
+        param($f)
+        $f.Assembly.externalObservation.commands = @(
+            "enumerate-database-manifest",
+            "hash-database-manifest",
+            "hash-package-log",
+            "stat-package-log")
+    } 0 "" $true | Out-Null
+
+    Invoke-Case "unknown-observation-operation-rejected" Runtime {
+        param($f)
+        $f.Assembly.externalObservation.commands[3] = "delete-package-log"
+    } 40 "outside the read-only set" $null | Out-Null
+
+    Invoke-Case "observation-command-order-rejected" Runtime {
+        param($f)
+        $f.Assembly.externalObservation.commands = @(
+            "hash-database-manifest",
+            "enumerate-database-manifest",
+            "hash-package-log",
+            "stat-package-log")
+    } 40 "outside the read-only set" $null | Out-Null
+
+    Invoke-Case "observation-command-duplicate-rejected" Runtime {
+        param($f)
+        $f.Assembly.externalObservation.commands[3] = "hash-package-log"
+    } 40 "outside the read-only set" $null | Out-Null
 
     Invoke-Case "external-observation-change-rejected" Runtime {
         param($f)
@@ -1515,13 +2216,25 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
     } 40 "lockSha256 does not match its bound input" $null `
         -SkipSync | Out-Null
 
-    Invoke-Case "runtime-x64-process" Runtime {
+    Invoke-Case "runtime-x64-payload-blocks-admission" Runtime {
         param($f)
         $path = Join-Path $f.Root "usr\bin\bash.exe"
         New-TestPe $path 0x8664
         Update-PayloadFile $f "usr/bin/bash.exe" "x64" "0x8664" `
             "mingw" @() $null
         $f.Runtime.admissionMode = "Preview"
+    } 40 "static state that is readyForFinal" $null | Out-Null
+
+    # Reaches the runtime PROCESS policy, which the payload-level x64 cases
+    # never get to because the readyForFinal gate fires first.
+    Invoke-Case "runtime-non-pe-process" Runtime {
+        param($f)
+        $scenario = @($f.Runtime.scenarios | Where-Object id -CEQ "Git")[0]
+        $notice = Join-Path $f.Root "notice.txt"
+        $scenario.trace.processes[0].path = $notice
+        $scenario.trace.processes[0].sha256 = Get-Sha256 $notice
+        $scenario.trace.processes[0].architecture = "non-pe"
+        $scenario.trace.processes[0].personality = "none"
     } 40 "violates architecture/personality policy" $null | Out-Null
 
     Invoke-Case "runtime-x64-module" Runtime {
@@ -1540,7 +2253,7 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
                 personality = "mingw"
             }
         )
-    } 40 "runtime module" $null | Out-Null
+    } 40 "static state that is readyForFinal" $null | Out-Null
 
     Invoke-Case "runtime-non-pe-module" Runtime {
         param($f)
@@ -1569,13 +2282,33 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
     Invoke-Case "runtime-sampling-collector-rejected" Runtime {
         param($f)
         $f.Runtime.collector.method = "Process.Modules"
-    } 40 "immutable crutkas ETW collector" $null | Out-Null
+    } 40 "resolved raw-commit validation-tool input" $null | Out-Null
+
+    Invoke-Case "runtime-collector-input-rejected" Runtime {
+        param($f)
+        $f.Runtime.collector.inputId = "binutils"
+    } 40 "resolved raw-commit validation-tool input" $null | Out-Null
+
+    Invoke-Case "runtime-collector-self-attestation-rejected" Runtime {
+        param($f)
+        $f.Runtime.collector.sha256 = ("6" * 64)
+    } 40 "differs from its canonical lock input" $null | Out-Null
 
     Invoke-Case "runtime-validator-commit-rejected" Runtime {
         param($f)
         $f.Runtime.validator.commit =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    } 40 "does not match the committed executable" $null | Out-Null
+    } 40 "must equal the checked-out authoritative branch HEAD" $null | Out-Null
+
+    Invoke-Case "runtime-validator-dangling-commit-rejected" Runtime {
+        param($f)
+        $f.Runtime.validator.commit = $script:validatorDanglingCommit
+    } 40 "must equal the checked-out authoritative branch HEAD" $null | Out-Null
+
+    Invoke-Case "runtime-validator-other-branch-rejected" Runtime {
+        param($f)
+        $f.Runtime.validator.commit = $script:validatorOtherCommit
+    } 40 "must equal the checked-out authoritative branch HEAD" $null | Out-Null
 
     Invoke-Case "runtime-incomplete-modules" Runtime {
         param($f)
@@ -1586,7 +2319,148 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         param($f)
         $f.Runtime.scenarios[0].command[0] =
             (Join-Path $f.Root "bin\git.exe")
-    } 40 "command does not start with its role process" $null | Out-Null
+    } 40 "closed required argument vector" $null | Out-Null
+
+    Invoke-Case "runtime-soft-hyphen-bash-command-rejected" Runtime {
+        param($f)
+        $scenario = @($f.Runtime.scenarios | Where-Object {
+            [string]::Equals(
+                $_.id, "Git Bash", [StringComparison]::Ordinal)
+        })[0]
+        $tampered = Join-Path $f.Root (
+            "usr\bin\ba" + [char]0x00ad + "sh.exe")
+        $scenario.command[0] = $tampered
+        if (-not [string]::Equals(
+                $scenario.command[0],
+                $tampered,
+                [StringComparison]::Ordinal)) {
+            throw "Soft-hyphen command regression did not preserve the mutation"
+        }
+    } 40 "collation-ignorable character U+00AD" $null | Out-Null
+
+    Invoke-Case "runtime-soft-hyphen-personality-rejected" Runtime {
+        param($f)
+        $scenario = @($f.Runtime.scenarios | Where-Object {
+            [string]::Equals(
+                $_.id, "Git Bash", [StringComparison]::Ordinal)
+        })[0]
+        $tampered = "m" + [char]0x00ad + "sys"
+        $scenario.trace.processes[0].personality = $tampered
+        $scenario.trace.processes[0].modules[0].personality = $tampered
+        if (-not [string]::Equals(
+                $scenario.trace.processes[0].personality,
+                $tampered,
+                [StringComparison]::Ordinal)) {
+            throw "Soft-hyphen personality regression did not preserve the mutation"
+        }
+    } 40 "collation-ignorable character U+00AD" $null | Out-Null
+
+    Invoke-Case "soft-hyphen-payload-path-rejected" Preview {
+        param($f)
+        $tampered = "bin/gi" + [char]0x00ad + "t.exe"
+        @($f.Payload.entries |
+            Where-Object path -CEQ "bin/git.exe")[0].path = $tampered
+    } 20 "collation-ignorable character U+00AD" $null | Out-Null
+
+    Invoke-Case "zero-width-joiner-payload-path-rejected" Preview {
+        param($f)
+        $tampered = "bin/gi" + [char]0x200d + "t.exe"
+        @($f.Payload.entries |
+            Where-Object path -CEQ "bin/git.exe")[0].path = $tampered
+    } 20 "collation-ignorable character U+200D" $null | Out-Null
+
+    # U+034F and U+0001 are collation-ignorable but are NOT category Format,
+    # which a category-based screen would miss.
+    Invoke-Case "grapheme-joiner-payload-path-rejected" Preview {
+        param($f)
+        $tampered = "bin/gi" + [char]0x034f + "t.exe"
+        @($f.Payload.entries |
+            Where-Object path -CEQ "bin/git.exe")[0].path = $tampered
+    } 20 "collation-ignorable character U+034F" $null | Out-Null
+
+    Invoke-Case "control-character-payload-path-rejected" Preview {
+        param($f)
+        $tampered = "bin/gi" + [char]0x0001 + "t.exe"
+        @($f.Payload.entries |
+            Where-Object path -CEQ "bin/git.exe")[0].path = $tampered
+    } 20 "collation-ignorable character U+0001" $null | Out-Null
+
+    Invoke-Case "variation-selector-repository-rejected" Preview {
+        param($f)
+        @($f.Lock.inputs | Where-Object id -CEQ "msys")[0].
+            release.repository = "crutkas/msys" + [char]0xfe0f + "-package"
+    } 20 "collation-ignorable character U+FE0F" $null | Out-Null
+
+    Invoke-Case "same-input-destination-collision-rejected" Preview {
+        param($f)
+        # Two members of one input resolving to a single destination would make
+        # the overlay winner depend on an unstable sort. The archive-member
+        # destination rule rejects the construction before it can arise; the
+        # explicit same-input guard backs that up.
+        $lockInput = @($f.Lock.inputs | Where-Object id -CEQ "native")[0]
+        $lockInput.overlay.mappings = @(
+            [ordered]@{
+                sourceMember = "notice.txt"
+                destinationPath = "bin/git.exe"
+            }
+        )
+    } 20 "does not enforce overlay.destination" $null | Out-Null
+
+    Invoke-Case "runtime-soft-hyphen-repository-rejected" Runtime {
+        param($f)
+        $tampered = "crutkas/bu" + [char]0x00ad + "ild-extra"
+        $f.Runtime.validator.repository = $tampered
+        if (-not [string]::Equals(
+                $f.Runtime.validator.repository,
+                $tampered,
+                [StringComparison]::Ordinal)) {
+            throw "Soft-hyphen repository regression did not preserve the mutation"
+        }
+    } 40 "collation-ignorable character U+00AD" $null | Out-Null
+
+    Invoke-Case "runtime-command-boundary-collapse-rejected" Runtime {
+        param($f)
+        $scenario = @($f.Runtime.scenarios | Where-Object {
+            [string]::Equals(
+                $_.id, "Git Bash", [StringComparison]::Ordinal)
+        })[0]
+        $collapsedArguments = [string]::Join(
+            "`0", [string[]]@($scenario.command | Select-Object -Skip 1))
+        $scenario.command = @($scenario.command[0], $collapsedArguments)
+        if ($scenario.command.Count -ne 2 -or
+            -not [string]::Equals(
+                $scenario.command[1],
+                $collapsedArguments,
+                [StringComparison]::Ordinal)) {
+            throw "Command boundary regression did not preserve the mutation"
+        }
+    } 40 "collation-ignorable character U+0000" $null | Out-Null
+
+    # A NUL-free collapse still has to fail on the count/element comparison
+    # rather than on the collation screen.
+    Invoke-Case "runtime-command-space-collapse-rejected" Runtime {
+        param($f)
+        $scenario = @($f.Runtime.scenarios | Where-Object {
+            [string]::Equals(
+                $_.id, "Git Bash", [StringComparison]::Ordinal)
+        })[0]
+        $collapsed = [string]::Join(
+            " ", [string[]]@($scenario.command | Select-Object -Skip 1))
+        $scenario.command = @($scenario.command[0], $collapsed)
+    } 40 "closed required argument vector" $null | Out-Null
+
+    Invoke-Case "runtime-command-argument-wrong" Runtime {
+        param($f)
+        $git = @($f.Runtime.scenarios | Where-Object id -CEQ "Git")[0]
+        $git.command[1] = "status"
+    } 40 "closed required argument vector" $null | Out-Null
+
+    Invoke-Case "runtime-command-argument-missing" Runtime {
+        param($f)
+        $submodule = @($f.Runtime.scenarios |
+            Where-Object id -CEQ "submodule")[0]
+        $submodule.command = @($submodule.command | Select-Object -SkipLast 1)
+    } 40 "closed required argument vector" $null | Out-Null
 
     Invoke-Case "runtime-process-outside-trace" Runtime {
         param($f)
@@ -1629,7 +2503,19 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         param($f)
         $f.Runtime.scenarios[0].trace.processes[0].modules[0].path =
             "C:\external\module.dll"
-    } 40 "outside the staged root and C:\Windows" $null | Out-Null
+    } 40 "outside the staged root and trusted Windows" $null | Out-Null
+
+    Invoke-Case "runtime-windows-temp-module-rejected" Runtime {
+        param($f)
+        $f.Runtime.scenarios[0].trace.processes[0].modules[0].path =
+            "C:\Windows\Temp\synthetic-module.dll"
+    } 40 "outside the trusted Windows system directories" $null | Out-Null
+
+    Invoke-Case "runtime-windows-tasks-module-rejected" Runtime {
+        param($f)
+        $f.Runtime.scenarios[0].trace.processes[0].modules[0].path =
+            "C:\Windows\Tasks\synthetic-module.dll"
+    } 40 "outside the trusted Windows system directories" $null | Out-Null
 
     Invoke-Case "runtime-final-unresolved-scenario" Runtime {
         param($f)
@@ -1681,6 +2567,42 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
             "msys" @("msys-2.0.dll") $null
     } 10 "does not match its verified archive record" $null `
         -NmMode "v2" | Out-Null
+
+    $pseudoProofMutation = {
+        param($f)
+        $path = Join-Path $f.Root "usr\bin\bash.exe"
+        New-TestPe $path 0xaa64 -Imports @("msys-2.0.dll") -PseudoFlag 64
+        Update-PayloadFile $f "usr/bin/bash.exe" "arm64" "0xAA64" `
+            "msys" @("msys-2.0.dll") $null
+        $toolInput = @($f.Provenance.inputs |
+            Where-Object id -CEQ "binutils")[0]
+        foreach ($memberName in @(
+            "opt/bin/aarch64-pc-cygwin-nm.exe",
+            "opt/bin/aarch64-pc-cygwin-objdump.exe")) {
+            $member = @($toolInput.archiveMembers |
+                Where-Object sourceMember -CEQ $memberName)[0]
+            $member.bytes = $fakeToolBytes
+            $member.sha256 = $fakeToolSha256
+        }
+    }
+    Invoke-Case "pseudo-reloc-absent-proof-rejected" Preview `
+        $pseudoProofMutation 30 "explicit parsed empty table or scalar64 v2" `
+        $null -NmMode "absent" -ValidatorOverride $script:pseudoValidator |
+        Out-Null
+    Invoke-Case "pseudo-reloc-explicit-empty-accepted" Preview `
+        $pseudoProofMutation 0 "" $true -NmMode "empty" `
+        -ValidatorOverride $script:pseudoValidator | Out-Null
+    Invoke-Case "pseudo-reloc-scalar64-v2-accepted" Preview `
+        $pseudoProofMutation 0 "" $true -NmMode "v2" `
+        -ValidatorOverride $script:pseudoValidator | Out-Null
+    Invoke-Case "pseudo-reloc-v1-proof-rejected" Preview `
+        $pseudoProofMutation 30 "pseudo-reloc policy rejected" `
+        $null -NmMode "v1" -ValidatorOverride $script:pseudoValidator |
+        Out-Null
+    Invoke-Case "pseudo-reloc-malformed-proof-rejected" Preview `
+        $pseudoProofMutation 10 "pseudo-reloc scanner failed" $null `
+        -NmMode "malformed" -ValidatorOverride $script:pseudoValidator |
+        Out-Null
 
     $scannerFixture = New-TestFixture "scanner-unit"
     $scannerPath = Join-Path $repoRoot `
@@ -1736,6 +2658,95 @@ Add-Type -Path '$fakeToolSourcePath' -OutputAssembly '$script:fakeTool' -OutputT
         Join-Path $repoRoot "arm64-validation\schemas") -Filter "*.json") {
         $null = Get-Content -LiteralPath $schema.FullName -Raw |
             ConvertFrom-Json -Depth 100
+    }
+    $passed++
+
+    # ConvertFrom-Json accepts a dangling $ref, so resolve every local and
+    # cross-file reference explicitly.
+    $schemaDirectory = Join-Path $repoRoot "arm64-validation\schemas"
+    $schemaObjects = @{}
+    foreach ($schema in Get-ChildItem -LiteralPath $schemaDirectory `
+        -Filter "*.json") {
+        $schemaObjects[$schema.Name] = Get-Content -LiteralPath `
+            $schema.FullName -Raw | ConvertFrom-Json -Depth 100
+    }
+    function Resolve-SchemaPointer {
+        param($Document, [string]$Pointer)
+        $cursor = $Document
+        foreach ($token in @($Pointer.TrimStart("#").Trim("/").Split("/"))) {
+            if ([string]::IsNullOrEmpty($token)) {
+                continue
+            }
+            $name = $token.Replace("~1", "/").Replace("~0", "~")
+            $property = $cursor.PSObject.Properties[$name]
+            if ($null -eq $property) {
+                return $null
+            }
+            $cursor = $property.Value
+        }
+        return $cursor
+    }
+    function Get-SchemaRef {
+        param($Node)
+        if ($Node -is [Management.Automation.PSCustomObject]) {
+            foreach ($property in $Node.PSObject.Properties) {
+                if ($property.Name -ceq "`$ref") {
+                    [string]$property.Value
+                } else {
+                    Get-SchemaRef $property.Value
+                }
+            }
+        } elseif ($Node -is [object[]]) {
+            foreach ($element in $Node) {
+                Get-SchemaRef $element
+            }
+        }
+    }
+    foreach ($name in $schemaObjects.Keys) {
+        foreach ($reference in @(Get-SchemaRef $schemaObjects[$name])) {
+            $parts = $reference.Split("#", 2)
+            $targetName = if ([string]::IsNullOrEmpty($parts[0])) {
+                $name
+            } else {
+                $parts[0]
+            }
+            if (-not $schemaObjects.ContainsKey($targetName)) {
+                throw "Schema '$name' references unknown file '$targetName'"
+            }
+            if ($parts.Count -eq 2 -and $parts[1].Length -gt 0 -and
+                $null -eq (Resolve-SchemaPointer `
+                    $schemaObjects[$targetName] $parts[1])) {
+                throw "Schema '$name' has an unresolvable `$ref '$reference'"
+            }
+        }
+    }
+    foreach ($required in @("release", "rawCommit", "asset", "package",
+        "sha256", "commit", "relativePath", "baseTreeManifest")) {
+        if ($null -eq $schemaObjects["common-v1.schema.json"].
+            '$defs'.PSObject.Properties[$required]) {
+            throw "common-v1.schema.json is missing `$defs/$required"
+        }
+    }
+    $passed++
+
+    $workflow = [IO.File]::ReadAllText((Join-Path $repoRoot `
+        ".github\workflows\validate-arm64-bundle.yml"))
+    foreach ($required in @(
+        'ref: ${{ github.event.pull_request.head.ref }}',
+        'EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref }}',
+        'EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}',
+        '$branch = Invoke-Git symbolic-ref --quiet --short HEAD',
+        '$head = Invoke-Git rev-parse HEAD',
+        '$tracking = Invoke-Git rev-parse "refs/remotes/origin/$branch"',
+        '[StringComparison]::Ordinal')) {
+        if (-not $workflow.Contains(
+                $required, [StringComparison]::Ordinal)) {
+            throw "Workflow does not pin and verify the immutable PR head: $required"
+        }
+    }
+    if ($workflow.Contains(
+            'ref: ${{ github.ref }}', [StringComparison]::Ordinal)) {
+        throw "Workflow attaches the pull request merge commit instead of its head"
     }
     $passed++
 

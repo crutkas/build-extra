@@ -13,6 +13,7 @@
     "provenanceSha256",
     "payloadManifestSha256",
     "rootInventorySha256",
+    "staticReportSha256",
     "validator",
     "host",
     "collector",
@@ -46,6 +47,9 @@
       "$ref": "common-v1.schema.json#/$defs/sha256"
     },
     "rootInventorySha256": {
+      "$ref": "common-v1.schema.json#/$defs/sha256"
+    },
+    "staticReportSha256": {
       "$ref": "common-v1.schema.json#/$defs/sha256"
     },
     "validator": {
@@ -101,14 +105,20 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "inputId",
         "repository",
         "commit",
-        "path",
+        "sourcePath",
+        "url",
         "bytes",
         "sha256",
         "method"
       ],
       "properties": {
+        "inputId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
         "repository": {
           "type": "string",
           "pattern": "^crutkas/[A-Za-z0-9_.-]+$"
@@ -116,8 +126,13 @@
         "commit": {
           "$ref": "common-v1.schema.json#/$defs/commit"
         },
-        "path": {
+        "sourcePath": {
           "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://raw\\.githubusercontent\\.com/"
         },
         "bytes": {
           "type": "integer",
@@ -183,6 +198,7 @@
         },
         "command": {
           "type": "array",
+          "minItems": 2,
           "items": {
             "type": "string"
           }
@@ -207,7 +223,302 @@
             }
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "Git Bash"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/gitBashCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "Git"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/gitCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "SSH"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/sshCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "GPG"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/gpgCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "hook"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/hookCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "submodule"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/submoduleCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "rebase"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/rebaseCommand"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "git-svn"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "command": {
+                "$ref": "#/$defs/gitSvnCommand"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "gitBashCommand": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\usr\\\\bin\\\\bash\\.exe$"
+        },
+        {
+          "const": "--noprofile"
+        },
+        {
+          "const": "--norc"
+        },
+        {
+          "const": "-lc"
+        },
+        {
+          "const": "exit 0"
+        }
+      ],
+      "items": false
+    },
+    "gitCommand": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\bin\\\\git\\.exe$"
+        },
+        {
+          "const": "--version"
+        }
+      ],
+      "items": false
+    },
+    "sshCommand": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\usr\\\\bin\\\\ssh\\.exe$"
+        },
+        {
+          "const": "-V"
+        }
+      ],
+      "items": false
+    },
+    "gpgCommand": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\usr\\\\bin\\\\gpg\\.exe$"
+        },
+        {
+          "const": "--version"
+        }
+      ],
+      "items": false
+    },
+    "hookCommand": {
+      "$ref": "#/$defs/gitBashCommand"
+    },
+    "submoduleCommand": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\bin\\\\git\\.exe$"
+        },
+        {
+          "const": "submodule"
+        },
+        {
+          "const": "status"
+        },
+        {
+          "const": "--recursive"
+        }
+      ],
+      "items": false
+    },
+    "rebaseCommand": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\usr\\\\bin\\\\bash\\.exe$"
+        },
+        {
+          "const": "--noprofile"
+        },
+        {
+          "const": "--norc"
+        },
+        {
+          "const": "-lc"
+        },
+        {
+          "const": "git rebase --show-current-patch"
+        }
+      ],
+      "items": false
+    },
+    "gitSvnCommand": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z]:\\\\.*\\\\usr\\\\bin\\\\bash\\.exe$"
+        },
+        {
+          "const": "--noprofile"
+        },
+        {
+          "const": "--norc"
+        },
+        {
+          "const": "-lc"
+        },
+        {
+          "const": "git svn --version"
+        }
+      ],
+      "items": false
     },
     "behavior": {
       "type": "object",

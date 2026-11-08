@@ -26,6 +26,46 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+          # Checking out the head branch by name, rather than the detached
+          # merge ref, is what makes actions/checkout fetch the genuine
+          # refs/remotes/origin/<branch> and attach HEAD to it. Creating that
+          # ref locally would fabricate the identity the validator must prove.
+          # The job is already guarded to same-repository pull requests.
+          ref: ${{ github.event.pull_request.head.ref }}
+      - name: Assert the checkout is the authoritative pull request head
+        shell: pwsh
+        env:
+          EXPECTED_BRANCH: ${{ github.event.pull_request.head.ref }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          function Invoke-Git {
+            $output = & git @args
+            if ($LASTEXITCODE -ne 0) {
+              throw "git $($args -join ' ') failed with exit $LASTEXITCODE"
+            }
+            return ($output | Out-String).Trim()
+          }
+          if ($env:EXPECTED_SHA -notmatch "^[0-9a-f]{40}$") {
+            throw "Invalid pull request head SHA"
+          }
+          $branch = Invoke-Git symbolic-ref --quiet --short HEAD
+          $head = Invoke-Git rev-parse HEAD
+          $tracking = Invoke-Git rev-parse "refs/remotes/origin/$branch"
+          $origin = Invoke-Git remote get-url origin
+          foreach ($check in @(
+            @("attached branch", $branch, $env:EXPECTED_BRANCH),
+            @("head commit", $head, $env:EXPECTED_SHA),
+            @("origin tracking ref", $tracking, $env:EXPECTED_SHA))) {
+            if (-not [string]::Equals(
+                $check[1], $check[2], [StringComparison]::Ordinal)) {
+              throw "$($check[0]) is '$($check[1])', expected '$($check[2])'"
+            }
+          }
+          if ($origin -notmatch '^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)crutkas/build-extra(?:\.git)?$') {
+            throw "origin is '$origin', expected crutkas/build-extra"
+          }
       - name: Validate ARM64 bundle contract
         shell: pwsh
         run: ./t/validate-arm64-bundle.ps1

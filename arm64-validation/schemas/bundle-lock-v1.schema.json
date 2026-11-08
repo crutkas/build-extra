@@ -159,6 +159,77 @@
               }
             },
             {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "build",
+                "sdkSource",
+                "manifest"
+              ],
+              "properties": {
+                "method": {
+                  "const": "derived-tree"
+                },
+                "build": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "repository",
+                    "commit"
+                  ],
+                  "properties": {
+                    "repository": {
+                      "const": "crutkas/build-extra"
+                    },
+                    "commit": {
+                      "$ref": "common-v1.schema.json#/$defs/commit"
+                    }
+                  }
+                },
+                "sdkSource": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "repository",
+                        "commit"
+                      ],
+                      "properties": {
+                        "repository": {
+                          "type": "string",
+                          "pattern": "^(crutkas/[A-Za-z0-9_.-]+|git-for-windows/git|ip7z/7zip)$"
+                        },
+                        "commit": {
+                          "$ref": "common-v1.schema.json#/$defs/commit"
+                        }
+                      }
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "manifest": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "path",
+                    "sha256"
+                  ],
+                  "properties": {
+                    "path": {
+                      "const": "preview-evidence/base-tree-manifest.v1.json"
+                    },
+                    "sha256": {
+                      "$ref": "common-v1.schema.json#/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            },
+            {
               "type": "null"
             }
           ]
@@ -240,22 +311,60 @@
               "resolution": {
                 "type": "object"
               },
-              "release": {
-                "type": "object"
-              },
-              "asset": {
-                "type": "object"
-              },
-              "package": {
-                "type": [
-                  "object",
-                  "null"
-                ]
-              },
               "overlay": {
                 "type": "object"
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "resolution": {
+                      "properties": {
+                        "method": {
+                          "const": "derived-tree"
+                        }
+                      },
+                      "required": [
+                        "method"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "resolution"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "release": {
+                      "type": "null"
+                    },
+                    "asset": {
+                      "type": "null"
+                    },
+                    "package": {
+                      "type": "null"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "release": {
+                      "type": "object"
+                    },
+                    "asset": {
+                      "type": "object"
+                    },
+                    "package": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       ]

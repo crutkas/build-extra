@@ -46,9 +46,11 @@
     },
     "overlayOrder": {
       "type": "array",
+      "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "type": "string"
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9.-]*$"
       }
     },
     "replacements": {
@@ -101,10 +103,27 @@
           "pattern": "^[a-z0-9][a-z0-9.-]*$"
         },
         "release": {
-          "$ref": "common-v1.schema.json#/$defs/release"
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/release"
+            },
+            {
+              "$ref": "common-v1.schema.json#/$defs/rawCommit"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "asset": {
-          "$ref": "common-v1.schema.json#/$defs/asset"
+          "oneOf": [
+            {
+              "$ref": "common-v1.schema.json#/$defs/asset"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "package": {
           "oneOf": [

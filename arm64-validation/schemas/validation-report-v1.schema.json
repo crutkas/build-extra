@@ -59,34 +59,625 @@
       "type": "boolean"
     },
     "digests": {
-      "type": "object"
+      "$ref": "#/$defs/digests"
     },
     "summary": {
-      "type": "object"
+      "$ref": "#/$defs/summary"
     },
     "unresolvedInputs": {
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9.-]*$"
+      }
     },
     "nativeShellClosure": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nativeShellClosure"
+      }
     },
     "remainingX64": {
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common-v1.schema.json#/$defs/relativePath"
+      }
     },
     "classifications": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/classification"
+      }
     },
     "pseudoReloc": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pseudoReloc"
+      }
     },
     "runtime": {
-      "type": [
-        "object",
-        "null"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/runtime"
+        },
+        {
+          "type": "null"
+        }
       ]
     },
     "errors": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "result": {
+            "const": "pass"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "exitCode": {
+            "const": 0
+          },
+          "digests": {
+            "$ref": "#/$defs/successDigests"
+          },
+          "classifications": {
+            "minItems": 1
+          },
+          "errors": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "Preview"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admissionMode": {
+            "const": "Preview"
+          },
+          "runtime": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "Final"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admissionMode": {
+            "const": "Final"
+          },
+          "runtime": {
+            "type": "null"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "result": {
+                  "const": "pass"
+                }
+              },
+              "required": [
+                "result"
+              ]
+            },
+            "then": {
+              "properties": {
+                "readyForFinal": {
+                  "const": true
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "Runtime"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "result": {
+                  "const": "pass"
+                }
+              },
+              "required": [
+                "result"
+              ]
+            },
+            "then": {
+              "properties": {
+                "readyForFinal": {
+                  "const": true
+                },
+                "runtime": {
+                  "$ref": "#/$defs/runtime"
+                },
+                "digests": {
+                  "$ref": "#/$defs/runtimeSuccessDigests"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "nullableSha256": {
+      "oneOf": [
+        {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceLockSha256",
+        "baseTreeManifestSha256",
+        "lockSha256",
+        "provenanceSha256",
+        "payloadManifestSha256",
+        "rootInventorySha256",
+        "assemblyEvidenceSha256",
+        "runtimeEvidenceSha256",
+        "staticReportSha256"
+      ],
+      "properties": {
+        "sourceLockSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "baseTreeManifestSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "lockSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "provenanceSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "payloadManifestSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "rootInventorySha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "assemblyEvidenceSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "runtimeEvidenceSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        },
+        "staticReportSha256": {
+          "$ref": "#/$defs/nullableSha256"
+        }
+      }
+    },
+    "successDigests": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/digests"
+        },
+        {
+          "properties": {
+            "sourceLockSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "lockSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "provenanceSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "payloadManifestSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "rootInventorySha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            }
+          }
+        }
+      ]
+    },
+    "runtimeSuccessDigests": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/successDigests"
+        },
+        {
+          "properties": {
+            "assemblyEvidenceSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "runtimeEvidenceSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            },
+            "staticReportSha256": {
+              "$ref": "common-v1.schema.json#/$defs/sha256"
+            }
+          }
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolvedInputs",
+        "unresolvedInputs",
+        "payloadMembers",
+        "peFiles",
+        "remainingX64",
+        "pseudoRelocCandidates",
+        "runtimeScenarios"
+      ],
+      "properties": {
+        "resolvedInputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolvedInputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payloadMembers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "peFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remainingX64": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pseudoRelocCandidates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runtimeScenarios": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "nativeShellClosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "architecture",
+        "personality"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "personality": {
+          "$ref": "#/$defs/personality"
+        }
+      }
+    },
+    "architecture": {
+      "enum": [
+        "non-pe",
+        "arm64",
+        "arm64ec",
+        "anycpu",
+        "x64",
+        "x86",
+        "unknown"
+      ]
+    },
+    "personality": {
+      "enum": [
+        "none",
+        "msys",
+        "mingw",
+        "managed",
+        "cygwin"
+      ]
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "architecture",
+        "machine",
+        "personality",
+        "imports",
+        "clrFlags",
+        "inputId",
+        "sourceMember"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "architecture": {
+          "$ref": "#/$defs/architecture"
+        },
+        "machine": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^0x[0-9A-F]{4}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "personality": {
+          "$ref": "#/$defs/personality"
+        },
+        "imports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "clrFlags": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "inputId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "sourceMember": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        }
+      }
+    },
+    "pseudoReloc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "result",
+        "tableFormat",
+        "recordCount",
+        "flags",
+        "objdumpMember",
+        "objdumpSha256",
+        "nmMember",
+        "nmSha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "common-v1.schema.json#/$defs/relativePath"
+        },
+        "result": {
+          "const": "pass"
+        },
+        "tableFormat": {
+          "enum": [
+            "empty",
+            "v2"
+          ]
+        },
+        "recordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "flags": {
+          "type": "array",
+          "items": {
+            "const": 64
+          }
+        },
+        "objdumpMember": {
+          "const": "opt/bin/aarch64-pc-cygwin-objdump.exe"
+        },
+        "objdumpSha256": {
+          "const": "bb0d53db4128aff7f6b20c46be4e3625b1d82134476d7b03e58ed22015136e6e"
+        },
+        "nmMember": {
+          "const": "opt/bin/aarch64-pc-cygwin-nm.exe"
+        },
+        "nmSha256": {
+          "const": "80b4716108b362ba05f48cd9228d20a4193897b4a5eeb8eb19e80f4c83e3e90a"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "tableFormat": {
+                "const": "empty"
+              }
+            },
+            "required": [
+              "tableFormat"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recordCount": {
+                "const": 0
+              },
+              "flags": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previewId",
+        "admissionMode",
+        "validator",
+        "scenarios"
+      ],
+      "properties": {
+        "previewId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{0,127}$"
+        },
+        "admissionMode": {
+          "enum": [
+            "Preview",
+            "Final"
+          ]
+        },
+        "validator": {
+          "$ref": "#/$defs/validator"
+        },
+        "scenarios": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/runtimeScenario"
+          }
+        }
+      }
+    },
+    "validator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "path",
+        "bytes",
+        "sha256",
+        "mode"
+      ],
+      "properties": {
+        "repository": {
+          "const": "crutkas/build-extra"
+        },
+        "commit": {
+          "$ref": "common-v1.schema.json#/$defs/commit"
+        },
+        "path": {
+          "const": "validate-arm64-bundle.ps1"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "$ref": "common-v1.schema.json#/$defs/sha256"
+        },
+        "mode": {
+          "const": "Runtime"
+        }
+      }
+    },
+    "runtimeScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "status"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "Git Bash",
+            "Git",
+            "SSH",
+            "GPG",
+            "hook",
+            "submodule",
+            "rebase",
+            "git-svn"
+          ]
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "unresolved"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "message"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   }
 }

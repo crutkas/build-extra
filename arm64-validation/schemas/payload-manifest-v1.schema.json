@@ -55,11 +55,6 @@
         "type",
         "bytes",
         "sha256",
-        "architecture",
-        "machine",
-        "personality",
-        "imports",
-        "clrFlags",
         "linkTarget"
       ],
       "properties": {
@@ -87,53 +82,6 @@
               "type": "null"
             }
           ]
-        },
-        "architecture": {
-          "enum": [
-            null,
-            "non-pe",
-            "arm64",
-            "x64",
-            "x86",
-            "anycpu",
-            "arm64ec",
-            "unknown"
-          ]
-        },
-        "machine": {
-          "oneOf": [
-            {
-              "type": "string",
-              "pattern": "^0x[0-9A-F]{4}$"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "personality": {
-          "enum": [
-            null,
-            "none",
-            "msys",
-            "cygwin",
-            "mingw",
-            "managed"
-          ]
-        },
-        "imports": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {
-            "type": "string"
-          }
-        },
-        "clrFlags": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0
         },
         "linkTarget": {
           "oneOf": [

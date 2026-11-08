@@ -26,6 +26,9 @@ param(
     [Alias("RuntimeEvidencePath")]
     [string] $RuntimeEvidence,
 
+    [Alias("StaticReportPath")]
+    [string] $StaticReport,
+
     [string] $ToolRoot,
 
     [Parameter(Mandatory = $true)]
@@ -42,7 +45,16 @@ $script:ExitStatic = 30
 $script:ExitRuntime = 40
 $script:Utf8NoBom = [Text.UTF8Encoding]::new($false)
 $script:PathComparer = [StringComparer]::OrdinalIgnoreCase
+$script:InvariantCompareInfo =
+    [Globalization.CultureInfo]::InvariantCulture.CompareInfo
 $script:ScannerRelativePath = "arm64-validation/check-aarch64-pseudo-relocs.ps1"
+# Closed read-only vocabulary for describing the shared C:\msys64 root. Any
+# other value, including every pacman invocation, is rejected outright.
+$script:ReadOnlyObservationOperations = @(
+    "enumerate-database-manifest",
+    "hash-database-manifest",
+    "hash-package-log",
+    "stat-package-log")
 $script:ScannerRepository = "crutkas/MSYS2-packages"
 $script:ScannerCommit = "3356eec1411983cc252b04afac32bca5f3b8d824"
 $script:ScannerSourcePath = ".ci/check-aarch64-pseudo-relocs.ps1"
@@ -76,6 +88,59 @@ $script:RequiredScenarios = [ordered]@{
     "git-svn" = "msys"
 }
 
+function Test-OrdinalStringEqual {
+    param(
+        [AllowNull()] $Left,
+        [AllowNull()] $Right
+    )
+
+    if ($null -eq $Left -or $null -eq $Right) {
+        return $null -eq $Left -and $null -eq $Right
+    }
+    if ($Left -isnot [string] -or $Right -isnot [string]) {
+        return $false
+    }
+    return [string]::Equals(
+        $Left, $Right, [StringComparison]::Ordinal)
+}
+
+function Test-OrdinalStringInCollection {
+    param(
+        [AllowNull()] $Value,
+        [AllowNull()] $Candidates
+    )
+
+    foreach ($candidate in @($Candidates)) {
+        if (Test-OrdinalStringEqual $Value $candidate) {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Test-OrdinalStringSequenceEqual {
+    param(
+        [AllowNull()] $Left,
+        [AllowNull()] $Right
+    )
+
+    if ($null -eq $Left -or $null -eq $Right) {
+        return $null -eq $Left -and $null -eq $Right
+    }
+    $leftValues = @($Left)
+    $rightValues = @($Right)
+    if ($leftValues.Count -ne $rightValues.Count) {
+        return $false
+    }
+    for ($index = 0; $index -lt $leftValues.Count; $index++) {
+        if (-not (Test-OrdinalStringEqual `
+                $leftValues[$index] $rightValues[$index])) {
+            return $false
+        }
+    }
+    return $true
+}
+
 function Assert-PropertyOrder {
     param(
         [Parameter(Mandatory = $true)] $Object,
@@ -84,8 +149,8 @@ function Assert-PropertyOrder {
         [int] $ExitCode = $script:ExitContract
     )
 
-    if ((@($Object.PSObject.Properties.Name) -join "`0") -cne
-        ($Names -join "`0")) {
+    if (-not (Test-OrdinalStringSequenceEqual `
+            @($Object.PSObject.Properties.Name) $Names)) {
         Throw-ValidationError $ExitCode "ordering" (
             "$Context properties are not in canonical order")
     }
@@ -99,6 +164,41 @@ $script:RequiredOperations = [ordered]@{
     "submodule" = "git-submodule"
     "rebase" = "git-rebase"
     "git-svn" = "git-svn"
+}
+$script:RequiredCommandContracts = [ordered]@{
+    "Git Bash" = [ordered]@{
+        executable = "usr/bin/bash.exe"
+        arguments = @("--noprofile", "--norc", "-lc", "exit 0")
+    }
+    "Git" = [ordered]@{
+        executable = "bin/git.exe"
+        arguments = @("--version")
+    }
+    "SSH" = [ordered]@{
+        executable = "usr/bin/ssh.exe"
+        arguments = @("-V")
+    }
+    "GPG" = [ordered]@{
+        executable = "usr/bin/gpg.exe"
+        arguments = @("--version")
+    }
+    "hook" = [ordered]@{
+        executable = "usr/bin/bash.exe"
+        arguments = @("--noprofile", "--norc", "-lc", "exit 0")
+    }
+    "submodule" = [ordered]@{
+        executable = "bin/git.exe"
+        arguments = @("submodule", "status", "--recursive")
+    }
+    "rebase" = [ordered]@{
+        executable = "usr/bin/bash.exe"
+        arguments = @(
+            "--noprofile", "--norc", "-lc", "git rebase --show-current-patch")
+    }
+    "git-svn" = [ordered]@{
+        executable = "usr/bin/bash.exe"
+        arguments = @("--noprofile", "--norc", "-lc", "git svn --version")
+    }
 }
 
 function Assert-EvidenceRelativePath {
@@ -118,28 +218,35 @@ function Assert-EvidenceRelativePath {
             "$Context must be a normalized path under preview-evidence/")
     }
     foreach ($component in $Value.Split("/")) {
-        if ($component -in @("", ".", "..")) {
+        if (Test-OrdinalStringInCollection $component @("", ".", "..")) {
             Throw-ValidationError $script:ExitContract "path" (
                 "$Context contains traversal")
         }
     }
 }
 $script:SafeReportPath = $null
+$script:AuthoritativeCheckout = $null
 $script:ReportData = [ordered]@{
     schemaVersion = 1
     mode = $Mode
-    admissionMode = if ($Mode -eq "Runtime") { $null } else { $Mode }
+    admissionMode = if (Test-OrdinalStringEqual $Mode "Runtime") {
+        $null
+    } else {
+        $Mode
+    }
     result = "error"
     exitCode = $script:ExitScanner
     readyForFinal = $false
     digests = [ordered]@{
         sourceLockSha256 = $null
+        baseTreeManifestSha256 = $null
         lockSha256 = $null
         provenanceSha256 = $null
         payloadManifestSha256 = $null
         rootInventorySha256 = $null
         assemblyEvidenceSha256 = $null
         runtimeEvidenceSha256 = $null
+        staticReportSha256 = $null
     }
     summary = [ordered]@{
         resolvedInputs = 0
@@ -172,6 +279,227 @@ function Throw-ValidationError {
     throw $exception
 }
 
+function Assert-StaticReportContract {
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)][string] $SourceLockSha256,
+        [Parameter(Mandatory = $true)][string] $LockSha256,
+        [Parameter(Mandatory = $true)][string] $ProvenanceSha256,
+        [Parameter(Mandatory = $true)][string] $PayloadManifestSha256,
+        [Parameter(Mandatory = $true)][string] $RootInventorySha256
+    )
+
+    $document = Read-JsonDocument $Path "static report" $script:ExitRuntime
+    $object = $document.Object
+    Assert-ExactProperties $object @(
+        "schemaVersion", "mode", "admissionMode", "result", "exitCode",
+        "readyForFinal", "digests", "summary", "unresolvedInputs",
+        "nativeShellClosure", "remainingX64", "classifications", "pseudoReloc",
+        "runtime", "errors") "static report" $script:ExitRuntime
+    Assert-SchemaVersion $object "static report" $script:ExitRuntime
+    $mode = Get-RequiredProperty $object "mode" "static report" `
+        $script:ExitRuntime
+    if ((-not (Test-OrdinalStringInCollection ($mode) (@("Preview", "Final"))))) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report must come from a Preview or Final run")
+    }
+    if ((-not (Test-OrdinalStringEqual ($object.admissionMode) ($mode))) -or
+        $object.readyForFinal -isnot [bool] -or
+        ((Test-OrdinalStringEqual ($mode) ("Final")) -and $object.readyForFinal -ne $true) -or
+        $null -ne $object.runtime) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report mode fields do not describe a successful static run")
+    }
+    if ((-not (Test-OrdinalStringEqual ((Get-RequiredProperty $object "result" "static report" `
+            $script:ExitRuntime)) ("pass"))) -or
+        [int](Get-RequiredProperty $object "exitCode" "static report" `
+            $script:ExitRuntime) -ne 0) {
+        Throw-ValidationError $script:ExitRuntime "provenance" (
+            "static report must record a successful static validation")
+    }
+    $digests = Get-RequiredProperty $object "digests" "static report" `
+        $script:ExitRuntime
+    Assert-ExactProperties $digests @(
+        "sourceLockSha256", "baseTreeManifestSha256", "lockSha256",
+        "provenanceSha256", "payloadManifestSha256", "rootInventorySha256",
+        "assemblyEvidenceSha256", "runtimeEvidenceSha256",
+        "staticReportSha256") "static report.digests" $script:ExitRuntime
+    foreach ($pair in @(
+        @("sourceLockSha256", $SourceLockSha256),
+        @("lockSha256", $LockSha256),
+        @("provenanceSha256", $ProvenanceSha256),
+        @("payloadManifestSha256", $PayloadManifestSha256),
+        @("rootInventorySha256", $RootInventorySha256))) {
+        $actual = Get-RequiredProperty $digests $pair[0] `
+            "static report.digests" $script:ExitRuntime
+        if ((-not (Test-OrdinalStringEqual ([string]$actual) ($pair[1])))) {
+            Throw-ValidationError $script:ExitRuntime "digest" (
+                "static report.digests.$($pair[0]) does not bind this run")
+        }
+    }
+    if ($null -ne $digests.baseTreeManifestSha256) {
+        Assert-LowerSha256 $digests.baseTreeManifestSha256 `
+            "static report.digests.baseTreeManifestSha256" $script:ExitRuntime
+    }
+    if ($null -ne $digests.assemblyEvidenceSha256 -or
+        $null -ne $digests.runtimeEvidenceSha256 -or
+        $null -ne $digests.staticReportSha256) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report cannot carry downstream runtime digests")
+    }
+    Assert-ExactProperties $object.summary @(
+        "resolvedInputs", "unresolvedInputs", "payloadMembers", "peFiles",
+        "remainingX64", "pseudoRelocCandidates", "runtimeScenarios") `
+        "static report.summary" $script:ExitRuntime
+    foreach ($name in @(
+        "resolvedInputs", "unresolvedInputs", "payloadMembers", "peFiles",
+        "remainingX64", "pseudoRelocCandidates", "runtimeScenarios")) {
+        Assert-JsonInteger $object.summary.$name "static report.summary.$name" `
+            0 $script:ExitRuntime
+    }
+    Assert-JsonArray $object.unresolvedInputs `
+        "static report.unresolvedInputs" $script:ExitRuntime
+    Assert-JsonArray $object.nativeShellClosure `
+        "static report.nativeShellClosure" $script:ExitRuntime
+    Assert-JsonArray $object.remainingX64 `
+        "static report.remainingX64" $script:ExitRuntime
+    Assert-JsonArray $object.pseudoReloc `
+        "static report.pseudoReloc" $script:ExitRuntime
+    Assert-JsonArray $object.errors "static report.errors" $script:ExitRuntime
+    if (@($object.errors).Count -ne 0 -or
+        [long]$object.summary.unresolvedInputs -ne
+            @($object.unresolvedInputs).Count -or
+        [long]$object.summary.remainingX64 -ne
+            @($object.remainingX64).Count -or
+        [long]$object.summary.pseudoRelocCandidates -ne
+            @($object.pseudoReloc).Count -or
+        [long]$object.summary.runtimeScenarios -ne 0) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report summary or error counts are inconsistent")
+    }
+    foreach ($id in @($object.unresolvedInputs)) {
+        if ($id -isnot [string] -or
+            $id -cnotmatch "^[a-z0-9][a-z0-9.-]*$") {
+            Throw-ValidationError $script:ExitRuntime "schema" (
+                "static report unresolved input ID is invalid")
+        }
+    }
+    foreach ($path in @($object.remainingX64)) {
+        Assert-NormalizedPath $path "static report remainingX64 path" `
+            -ExitCode $script:ExitRuntime
+    }
+    foreach ($row in @($object.nativeShellClosure)) {
+        Assert-ExactProperties $row @(
+            "path", "architecture", "personality") `
+            "static report nativeShellClosure row" $script:ExitRuntime
+        Assert-NormalizedPath $row.path `
+            "static report nativeShellClosure path" `
+            -ExitCode $script:ExitRuntime
+        if ((-not (Test-OrdinalStringInCollection ($row.architecture) (@(
+                "arm64", "arm64ec", "anycpu", "x64", "x86", "unknown",
+                "non-pe")))) -or
+            (-not (Test-OrdinalStringInCollection ($row.personality) (@(
+                "msys", "mingw", "managed", "cygwin", "none"))))) {
+            Throw-ValidationError $script:ExitRuntime "classification" (
+                "static report nativeShellClosure classification is invalid")
+        }
+    }
+    $classifications = @(Get-RequiredProperty $object "classifications" `
+        "static report" $script:ExitRuntime)
+    Assert-JsonArray $object.classifications `
+        "static report.classifications" $script:ExitRuntime
+    if ($classifications.Count -eq 0) {
+        Throw-ValidationError $script:ExitRuntime "classification" (
+            "static report must carry the authoritative classifications")
+    }
+    Assert-SortedUnique $classifications { param($item) [string]$item.path } `
+        "static report.classifications" $script:ExitRuntime
+    foreach ($row in $classifications) {
+        Assert-ExactProperties $row @(
+            "path", "architecture", "machine", "personality", "imports",
+            "clrFlags", "inputId", "sourceMember") `
+            "static report classification" $script:ExitRuntime
+        Assert-NormalizedPath $row.path "static report classification.path" `
+            -ExitCode $script:ExitRuntime
+        Assert-NormalizedPath $row.sourceMember `
+            "static report classification.sourceMember" `
+            -ExitCode $script:ExitRuntime
+        Assert-JsonArray $row.imports `
+            "static report classification.imports" $script:ExitRuntime
+        if ((-not (Test-OrdinalStringInCollection ($row.architecture) (@(
+                "arm64", "arm64ec", "anycpu", "x64", "x86", "unknown",
+                "non-pe")))) -or
+            (-not (Test-OrdinalStringInCollection ($row.personality) (@(
+                "msys", "mingw", "managed", "cygwin", "none")))) -or
+            ($null -ne $row.machine -and
+                ($row.machine -isnot [string] -or
+                    $row.machine -cnotmatch "^0x[0-9A-F]{4}$")) -or
+            ($null -ne $row.clrFlags -and
+                ($row.clrFlags -isnot [int] -and
+                    $row.clrFlags -isnot [long])) -or
+            $row.inputId -isnot [string] -or
+            $row.inputId -cnotmatch "^[a-z0-9][a-z0-9.-]*$") {
+            Throw-ValidationError $script:ExitRuntime "classification" (
+                "static report classification is malformed")
+        }
+        foreach ($import in @($row.imports)) {
+            if ($import -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($import)) {
+                Throw-ValidationError $script:ExitRuntime "classification" (
+                    "static report classification import is malformed")
+            }
+        }
+    }
+    if ([long]$object.summary.payloadMembers -lt $classifications.Count) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report payload member count is smaller than classifications")
+    }
+    $peCount = @($classifications |
+        Where-Object {
+            -not (Test-OrdinalStringEqual $_.architecture "non-pe")
+        }).Count
+    if ([long]$object.summary.peFiles -ne $peCount) {
+        Throw-ValidationError $script:ExitRuntime "schema" (
+            "static report PE classification count is inconsistent")
+    }
+    foreach ($row in @($object.pseudoReloc)) {
+        Assert-ExactProperties $row @(
+            "path", "result", "tableFormat", "recordCount", "flags",
+            "objdumpMember", "objdumpSha256", "nmMember", "nmSha256") `
+            "static report pseudoReloc row" $script:ExitRuntime
+        Assert-NormalizedPath $row.path "static report pseudoReloc.path" `
+            -ExitCode $script:ExitRuntime
+        Assert-JsonInteger $row.recordCount `
+            "static report pseudoReloc.recordCount" 0 $script:ExitRuntime
+        Assert-JsonArray $row.flags "static report pseudoReloc.flags" `
+            $script:ExitRuntime
+        if ((-not (Test-OrdinalStringEqual ($row.result) ("pass"))) -or
+            (-not (Test-OrdinalStringInCollection ($row.tableFormat) (@("empty", "v2")))) -or
+            (-not (Test-OrdinalStringEqual ($row.objdumpMember) ($script:ObjdumpMember))) -or
+            (-not (Test-OrdinalStringEqual ($row.objdumpSha256) ($script:ObjdumpSha256))) -or
+            (-not (Test-OrdinalStringEqual ($row.nmMember) ($script:NmMember))) -or
+            (-not (Test-OrdinalStringEqual ($row.nmSha256) ($script:NmSha256))) -or
+            ((Test-OrdinalStringEqual ($row.tableFormat) ("empty")) -and
+                ([long]$row.recordCount -ne 0 -or
+                    @($row.flags).Count -ne 0)) -or
+            ((Test-OrdinalStringEqual ($row.tableFormat) ("v2")) -and
+                (@($row.flags).Count -ne [long]$row.recordCount -or
+                    @($row.flags | Where-Object {
+                        ($_ -isnot [int] -and $_ -isnot [long]) -or
+                        [long]$_ -ne 64
+                    }).
+                        Count -ne 0))) {
+            Throw-ValidationError $script:ExitRuntime "pseudo-reloc" (
+                "static report pseudo-reloc proof is not positive")
+        }
+    }
+    return [ordered]@{
+        Sha256 = $document.Sha256
+        Mode = $mode
+        Classifications = $classifications
+    }
+}
+
 function Write-ValidationReport {
     param(
         [Parameter(Mandatory = $true)][int] $ExitCode,
@@ -183,7 +511,7 @@ function Write-ValidationReport {
     if ($null -eq $script:SafeReportPath) {
         [Console]::Error.WriteLine(
             "Validation report destination was not safe to write")
-        return
+        return $false
     }
     $temporaryPath = $null
     try {
@@ -194,13 +522,21 @@ function Write-ValidationReport {
             ".tmp")
         [IO.File]::WriteAllText($temporaryPath, "$json`n", $script:Utf8NoBom)
         [IO.File]::Move($temporaryPath, $script:SafeReportPath, $true)
+        return $true
     } catch {
         [Console]::Error.WriteLine(
             "Could not write validation report '$Report': $($_.Exception.Message)")
+        return $false
     } finally {
         if ($null -ne $temporaryPath -and
             [IO.File]::Exists($temporaryPath)) {
-            [IO.File]::Delete($temporaryPath)
+            try {
+                [IO.File]::Delete($temporaryPath)
+            } catch {
+                [Console]::Error.WriteLine(
+                    "Could not remove temporary validation report: " +
+                    $_.Exception.Message)
+            }
         }
     }
 }
@@ -212,7 +548,7 @@ function Test-PathWithin {
     )
 
     $prefix = $Parent.TrimEnd("\") + "\"
-    return $Candidate -ieq $Parent.TrimEnd("\") -or
+    return $script:PathComparer.Equals($Candidate, $Parent.TrimEnd("\")) -or
         $Candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
 }
 
@@ -222,6 +558,10 @@ function Initialize-SafeReportPath {
         $reportPath -notmatch "^[A-Za-z]:\\") {
         Throw-ValidationError $script:ExitScanner "report" (
             "Report must be a local drive-qualified path")
+    }
+    if ($reportPath.Substring(3).Contains(":")) {
+        Throw-ValidationError $script:ExitScanner "report" (
+            "Report cannot address an alternate data stream")
     }
     if (Test-PathWithin "C:\msys64" $reportPath) {
         Throw-ValidationError $script:ExitScanner "report" (
@@ -239,14 +579,52 @@ function Initialize-SafeReportPath {
                 "Report must be outside ToolRoot")
         }
     }
-    foreach ($inputPath in @(
+    $protectedFiles = @(
         $Lock, $Provenance, $PayloadManifest, $AssemblyEvidence,
-        $RuntimeEvidence, $PSCommandPath)) {
-        if (-not [string]::IsNullOrWhiteSpace($inputPath) -and
-            $reportPath -ieq [IO.Path]::GetFullPath($inputPath)) {
-            Throw-ValidationError $script:ExitScanner "report" (
-                "Report cannot overwrite a validator input or executable")
+        $RuntimeEvidence, $StaticReport, $PSCommandPath,
+        (Join-Path (Split-Path -Parent $PSCommandPath) `
+            $script:ScannerRelativePath),
+        (Join-Path (Split-Path -Parent $PSCommandPath) `
+            "arm64-x64-payload-baseline.txt"))
+    foreach ($commandName in @("git", "pwsh")) {
+        $command = Get-Command $commandName -CommandType Application `
+            -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -ne $command) {
+            $protectedFiles += $command.Source
         }
+    }
+    $fsutil = Join-Path $env:SystemRoot "System32\fsutil.exe"
+    $protectedFiles += $fsutil
+    foreach ($inputPath in $protectedFiles) {
+        if (-not [string]::IsNullOrWhiteSpace($inputPath) -and
+            $script:PathComparer.Equals(
+                $reportPath, [IO.Path]::GetFullPath($inputPath))) {
+            Throw-ValidationError $script:ExitScanner "report" (
+                "Report cannot overwrite a validator input or dependency")
+        }
+    }
+    # The whole validator checkout is authoritative, not just the entry script,
+    # so no report may land anywhere inside it.
+    $checkoutRoot = [IO.Path]::GetDirectoryName(
+        [IO.Path]::GetFullPath($PSCommandPath))
+    $gitTop = @(& git -C $checkoutRoot rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $gitTop.Count -eq 1) {
+        $checkoutRoot = [IO.Path]::GetFullPath($gitTop[0].Trim())
+    }
+    $protectedDirectories = @($checkoutRoot)
+    foreach ($argument in @("--absolute-git-dir", "--git-common-dir")) {
+        $gitDirectory = @(& git -C $checkoutRoot rev-parse $argument 2>$null)
+        if ($LASTEXITCODE -eq 0 -and $gitDirectory.Count -eq 1) {
+            $protectedDirectories += [IO.Path]::GetFullPath(
+                $gitDirectory[0].Trim())
+        }
+    }
+    if (@($protectedDirectories | Where-Object {
+        -not [string]::IsNullOrEmpty($_) -and
+        (Test-PathWithin $_ $reportPath)
+    }).Count -ne 0) {
+        Throw-ValidationError $script:ExitScanner "report" (
+            "Report cannot be written inside the validator checkout")
     }
     $parent = [IO.Path]::GetDirectoryName($reportPath)
     if ([string]::IsNullOrEmpty($parent)) {
@@ -267,6 +645,25 @@ function Initialize-SafeReportPath {
             [IO.FileAttributes]::ReparsePoint) -ne 0)) {
         Throw-ValidationError $script:ExitScanner "report" (
             "Report destination is a reparse point")
+    }
+    if ([IO.File]::Exists($reportPath)) {
+        foreach ($name in @(Get-HardlinkNames $reportPath `
+            "Report destination")) {
+            if (@($protectedDirectories | Where-Object {
+                Test-PathWithin $_ $name
+            }).Count -ne 0 -or
+                @($protectedFiles | Where-Object {
+                    -not [string]::IsNullOrWhiteSpace($_) -and
+                        $script:PathComparer.Equals(
+                            $name, [IO.Path]::GetFullPath($_))
+                }).Count -ne 0 -or
+                (Test-PathWithin $rootFull $name) -or
+                (-not [string]::IsNullOrWhiteSpace($ToolRoot) -and
+                    (Test-PathWithin $toolFull $name))) {
+                Throw-ValidationError $script:ExitScanner "report" (
+                    "Report destination shares a protected file identity")
+            }
+        }
     }
     $script:SafeReportPath = $reportPath
 }
@@ -331,12 +728,40 @@ function Assert-ExactProperties {
         [int] $ExitCode = $script:ExitContract
     )
 
-    $actual = @($Object.PSObject.Properties.Name | Sort-Object)
-    $expected = @($Names | Sort-Object)
-    if (@(Compare-Object $expected $actual -SyncWindow 0 -CaseSensitive).
-        Count -ne 0) {
+    $actual = @($Object.PSObject.Properties.Name)
+    if ($actual.Count -ne $Names.Count -or
+        @($Names | Where-Object {
+            -not (Test-OrdinalStringInCollection $_ $actual)
+        }).Count -ne 0) {
         Throw-ValidationError $ExitCode "schema" (
             "$Context properties must be exactly: $($Names -join ', ')")
+    }
+}
+
+# Culture-sensitive string equality collapses 322 characters, only 43 of which
+# are category Format, so screen them by asking the invariant collator itself
+# whether a character compares equal to nothing. Applied at the single point
+# where JSON enters the validator; security-significant comparisons also use
+# ordinal equality.
+function Assert-ComparisonSafeString {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string] $Value,
+        [Parameter(Mandatory = $true)][string] $Context,
+        [Parameter(Mandatory = $true)][int] $ExitCode
+    )
+
+    foreach ($character in $Value.ToCharArray()) {
+        if ([int]$character -ge 0x20 -and [int]$character -le 0x7E) {
+            continue
+        }
+        if ($script:InvariantCompareInfo.Compare(
+                [string]$character,
+                "",
+                [Globalization.CompareOptions]::None) -eq 0) {
+            Throw-ValidationError $ExitCode "schema" (
+                ("$Context contains collation-ignorable character " +
+                 ("U+{0:X4}" -f [int]$character)))
+        }
     }
 }
 
@@ -352,6 +777,8 @@ function Assert-JsonPropertyNames {
         $names = [Collections.Generic.HashSet[string]]::new(
             [StringComparer]::OrdinalIgnoreCase)
         foreach ($property in $Element.EnumerateObject()) {
+            Assert-ComparisonSafeString $property.Name `
+                "$Context property name" $ExitCode
             if (-not $names.Add($property.Name)) {
                 Throw-ValidationError $ExitCode "schema" (
                     "$Context contains a duplicate or case-colliding JSON " +
@@ -366,6 +793,9 @@ function Assert-JsonPropertyNames {
             Assert-JsonPropertyNames $item "$Context[$index]" $ExitCode
             $index++
         }
+    } elseif ($Element.ValueKind -eq
+        [System.Text.Json.JsonValueKind]::String) {
+        Assert-ComparisonSafeString $Element.GetString() $Context $ExitCode
     }
 }
 
@@ -526,10 +956,10 @@ function Assert-NormalizedPath {
     if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value)) {
         Throw-ValidationError $ExitCode "path" "$Context must be a path"
     }
-    if ($AllowDot -and $Value -ceq ".") {
+    if ($AllowDot -and (Test-OrdinalStringEqual ($Value) ("."))) {
         return
     }
-    if ($Value -cne $Value.Normalize([Text.NormalizationForm]::FormC) -or
+    if ((-not (Test-OrdinalStringEqual ($Value) ($Value.Normalize([Text.NormalizationForm]::FormC)))) -or
         $Value.Contains("\") -or $Value.StartsWith("/") -or
         $Value.StartsWith("//") -or $Value -match "^[A-Za-z]:" -or
         $Value -match "^(?i)(\\\\[?.]\\|//[?.]/)" -or
@@ -539,7 +969,7 @@ function Assert-NormalizedPath {
             "$Context is not a normalized relative slash path: '$Value'")
     }
     foreach ($component in $Value.Split("/")) {
-        if ($component -in @("", ".", "..")) {
+        if (Test-OrdinalStringInCollection $component @("", ".", "..")) {
             Throw-ValidationError $ExitCode "path" (
                 "$Context contains traversal or an empty component: '$Value'")
         }
@@ -547,8 +977,16 @@ function Assert-NormalizedPath {
             Throw-ValidationError $ExitCode "path" (
                 "$Context contains wildcard characters: '$Value'")
         }
+        # Win32 strips trailing dots and spaces from the final component, so
+        # such a name would be enumerated verbatim but opened as a different
+        # file.
+        if ($component.EndsWith(".") -or
+            [char]::IsWhiteSpace($component[$component.Length - 1])) {
+            Throw-ValidationError $ExitCode "path" (
+                "$Context has a component ending in a dot or space: '$Value'")
+        }
     }
-    if ($Value -ieq "preview-evidence" -or
+    if ($script:PathComparer.Equals($Value, "preview-evidence") -or
         $Value.StartsWith(
             "preview-evidence/",
             [StringComparison]::OrdinalIgnoreCase)) {
@@ -621,6 +1059,10 @@ function Assert-LocalSafeRoot {
         Throw-ValidationError $ExitCode "path" (
             "$Context cannot be a UNC or device path")
     }
+    # Root arrives on the command line rather than through the JSON
+    # chokepoint, but it is joined into expected command vectors, so it must
+    # be screened for collation-ignorable characters too.
+    Assert-ComparisonSafeString $Path $Context $ExitCode
     try {
         $full = [IO.Path]::GetFullPath($Path).TrimEnd(
             [IO.Path]::DirectorySeparatorChar,
@@ -633,7 +1075,7 @@ function Assert-LocalSafeRoot {
         Throw-ValidationError $ExitCode "path" (
             "$Context must be a drive-qualified local Windows path")
     }
-    if ($full -ieq "C:\msys64" -or
+    if ($script:PathComparer.Equals($full, "C:\msys64") -or
         $full.StartsWith(
             "C:\msys64\",
             [StringComparison]::OrdinalIgnoreCase)) {
@@ -665,14 +1107,247 @@ function Test-PatternMatch {
     )
 
     foreach ($pattern in $Patterns) {
-        $wildcard = [Management.Automation.WildcardPattern]::new(
-            $pattern,
-            [Management.Automation.WildcardOptions]::CultureInvariant)
-        if ($wildcard.IsMatch($Path)) {
+        # WildcardPattern's CultureInvariant option selects a culture; it does
+        # not make matching ordinal. A pattern with no wildcard short-circuits
+        # to a linguistic comparison, which would collapse collation-ignorable
+        # characters and let an include list admit a member it never names.
+        if (-not [Management.Automation.WildcardPattern]::
+                ContainsWildcardCharacters($pattern)) {
+            if ([string]::Equals(
+                    $Path, $pattern, [StringComparison]::Ordinal)) {
+                return $true
+            }
+            continue
+        }
+        $expression = "^"
+        foreach ($piece in $pattern.ToCharArray()) {
+            $expression += switch ($piece) {
+                "*" { "[\s\S]*" }
+                "?" { "[\s\S]" }
+                default { [regex]::Escape([string]$piece) }
+            }
+        }
+        $expression += "$"
+        if ([regex]::IsMatch(
+                $Path,
+                $expression,
+                [Text.RegularExpressions.RegexOptions]::CultureInvariant)) {
             return $true
         }
     }
     return $false
+}
+
+function Assert-AllowlistedRepository {
+    param(
+        [Parameter(Mandatory = $true)] $Repository,
+        [Parameter(Mandatory = $true)][string] $Context
+    )
+
+    Assert-NoPlaceholder $Repository $Context
+    if ($Repository -cnotmatch "^crutkas/[A-Za-z0-9_.-]+$" -and
+        (-not (Test-OrdinalStringEqual ($Repository) ("git-for-windows/git"))) -and
+        (-not (Test-OrdinalStringEqual ($Repository) ("ip7z/7zip")))) {
+        Throw-ValidationError $script:ExitContract "provenance" (
+            "$Context is not on the immutable input allowlist")
+    }
+}
+
+function Get-AuthoritativeCheckout {
+    param([int] $ExitCode = $script:ExitContract)
+
+    if ($null -ne $script:AuthoritativeCheckout) {
+        return $script:AuthoritativeCheckout
+    }
+    $start = Split-Path -Parent $PSCommandPath
+    $root = @(& git -C $start rev-parse --show-toplevel 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $root.Count -ne 1) {
+        Throw-ValidationError $ExitCode "validator" (
+            "could not identify the authoritative build-extra checkout")
+    }
+    $repositoryRoot = [IO.Path]::GetFullPath($root[0].Trim())
+    $branch = @(& git -C $repositoryRoot symbolic-ref --quiet --short HEAD `
+        2>$null)
+    if ($LASTEXITCODE -ne 0 -or $branch.Count -ne 1 -or
+        $branch[0].Trim() -cnotmatch "^crutkas(?:[-/].+)?$") {
+        Throw-ValidationError $ExitCode "validator" (
+            "validator checkout must use an attached crutkas branch")
+    }
+    $branchName = $branch[0].Trim()
+    $originUrl = @(& git -C $repositoryRoot remote get-url origin 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $originUrl.Count -ne 1 -or
+        $originUrl[0].Trim() -cnotmatch
+            "^(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)crutkas/build-extra(?:\.git)?$") {
+        Throw-ValidationError $ExitCode "validator" (
+            "validator checkout origin must be crutkas/build-extra")
+    }
+    $head = @(& git -C $repositoryRoot rev-parse --verify "HEAD^{commit}" `
+        2>$null)
+    $remoteRef = "refs/remotes/origin/$branchName"
+    $remote = @(& git -C $repositoryRoot show-ref --verify --hash `
+        $remoteRef 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $head.Count -ne 1 -or
+        $remote.Count -ne 1) {
+        Throw-ValidationError $ExitCode "validator" (
+            "validator checkout lacks its matching origin/crutkas ref")
+    }
+    & git -C $repositoryRoot merge-base --is-ancestor `
+        $head[0].Trim() $remoteRef 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Throw-ValidationError $ExitCode "validator" (
+            "validator checkout HEAD is not reachable from its matching origin/crutkas ref")
+    }
+    $script:AuthoritativeCheckout = [ordered]@{
+        Root = $repositoryRoot
+        Branch = $branchName
+        Head = $head[0].Trim()
+        RemoteRef = $remoteRef
+    }
+    return $script:AuthoritativeCheckout
+}
+
+function Assert-AuthoritativeBuildCommit {
+    param(
+        [Parameter(Mandatory = $true)][string] $Commit,
+        [Parameter(Mandatory = $true)][string] $Context,
+        [int] $ExitCode = $script:ExitContract
+    )
+
+    $checkout = Get-AuthoritativeCheckout $ExitCode
+    & git -C $checkout.Root cat-file -e "$Commit^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Throw-ValidationError $ExitCode "provenance" (
+            "$Context does not resolve to a local commit object")
+    }
+    & git -C $checkout.Root merge-base --is-ancestor `
+        $Commit $checkout.RemoteRef 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Throw-ValidationError $ExitCode "provenance" (
+            "$Context is not reachable from the checked-out authoritative origin/crutkas ref")
+    }
+}
+
+# A base bundle can be a tree this repository derives rather than an official
+# release asset. It is made immutable by an exact pre-overlay manifest whose
+# bytes the canonical lock binds, so no release/asset/package may be invented.
+function Read-BaseTreeManifest {
+    param(
+        [Parameter(Mandatory = $true)][string] $RootPath,
+        [Parameter(Mandatory = $true)] $Manifest,
+        [Parameter(Mandatory = $true)][string] $Context
+    )
+
+    $manifestPath = Join-Path $RootPath ($Manifest.path.Replace("/", "\"))
+    if (-not [IO.File]::Exists($manifestPath) -or
+        (([IO.FileInfo]::new($manifestPath).Attributes -band
+            [IO.FileAttributes]::ReparsePoint) -ne 0)) {
+        Throw-ValidationError $script:ExitContract "digest" (
+            "$Context base tree manifest is missing")
+    }
+    $document = Read-JsonDocument $manifestPath "base tree manifest"
+    if ((-not (Test-OrdinalStringEqual ($document.Sha256) ($Manifest.sha256)))) {
+        Throw-ValidationError $script:ExitContract "digest" (
+            "$Context base tree manifest does not match its exact file bytes")
+    }
+    if ($document.Bytes.Length -lt 2 -or $document.Bytes[0] -eq 0xef -or
+        $document.Text.Contains("`r") -or
+        -not $document.Text.EndsWith("`n", [StringComparison]::Ordinal)) {
+        Throw-ValidationError $script:ExitContract "serialization" (
+            "base tree manifest must be UTF-8 without BOM, LF-only, with a final LF")
+    }
+    $object = $document.Object
+    Assert-ExactProperties $object @("schemaVersion", "entries") `
+        "base tree manifest"
+    Assert-PropertyOrder $object @("schemaVersion", "entries") `
+        "base tree manifest"
+    Assert-SchemaVersion $object "base tree manifest"
+    Assert-JsonArray $object.entries "base tree manifest.entries"
+    $entries = @($object.entries)
+    if ($entries.Count -eq 0) {
+        Throw-ValidationError $script:ExitContract "archive" (
+            "base tree manifest cannot be empty")
+    }
+    Assert-SortedUnique $entries { param($item) [string]$item.path } `
+        "base tree manifest entries"
+    foreach ($entry in $entries) {
+        Assert-ExactProperties $entry @(
+            "path", "type", "bytes", "sha256", "linkTarget") `
+            "base tree manifest entry"
+        Assert-NormalizedPath $entry.path "base tree manifest entry path"
+        if ((-not (Test-OrdinalStringInCollection ($entry.type) (@(
+            "file", "directory", "symlink", "hardlink"))))) {
+            Throw-ValidationError $script:ExitContract "archive" (
+                "base tree manifest entry '$($entry.path)' has an invalid type")
+        }
+        Assert-JsonInteger $entry.bytes `
+            "base tree manifest entry '$($entry.path)'.bytes" 0
+        if ((Test-OrdinalStringEqual ($entry.type) ("directory"))) {
+            if ([long]$entry.bytes -ne 0 -or $null -ne $entry.sha256 -or
+                $null -ne $entry.linkTarget) {
+                Throw-ValidationError $script:ExitContract "archive" (
+                    "base tree manifest directory '$($entry.path)' must have bytes=0, sha256=null, linkTarget=null")
+            }
+        } else {
+            Assert-LowerSha256 $entry.sha256 `
+                "base tree manifest entry '$($entry.path)'.sha256"
+            if ((Test-OrdinalStringEqual ($entry.type) ("file"))) {
+                if ($null -ne $entry.linkTarget) {
+                    Throw-ValidationError $script:ExitContract "archive" (
+                        "base tree manifest file '$($entry.path)' must have linkTarget=null")
+                }
+            } else {
+                Assert-NormalizedPath $entry.linkTarget `
+                    "base tree manifest entry '$($entry.path)'.linkTarget"
+            }
+        }
+    }
+    return [ordered]@{
+        Path = $Manifest.path
+        Sha256 = $document.Sha256
+        Entries = $entries
+    }
+}
+
+function Assert-DerivedTreeIdentity {
+    param(
+        [Parameter(Mandatory = $true)] $Resolution,
+        [Parameter(Mandatory = $true)][string] $RootPath,
+        [Parameter(Mandatory = $true)][string] $Context
+    )
+
+    Assert-ExactProperties $Resolution @(
+        "method", "build", "sdkSource", "manifest") "$Context.resolution"
+    Assert-PropertyOrder $Resolution @(
+        "method", "build", "sdkSource", "manifest") "$Context.resolution"
+    Assert-ExactProperties $Resolution.build @("repository", "commit") `
+        "$Context.resolution.build"
+    if ((-not (Test-OrdinalStringEqual ($Resolution.build.repository) ("crutkas/build-extra")))) {
+        Throw-ValidationError $script:ExitContract "provenance" (
+            "$Context.resolution.build.repository must be crutkas/build-extra")
+    }
+    Assert-LowerCommit $Resolution.build.commit `
+        "$Context.resolution.build.commit"
+    Assert-AuthoritativeBuildCommit $Resolution.build.commit `
+        "$Context.resolution.build.commit"
+    if ($null -ne $Resolution.sdkSource) {
+        Assert-ExactProperties $Resolution.sdkSource @(
+            "repository", "commit") "$Context.resolution.sdkSource"
+        Assert-AllowlistedRepository $Resolution.sdkSource.repository `
+            "$Context.resolution.sdkSource.repository"
+        Assert-LowerCommit $Resolution.sdkSource.commit `
+            "$Context.resolution.sdkSource.commit"
+    }
+    Assert-ExactProperties $Resolution.manifest @("path", "sha256") `
+        "$Context.resolution.manifest"
+    Assert-EvidenceRelativePath $Resolution.manifest.path `
+        "$Context.resolution.manifest.path"
+    if ((-not (Test-OrdinalStringEqual ($Resolution.manifest.path) ("preview-evidence/base-tree-manifest.v1.json")))) {
+        Throw-ValidationError $script:ExitContract "path" (
+            "$Context.resolution.manifest.path must be preview-evidence/base-tree-manifest.v1.json")
+    }
+    Assert-LowerSha256 $Resolution.manifest.sha256 `
+        "$Context.resolution.manifest.sha256"
+    return Read-BaseTreeManifest $RootPath $Resolution.manifest $Context
 }
 
 function Assert-ForkIdentity {
@@ -687,8 +1362,8 @@ function Assert-ForkIdentity {
         "$Context.asset"
     Assert-NoPlaceholder $Release.repository "$Context.release.repository"
     if ($Release.repository -cnotmatch "^crutkas/[A-Za-z0-9_.-]+$" -and
-        $Release.repository -cne "git-for-windows/git" -and
-        $Release.repository -cne "ip7z/7zip") {
+        (-not (Test-OrdinalStringEqual ($Release.repository) ("git-for-windows/git"))) -and
+        (-not (Test-OrdinalStringEqual ($Release.repository) ("ip7z/7zip")))) {
         Throw-ValidationError $script:ExitContract "provenance" (
             "$Context.release.repository is not on the immutable input allowlist")
     }
@@ -706,7 +1381,7 @@ function Assert-ForkIdentity {
     [Uri] $uri = $null
     if ($Asset.url -isnot [string] -or
         -not [Uri]::TryCreate($Asset.url, [UriKind]::Absolute, [ref]$uri) -or
-        $uri.Scheme -cne "https") {
+        (-not (Test-OrdinalStringEqual ($uri.Scheme) ("https")))) {
         Throw-ValidationError $script:ExitContract "provenance" (
             "$Context.asset.url must be an immutable HTTPS URL")
     }
@@ -715,29 +1390,33 @@ function Assert-ForkIdentity {
         Throw-ValidationError $script:ExitContract "provenance" (
             "$Context.asset.url cannot contain a query or fragment")
     }
-    if ($Resolution.method -ceq "github-release") {
+    if ((Test-OrdinalStringEqual ($Resolution.method) ("github-release"))) {
         Assert-ExactProperties $Release @(
             "repository", "tag", "targetCommit") "$Context.release"
         Assert-NoPlaceholder $Release.tag "$Context.release.tag"
         $expectedPath = (
             "/$($Release.repository)/releases/download/" +
             "$($Release.tag)/$($Asset.name)")
-        if ($uri.Host -cne "github.com" -or
-            [Uri]::UnescapeDataString($uri.AbsolutePath) -cne $expectedPath) {
+        if ((-not (Test-OrdinalStringEqual ($uri.Host) ("github.com"))) -or
+            (-not (Test-OrdinalStringEqual ([Uri]::UnescapeDataString($uri.AbsolutePath)) ($expectedPath)))) {
             Throw-ValidationError $script:ExitContract "provenance" (
                 "$Context.asset.url does not bind its repository, tag, and asset name")
         }
-    } elseif ($Resolution.method -ceq "github-raw-commit") {
+    } elseif ((Test-OrdinalStringEqual ($Resolution.method) ("github-raw-commit"))) {
         Assert-ExactProperties $Release @(
             "repository", "targetCommit", "sourcePath") "$Context.release"
         Assert-NormalizedPath $Release.sourcePath "$Context.release.sourcePath"
         $expectedPath = (
             "/$($Release.repository)/$($Release.targetCommit)/" +
             "$($Release.sourcePath)")
-        if ($uri.Host -cne "raw.githubusercontent.com" -or
-            [Uri]::UnescapeDataString($uri.AbsolutePath) -cne $expectedPath) {
+        if ((-not (Test-OrdinalStringEqual ($uri.Host) ("raw.githubusercontent.com"))) -or
+            (-not (Test-OrdinalStringEqual ([Uri]::UnescapeDataString($uri.AbsolutePath)) ($expectedPath)))) {
             Throw-ValidationError $script:ExitContract "provenance" (
                 "$Context.asset.url does not bind its repository, commit, and sourcePath")
+        }
+        if ((Test-OrdinalStringEqual ($Release.repository) ("crutkas/build-extra"))) {
+            Assert-AuthoritativeBuildCommit $Release.targetCommit `
+                "$Context.release.targetCommit"
         }
     } else {
         Throw-ValidationError $script:ExitContract "provenance" (
@@ -748,15 +1427,19 @@ function Assert-ForkIdentity {
 function Test-IdentityEqual {
     param($Left, $Right)
 
+    if ($null -eq $Left.asset -or $null -eq $Right.asset) {
+        return (
+            $null -eq $Left.asset -and $null -eq $Right.asset -and
+            (Test-OrdinalStringEqual (($Left.release | ConvertTo-Json -Compress -Depth 20)) (($Right.release | ConvertTo-Json -Compress -Depth 20))) -and
+            (Test-OrdinalStringEqual (($Left.package | ConvertTo-Json -Compress -Depth 20)) (($Right.package | ConvertTo-Json -Compress -Depth 20))))
+    }
     return (
-        ($Left.release | ConvertTo-Json -Compress -Depth 20) -ceq
-            ($Right.release | ConvertTo-Json -Compress -Depth 20) -and
-        $Left.asset.url -ceq $Right.asset.url -and
-        $Left.asset.name -ceq $Right.asset.name -and
+        (Test-OrdinalStringEqual (($Left.release | ConvertTo-Json -Compress -Depth 20)) (($Right.release | ConvertTo-Json -Compress -Depth 20))) -and
+        (Test-OrdinalStringEqual ($Left.asset.url) ($Right.asset.url)) -and
+        (Test-OrdinalStringEqual ($Left.asset.name) ($Right.asset.name)) -and
         [long]$Left.asset.bytes -eq [long]$Right.asset.bytes -and
-        $Left.asset.sha256 -ceq $Right.asset.sha256 -and
-        ($Left.package | ConvertTo-Json -Compress -Depth 20) -ceq
-            ($Right.package | ConvertTo-Json -Compress -Depth 20))
+        (Test-OrdinalStringEqual ($Left.asset.sha256) ($Right.asset.sha256)) -and
+        (Test-OrdinalStringEqual (($Left.package | ConvertTo-Json -Compress -Depth 20)) (($Right.package | ConvertTo-Json -Compress -Depth 20))))
 }
 
 function Read-LockContract {
@@ -782,7 +1465,8 @@ function Read-LockContract {
     }
     $expectedLockPath = Join-Path $RootPath `
         "preview-evidence\bundle-lock.v1.json"
-    if ($LockDocument.Path -ine $expectedLockPath) {
+    if (-not $script:PathComparer.Equals(
+            $LockDocument.Path, $expectedLockPath)) {
         Throw-ValidationError $script:ExitContract "path" (
             "canonical bundle lock must be preview-evidence/bundle-lock.v1.json")
     }
@@ -792,7 +1476,7 @@ function Read-LockContract {
         "lock.sourceLock"
     Assert-EvidenceRelativePath $LockObject.sourceLock.path `
         "lock.sourceLock.path"
-    if ($LockObject.sourceLock.path -cne "preview-evidence/source-lock.json") {
+    if ((-not (Test-OrdinalStringEqual ($LockObject.sourceLock.path) ("preview-evidence/source-lock.json")))) {
         Throw-ValidationError $script:ExitContract "path" (
             "lock.sourceLock.path must be preview-evidence/source-lock.json")
     }
@@ -803,8 +1487,7 @@ function Read-LockContract {
     if (-not [IO.File]::Exists($sourceLockPath) -or
         (([IO.FileInfo]::new($sourceLockPath).Attributes -band
             [IO.FileAttributes]::ReparsePoint) -ne 0) -or
-        (Get-FileSha256 $sourceLockPath) -cne
-            $LockObject.sourceLock.sha256) {
+        (-not (Test-OrdinalStringEqual ((Get-FileSha256 $sourceLockPath)) ($LockObject.sourceLock.sha256)))) {
         Throw-ValidationError $script:ExitContract "digest" (
             "canonical bundle lock sourceLock does not match its exact file bytes")
     }
@@ -836,7 +1519,10 @@ function Read-LockContract {
     $urls = [Collections.Generic.HashSet[string]]::new($script:PathComparer)
     $names = [Collections.Generic.HashSet[string]]::new($script:PathComparer)
     $hashes = [Collections.Generic.HashSet[string]]::new($script:PathComparer)
-    $inputMap = @{}
+    $inputMap = [Collections.Generic.Dictionary[string, object]]::new(
+        [StringComparer]::Ordinal)
+    $baseTrees = [Collections.Generic.Dictionary[string, object]]::new(
+        [StringComparer]::Ordinal)
     $resolved = @()
     $unresolved = @()
     Assert-SortedUnique $inputs { param($item) [string]$item.id } `
@@ -855,12 +1541,12 @@ function Read-LockContract {
             Throw-ValidationError $script:ExitContract "collision" (
                 "lock input id is invalid, duplicate, or case-colliding: '$($input.id)'")
         }
-        if ($input.role -cnotin @(
-            "base-bundle", "payload", "validation-tool")) {
+        if ((-not (Test-OrdinalStringInCollection ($input.role) (@(
+            "base-bundle", "payload", "validation-tool"))))) {
             Throw-ValidationError $script:ExitContract "schema" (
                 "lock input '$($input.id)' has invalid role '$($input.role)'")
         }
-        if ($input.status -ceq "unresolved") {
+        if ((Test-OrdinalStringEqual ($input.status) ("unresolved"))) {
             foreach ($field in @(
                 "resolution", "release", "asset", "package", "overlay")) {
                 if ($null -ne $input.$field) {
@@ -872,33 +1558,53 @@ function Read-LockContract {
             $inputMap[$input.id] = $input
             continue
         }
-        if ($input.status -cne "resolved") {
+        if ((-not (Test-OrdinalStringEqual ($input.status) ("resolved")))) {
             Throw-ValidationError $script:ExitContract "schema" (
                 "lock input '$($input.id)' status must be resolved or unresolved")
         }
-        foreach ($field in @(
-            "resolution", "release", "asset", "overlay")) {
+        foreach ($field in @("resolution", "overlay")) {
             if ($null -eq $input.$field) {
                 Throw-ValidationError $script:ExitContract "provenance" (
                     "resolved input '$($input.id)' must define $field")
             }
         }
-        Assert-ExactProperties $input.resolution @("method") `
-            "lock input '$($input.id)'.resolution"
-        if ($input.resolution.method -cnotin @(
-            "github-release", "github-raw-commit")) {
-            Throw-ValidationError $script:ExitContract "provenance" (
-                "resolved input '$($input.id)' has an unsupported resolution")
-        }
-        Assert-ForkIdentity $input.resolution $input.release $input.asset `
-            "lock input '$($input.id)'"
-        foreach ($set in @(
-            @($urls, $input.asset.url, "URL"),
-            @($names, $input.asset.name, "asset name"),
-            @($hashes, $input.asset.sha256, "asset hash"))) {
-            if (-not $set[0].Add([string]$set[1])) {
-                Throw-ValidationError $script:ExitContract "collision" (
-                    "lock contains a duplicate or case-colliding $($set[2]): '$($set[1])'")
+        if ((Test-OrdinalStringEqual ($input.resolution.method) ("derived-tree"))) {
+            if ((-not (Test-OrdinalStringEqual ($input.role) ("base-bundle")))) {
+                Throw-ValidationError $script:ExitContract "provenance" (
+                    "resolved input '$($input.id)' may only derive a tree for a base-bundle role")
+            }
+            foreach ($field in @("release", "asset", "package")) {
+                if ($null -ne $input.$field) {
+                    Throw-ValidationError $script:ExitContract "provenance" (
+                        "derived-tree input '$($input.id)' must set $field to null")
+                }
+            }
+            $baseTrees[$input.id] = Assert-DerivedTreeIdentity `
+                $input.resolution $RootPath "lock input '$($input.id)'"
+        } else {
+            foreach ($field in @("release", "asset")) {
+                if ($null -eq $input.$field) {
+                    Throw-ValidationError $script:ExitContract "provenance" (
+                        "resolved input '$($input.id)' must define $field")
+                }
+            }
+            Assert-ExactProperties $input.resolution @("method") `
+                "lock input '$($input.id)'.resolution"
+            if ((-not (Test-OrdinalStringInCollection ($input.resolution.method) (@(
+                "github-release", "github-raw-commit"))))) {
+                Throw-ValidationError $script:ExitContract "provenance" (
+                    "resolved input '$($input.id)' has an unsupported resolution")
+            }
+            Assert-ForkIdentity $input.resolution $input.release $input.asset `
+                "lock input '$($input.id)'"
+            foreach ($set in @(
+                @($urls, $input.asset.url, "URL"),
+                @($names, $input.asset.name, "asset name"),
+                @($hashes, $input.asset.sha256, "asset hash"))) {
+                if (-not $set[0].Add([string]$set[1])) {
+                    Throw-ValidationError $script:ExitContract "collision" (
+                        "lock contains a duplicate or case-colliding $($set[2]): '$($set[1])'")
+                }
             }
         }
 
@@ -910,8 +1616,8 @@ function Read-LockContract {
                 "lock input '$($input.id)'.package.name"
             Assert-NoPlaceholder $input.package.version `
                 "lock input '$($input.id)'.package.version"
-            if ($input.package.personality -cnotin @(
-                "msys", "mingw", "managed", "mixed", "tool")) {
+            if ((-not (Test-OrdinalStringInCollection ($input.package.personality) (@(
+                "msys", "mingw", "managed", "mixed", "tool"))))) {
                 Throw-ValidationError $script:ExitContract "schema" (
                     "lock input '$($input.id)' has invalid package personality")
             }
@@ -946,7 +1652,7 @@ function Read-LockContract {
             "lock input '$($input.id)'.overlay.exclude"
         Assert-JsonArray $input.overlay.mappings `
             "lock input '$($input.id)'.overlay.mappings"
-        if ($input.role -ceq "validation-tool") {
+        if ((Test-OrdinalStringEqual ($input.role) ("validation-tool"))) {
             if ($input.overlay.enabled -or $null -ne $input.overlay.destination -or
                 $include.Count -ne 0 -or $exclude.Count -ne 0 -or
                 $mappings.Count -ne 0) {
@@ -962,6 +1668,18 @@ function Read-LockContract {
             }
             Assert-NormalizedPath $input.overlay.destination `
                 "lock input '$($input.id)'.overlay.destination" -AllowDot
+            if ((Test-OrdinalStringEqual ($input.resolution.method) ("derived-tree"))) {
+                if ((-not (Test-OrdinalStringEqual ($input.overlay.destination) (".")))) {
+                    Throw-ValidationError $script:ExitContract "overlay" (
+                        "derived-tree input '$($input.id)' must overlay the destination root")
+                }
+                foreach ($mapping in $mappings) {
+                    if ((-not (Test-OrdinalStringEqual ($mapping.sourceMember) ($mapping.destinationPath)))) {
+                        Throw-ValidationError $script:ExitContract "overlay" (
+                            "derived-tree input '$($input.id)' must use identity mappings")
+                    }
+                }
+            }
             foreach ($list in @(
                 @($include, "include"),
                 @($exclude, "exclude"))) {
@@ -986,8 +1704,8 @@ function Read-LockContract {
                     Assert-NormalizedPath $mapping.destinationPath `
                         "overlay mapping destinationPath"
                     $destination = $input.overlay.destination
-                    if ($destination -cne "." -and
-                        $mapping.destinationPath -cne $destination -and
+                    if ((-not (Test-OrdinalStringEqual ($destination) ("."))) -and
+                        (-not (Test-OrdinalStringEqual ($mapping.destinationPath) ($destination))) -and
                         -not $mapping.destinationPath.StartsWith(
                             "$destination/",
                             [StringComparison]::Ordinal)) {
@@ -1010,6 +1728,7 @@ function Read-LockContract {
     return [ordered]@{
         Inputs = $inputs
         InputMap = $inputMap
+        BaseTrees = $baseTrees
         Resolved = $resolved
         Unresolved = $unresolved
         SourceDateEpoch = [long]$LockObject.sourceDateEpoch
@@ -1029,7 +1748,7 @@ function Assert-ExternalObservation {
         "after", "commands") "assembly evidence.externalObservation" $ExitCode
     if ($Observation.authoritative -ne $false -or
         $Observation.usedAsInput -ne $false -or
-        $Observation.rootPath -cne "C:\msys64") {
+        (-not (Test-OrdinalStringEqual ($Observation.rootPath) ("C:\msys64")))) {
         Throw-ValidationError $ExitCode "provenance" (
             "external observation must be non-authoritative and identify C:\msys64")
     }
@@ -1060,26 +1779,30 @@ function Assert-ExternalObservation {
         "assembly evidence.externalObservation.commands" $ExitCode
     if ([long]$Observation.before.log.bytes -ne
             [long]$Observation.after.log.bytes -or
-        $Observation.before.log.sha256 -cne
-            $Observation.after.log.sha256 -or
+        (-not (Test-OrdinalStringEqual ($Observation.before.log.sha256) ($Observation.after.log.sha256))) -or
         [long]$Observation.before.database.files -ne
             [long]$Observation.after.database.files -or
         [long]$Observation.before.database.bytes -ne
             [long]$Observation.after.database.bytes -or
-        $Observation.before.database.canonicalManifestSha256 -cne
-            $Observation.after.database.canonicalManifestSha256) {
+        (-not (Test-OrdinalStringEqual ($Observation.before.database.canonicalManifestSha256) ($Observation.after.database.canonicalManifestSha256)))) {
         Throw-ValidationError $ExitCode "provenance" (
             "external observation before/after snapshots differ")
     }
-    foreach ($command in @($Observation.commands)) {
-        if ($command -isnot [string]) {
+    # The shared root may only be described by this exact ordered, unique
+    # four-operation read-only sequence.
+    $commands = @($Observation.commands)
+    if ($commands.Count -ne $script:ReadOnlyObservationOperations.Count) {
+        Throw-ValidationError $ExitCode "mutation-risk" (
+            "external observation must record exactly the four read-only operations")
+    }
+    for ($index = 0; $index -lt $commands.Count; $index++) {
+        if ($commands[$index] -isnot [string]) {
             Throw-ValidationError $ExitCode "schema" (
                 "external observation commands must be strings")
         }
-        if ($command -match
-            "(?i)(^|[\\/\s`"''])pacman(?:\.exe)?(?=$|[\s`"''])") {
+        if ((-not (Test-OrdinalStringEqual ($commands[$index]) ($script:ReadOnlyObservationOperations[$index])))) {
             Throw-ValidationError $ExitCode "mutation-risk" (
-                "external observation records a forbidden pacman command: '$command'")
+                "external observation records an operation outside the read-only set: '$($commands[$index])'")
         }
     }
 }
@@ -1097,7 +1820,7 @@ function Read-ProvenanceContract {
         "replacements", "finalMembers", "pseudoReloc") "provenance"
     Assert-SchemaVersion $ProvenanceObject "provenance"
     Assert-LowerSha256 $ProvenanceObject.lockSha256 "provenance.lockSha256"
-    if ($ProvenanceObject.lockSha256 -cne $LockSha256) {
+    if ((-not (Test-OrdinalStringEqual ($ProvenanceObject.lockSha256) ($LockSha256)))) {
         Throw-ValidationError $script:ExitContract "digest" (
             "provenance lockSha256 does not match the lock")
     }
@@ -1107,8 +1830,9 @@ function Read-ProvenanceContract {
         "provenance.nativeShellClosure"
     if ([long]$ProvenanceObject.sourceDateEpoch -ne
             $LockContext.SourceDateEpoch -or
-        (@($ProvenanceObject.nativeShellClosure) -join "`0") -cne
-            (@($LockContext.NativeShellClosure) -join "`0")) {
+        -not (Test-OrdinalStringSequenceEqual `
+            @($ProvenanceObject.nativeShellClosure) `
+            @($LockContext.NativeShellClosure))) {
         Throw-ValidationError $script:ExitContract "provenance" (
             "provenance must preserve sourceDateEpoch and nativeShellClosure from the lock")
     }
@@ -1128,8 +1852,12 @@ function Read-ProvenanceContract {
         Throw-ValidationError $script:ExitContract "archive" (
             "provenance must contain every resolved lock input and no others")
     }
-    $archiveByInput = @{}
-    $selectedByDestination = @{}
+    $archiveByInput =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::Ordinal)
+    $selectedByDestination =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
     $provenanceInputIds = @()
     for ($index = 0; $index -lt $provenanceInputs.Count; $index++) {
         $entry = $provenanceInputs[$index]
@@ -1137,7 +1865,7 @@ function Read-ProvenanceContract {
             "id", "release", "asset", "package", "archiveMembers") `
             "provenance.inputs[$index]"
         $provenanceInputIds += $entry.id
-        if ($entry.id -cne $resolvedIds[$index] -or
+        if ((-not (Test-OrdinalStringEqual ($entry.id) ($resolvedIds[$index]))) -or
             -not $LockContext.InputMap.ContainsKey($entry.id)) {
             Throw-ValidationError $script:ExitContract "provenance" (
                 "provenance inputs must follow resolved lock input order")
@@ -1156,9 +1884,31 @@ function Read-ProvenanceContract {
         }
         Assert-SortedUnique $members { param($item) [string]$item.sourceMember } `
             "provenance input '$($entry.id)' archiveMembers"
-        $memberMap = @{}
-        $mappingBySource = @{}
-        if ($lockInput.role -cne "validation-tool") {
+        $baseTree = $LockContext.BaseTrees[$entry.id]
+        if ($null -ne $baseTree) {
+            if ($members.Count -ne $baseTree.Entries.Count) {
+                Throw-ValidationError $script:ExitContract "archive" (
+                    "provenance input '$($entry.id)' does not cover its base tree manifest exactly")
+            }
+            for ($position = 0; $position -lt $members.Count; $position++) {
+                $expectedBase = $baseTree.Entries[$position]
+                $actualBase = $members[$position]
+                if ((-not (Test-OrdinalStringEqual ($actualBase.sourceMember) ($expectedBase.path))) -or
+                    (-not (Test-OrdinalStringEqual ($actualBase.type) ($expectedBase.type))) -or
+                    [long]$actualBase.bytes -ne [long]$expectedBase.bytes -or
+                    (-not (Test-OrdinalStringEqual ($actualBase.sha256) ($expectedBase.sha256))) -or
+                    (-not (Test-OrdinalStringEqual ($actualBase.linkTarget) ($expectedBase.linkTarget)))) {
+                    Throw-ValidationError $script:ExitContract "archive" (
+                        "provenance base member '$($actualBase.sourceMember)' does not match the base tree manifest")
+                }
+            }
+        }
+        $memberMap = [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+        $mappingBySource =
+            [Collections.Generic.Dictionary[string, object]]::new(
+                [StringComparer]::OrdinalIgnoreCase)
+        if ((-not (Test-OrdinalStringEqual ($lockInput.role) ("validation-tool")))) {
             foreach ($mapping in @($lockInput.overlay.mappings)) {
                 $mappingBySource[$mapping.sourceMember.ToLowerInvariant()] =
                     $mapping.destinationPath
@@ -1171,13 +1921,13 @@ function Read-ProvenanceContract {
                 "archive member '$($entry.id)'"
             Assert-NormalizedPath $member.sourceMember `
                 "archive member '$($entry.id)'.sourceMember"
-            if ($member.type -cnotin @(
-                "file", "directory", "symlink", "hardlink") -or
+            if ((-not (Test-OrdinalStringInCollection ($member.type) (@(
+                "file", "directory", "symlink", "hardlink")))) -or
                 $member.selected -isnot [bool]) {
                 Throw-ValidationError $script:ExitContract "archive" (
                     "archive member '$($member.sourceMember)' has invalid type/selected")
             }
-            if ($member.type -ceq "file") {
+            if ((Test-OrdinalStringEqual ($member.type) ("file"))) {
                 Assert-JsonInteger $member.bytes `
                     "archive member '$($member.sourceMember)'.bytes" 0
                 Assert-LowerSha256 $member.sha256 `
@@ -1186,7 +1936,7 @@ function Read-ProvenanceContract {
                     Throw-ValidationError $script:ExitContract "archive" (
                         "archive file '$($member.sourceMember)' must have linkTarget=null")
                 }
-            } elseif ($member.type -ceq "directory") {
+            } elseif ((Test-OrdinalStringEqual ($member.type) ("directory"))) {
                 Assert-JsonInteger $member.bytes `
                     "archive directory '$($member.sourceMember)'.bytes" 0
                 if ([long]$member.bytes -ne 0 -or $null -ne $member.sha256) {
@@ -1208,7 +1958,7 @@ function Read-ProvenanceContract {
 
             $expectedSelected = $false
             $expectedDestination = $null
-            if ($lockInput.role -cne "validation-tool") {
+            if ((-not (Test-OrdinalStringEqual ($lockInput.role) ("validation-tool")))) {
                 $expectedSelected = (
                     (Test-PatternMatch $member.sourceMember @($lockInput.overlay.include)) -and
                     -not (Test-PatternMatch $member.sourceMember @($lockInput.overlay.exclude)))
@@ -1217,7 +1967,7 @@ function Read-ProvenanceContract {
                     $expectedDestination = if (
                         $mappingBySource.ContainsKey($mappingKey)) {
                         $mappingBySource[$mappingKey]
-                    } elseif ($lockInput.overlay.destination -ceq ".") {
+                    } elseif ((Test-OrdinalStringEqual ($lockInput.overlay.destination) ("."))) {
                         $member.sourceMember
                     } else {
                         "$($lockInput.overlay.destination)/$($member.sourceMember)"
@@ -1231,7 +1981,7 @@ function Read-ProvenanceContract {
             if ($expectedSelected) {
                 Assert-NormalizedPath $member.destinationPath `
                     "archive member '$($member.sourceMember)'.destinationPath"
-                if ($member.destinationPath -cne $expectedDestination) {
+                if ((-not (Test-OrdinalStringEqual ($member.destinationPath) ($expectedDestination)))) {
                     Throw-ValidationError $script:ExitContract "overlay" (
                         "archive member '$($member.sourceMember)' does not enforce overlay.destination")
                 }
@@ -1255,20 +2005,21 @@ function Read-ProvenanceContract {
             $memberMap[$member.sourceMember.ToLowerInvariant()] = $member
         }
         foreach ($member in $members | Where-Object {
-            $_.type -in @("symlink", "hardlink")
+            Test-OrdinalStringInCollection $_.type @("symlink", "hardlink")
         }) {
             $targetKey = $member.linkTarget.ToLowerInvariant()
             if (-not $memberMap.ContainsKey($targetKey) -or
-                $memberMap[$targetKey].type -ceq "directory" -or
+                (Test-OrdinalStringEqual ($memberMap[$targetKey].type) ("directory")) -or
                 [long]$memberMap[$targetKey].bytes -ne [long]$member.bytes -or
-                $memberMap[$targetKey].sha256 -cne $member.sha256) {
+                (-not (Test-OrdinalStringEqual ($memberMap[$targetKey].sha256) ($member.sha256)))) {
                 Throw-ValidationError $script:ExitContract "archive" (
                     "archive link '$($member.sourceMember)' has an invalid target identity")
             }
             $visitedLinks = [Collections.Generic.HashSet[string]]::new(
                 $script:PathComparer)
             $cursor = $member
-            while ($cursor.type -in @("symlink", "hardlink")) {
+            while (Test-OrdinalStringInCollection `
+                    $cursor.type @("symlink", "hardlink")) {
                 if (-not $visitedLinks.Add($cursor.sourceMember)) {
                     Throw-ValidationError $script:ExitContract "archive" (
                         "archive links contain a cycle")
@@ -1285,7 +2036,7 @@ function Read-ProvenanceContract {
                 $targetDestination = if (
                     $mappingBySource.ContainsKey($targetMappingKey)) {
                     $mappingBySource[$targetMappingKey]
-                } elseif ($lockInput.overlay.destination -ceq ".") {
+                } elseif ((Test-OrdinalStringEqual ($lockInput.overlay.destination) ("."))) {
                     $target.sourceMember
                 } else {
                     "$($lockInput.overlay.destination)/$($target.sourceMember)"
@@ -1293,8 +2044,8 @@ function Read-ProvenanceContract {
                 $candidateKey = $member.destinationPath.ToLowerInvariant()
                 $candidate = @($selectedByDestination[$candidateKey] |
                     Where-Object {
-                        $_.inputId -ceq $entry.id -and
-                        $_.sourceMember -ceq $member.sourceMember
+                        (Test-OrdinalStringEqual ($_.inputId) ($entry.id)) -and
+                        (Test-OrdinalStringEqual ($_.sourceMember) ($member.sourceMember))
                     })[0]
                 $candidate.linkTarget = $targetDestination
             }
@@ -1305,22 +2056,61 @@ function Read-ProvenanceContract {
     $overlayOrder = @($ProvenanceObject.overlayOrder)
     Assert-JsonArray $ProvenanceObject.overlayOrder `
         "provenance.overlayOrder"
-    $payloadIds = @($LockContext.Resolved |
-        Where-Object role -CNE "validation-tool" |
-        ForEach-Object { $_.id })
-    if (($overlayOrder -join "`0") -cne ($payloadIds -join "`0")) {
+    $payloadInputs = @($LockContext.Resolved |
+        Where-Object {
+            -not (Test-OrdinalStringEqual $_.role "validation-tool")
+        })
+    $baseInputs = @($payloadInputs | Where-Object {
+        Test-OrdinalStringEqual $_.role "base-bundle"
+    })
+    if ($baseInputs.Count -ne 1) {
         Throw-ValidationError $script:ExitContract "overlay" (
-            "provenance.overlayOrder must contain each resolved payload input in lock order")
+            "provenance.overlayOrder requires exactly one resolved base-bundle")
     }
-    $orderMap = @{}
+    $payloadIds = [Collections.Generic.HashSet[string]]::new(
+        [StringComparer]::Ordinal)
+    foreach ($payloadInput in $payloadInputs) {
+        [void]$payloadIds.Add($payloadInput.id)
+    }
+    $orderedIds = [Collections.Generic.HashSet[string]]::new(
+        $script:PathComparer)
+    if ($overlayOrder.Count -ne $payloadIds.Count -or
+        $overlayOrder.Count -eq 0 -or
+        (-not (Test-OrdinalStringEqual ($overlayOrder[0]) ($baseInputs[0].id)))) {
+        Throw-ValidationError $script:ExitContract "overlay" (
+            "provenance.overlayOrder must start with the one base-bundle")
+    }
+    foreach ($id in $overlayOrder) {
+        if ($id -isnot [string] -or -not $payloadIds.Contains($id) -or
+            -not $orderedIds.Add($id)) {
+            Throw-ValidationError $script:ExitContract "overlay" (
+                "provenance.overlayOrder must contain each resolved payload input exactly once")
+        }
+    }
+    $orderMap = [Collections.Generic.Dictionary[string, int]]::new(
+        [StringComparer]::Ordinal)
     for ($index = 0; $index -lt $overlayOrder.Count; $index++) {
         $orderMap[$overlayOrder[$index]] = $index
     }
 
-    $expectedFinal = @{}
-    $expectedReplacements = @{}
+    $expectedFinal =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+    $expectedReplacements =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::Ordinal)
     foreach ($key in $selectedByDestination.Keys) {
-        $candidates = @($selectedByDestination[$key] | Sort-Object {
+        # A single input replacing itself is not a meaningful overlay, and an
+        # unstable sort would otherwise pick an arbitrary winner among equal
+        # keys and make the verdict non-deterministic.
+        $collidingIds = @($selectedByDestination[$key] |
+            Group-Object { [string]$_.inputId } |
+            Where-Object Count -GT 1)
+        if ($collidingIds.Count -ne 0) {
+            Throw-ValidationError $script:ExitContract "overlay" (
+                "input '$($collidingIds[0].Name)' selects two members for destination '$key'")
+        }
+        $candidates = @($selectedByDestination[$key] | Sort-Object -Stable {
             $orderMap[$_.inputId]
         })
         $winner = $candidates[-1]
@@ -1350,7 +2140,8 @@ function Read-ProvenanceContract {
         Throw-ValidationError $script:ExitContract "member" (
             "provenance finalMembers omit or add selected archive members")
     }
-    $finalMap = @{}
+    $finalMap = [Collections.Generic.Dictionary[string, object]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
     foreach ($member in $finalMembers) {
         Assert-ExactProperties $member @(
             "destinationPath", "inputId", "sourceMember", "type", "bytes",
@@ -1367,13 +2158,13 @@ function Read-ProvenanceContract {
                 "provenance final member '$($member.destinationPath)' was not selected")
         }
         $expected = $expectedFinal[$key]
-        if ($member.destinationPath -cne $expected.destinationPath -or
-            $member.inputId -cne $expected.inputId -or
-            $member.sourceMember -cne $expected.sourceMember -or
-            $member.type -cne $expected.type -or
+        if ((-not (Test-OrdinalStringEqual ($member.destinationPath) ($expected.destinationPath))) -or
+            (-not (Test-OrdinalStringEqual ($member.inputId) ($expected.inputId))) -or
+            (-not (Test-OrdinalStringEqual ($member.sourceMember) ($expected.sourceMember))) -or
+            (-not (Test-OrdinalStringEqual ($member.type) ($expected.type))) -or
             [long]$member.bytes -ne $expected.bytes -or
-            $member.sha256 -cne $expected.sha256 -or
-            $member.linkTarget -cne $expected.linkTarget) {
+            (-not (Test-OrdinalStringEqual ($member.sha256) ($expected.sha256))) -or
+            (-not (Test-OrdinalStringEqual ($member.linkTarget) ($expected.linkTarget)))) {
             Throw-ValidationError $script:ExitContract "member" (
                 "provenance final member '$($member.destinationPath)' is not the exact archive winner")
         }
@@ -1407,30 +2198,36 @@ function Read-ProvenanceContract {
         foreach ($field in @(
             "destinationPath", "replacedInputId", "replacedSourceMember",
             "winnerInputId", "winnerSourceMember")) {
-            if ($replacement.$field -cne $expected.$field) {
+            if ((-not (Test-OrdinalStringEqual ($replacement.$field) ($expected.$field)))) {
                 Throw-ValidationError $script:ExitContract "ownership" (
                     "provenance replacement for '$($replacement.destinationPath)' is incorrect")
             }
         }
     }
 
-    foreach ($input in $LockContext.Resolved) {
-        if ($null -eq $input.package) {
+    foreach ($resolvedInput in $LockContext.Resolved) {
+        if ($null -eq $resolvedInput.package) {
             continue
         }
-        $provided = if ($input.role -cne "validation-tool") {
+        $inputId = $resolvedInput.id
+        $provided = if ((-not (Test-OrdinalStringEqual ($resolvedInput.role) ("validation-tool")))) {
             @($finalMembers |
-                Where-Object inputId -CEQ $input.id |
+                Where-Object {
+                    Test-OrdinalStringEqual $_.inputId $inputId
+                } |
                 ForEach-Object destinationPath)
         } else {
-            @($archiveByInput[$input.id].Values |
-                Where-Object type -CEQ "file" |
+            @($archiveByInput[$inputId].Values |
+                Where-Object {
+                    Test-OrdinalStringEqual $_.type "file"
+                } |
                 ForEach-Object sourceMember)
         }
-        foreach ($expectedProvide in @($input.package.provides)) {
-            if ($provided -cnotcontains $expectedProvide) {
+        foreach ($expectedProvide in @($resolvedInput.package.provides)) {
+            if (-not (Test-OrdinalStringInCollection `
+                    $expectedProvide $provided)) {
                 Throw-ValidationError $script:ExitContract "ownership" (
-                    "input '$($input.id)' is missing expected provide '$expectedProvide'")
+                    "input '$inputId' is missing expected provide '$expectedProvide'")
             }
         }
     }
@@ -1442,11 +2239,11 @@ function Read-ProvenanceContract {
     Assert-ExactProperties $pseudo.scanner @(
         "repository", "commit", "path", "bytes", "sha256") `
         "provenance.pseudoReloc.scanner"
-    if ($pseudo.scanner.repository -cne $script:ScannerRepository -or
-        $pseudo.scanner.commit -cne $script:ScannerCommit -or
-        $pseudo.scanner.path -cne $script:ScannerSourcePath -or
+    if ((-not (Test-OrdinalStringEqual ($pseudo.scanner.repository) ($script:ScannerRepository))) -or
+        (-not (Test-OrdinalStringEqual ($pseudo.scanner.commit) ($script:ScannerCommit))) -or
+        (-not (Test-OrdinalStringEqual ($pseudo.scanner.path) ($script:ScannerSourcePath))) -or
         [long]$pseudo.scanner.bytes -ne $script:ScannerBytes -or
-        $pseudo.scanner.sha256 -cne $script:ScannerSha256) {
+        (-not (Test-OrdinalStringEqual ($pseudo.scanner.sha256) ($script:ScannerSha256)))) {
         Throw-ValidationError $script:ExitContract "scanner" (
             "provenance pseudo-reloc scanner identity does not match the pinned source")
     }
@@ -1455,17 +2252,17 @@ function Read-ProvenanceContract {
             "pseudo-reloc toolInputId does not exist in the lock")
     }
     $toolInput = $LockContext.InputMap[$pseudo.toolInputId]
-    if ($toolInput.status -cne "resolved" -or
-        $toolInput.role -cne "validation-tool" -or
-        $toolInput.package.name -cne $script:ToolPackageName -or
-        $toolInput.package.version -cne $script:ToolPackageVersion -or
-        $toolInput.asset.sha256 -cne $script:ToolPackageSha256) {
+    if ((-not (Test-OrdinalStringEqual ($toolInput.status) ("resolved"))) -or
+        (-not (Test-OrdinalStringEqual ($toolInput.role) ("validation-tool"))) -or
+        (-not (Test-OrdinalStringEqual ($toolInput.package.name) ($script:ToolPackageName))) -or
+        (-not (Test-OrdinalStringEqual ($toolInput.package.version) ($script:ToolPackageVersion))) -or
+        (-not (Test-OrdinalStringEqual ($toolInput.asset.sha256) ($script:ToolPackageSha256)))) {
         Throw-ValidationError $script:ExitContract "tool" (
             "pseudo-reloc tools are not bound to the pinned immutable package")
     }
-    if ($pseudo.objdumpMember -cne $script:ObjdumpMember -or
-        $pseudo.nmMember -cne $script:NmMember -or
-        $pseudo.linkerMember -cne $script:LinkerMember) {
+    if ((-not (Test-OrdinalStringEqual ($pseudo.objdumpMember) ($script:ObjdumpMember))) -or
+        (-not (Test-OrdinalStringEqual ($pseudo.nmMember) ($script:NmMember))) -or
+        (-not (Test-OrdinalStringEqual ($pseudo.linkerMember) ($script:LinkerMember)))) {
         Throw-ValidationError $script:ExitContract "tool" (
             "pseudo-reloc member paths do not match the pinned tool package")
     }
@@ -1473,7 +2270,7 @@ function Read-ProvenanceContract {
     foreach ($memberPath in @(
         $script:ObjdumpMember, $script:NmMember, $script:LinkerMember)) {
         if (-not $toolMembers.ContainsKey($memberPath.ToLowerInvariant()) -or
-            $toolMembers[$memberPath.ToLowerInvariant()].type -cne "file") {
+            (-not (Test-OrdinalStringEqual ($toolMembers[$memberPath.ToLowerInvariant()].type) ("file")))) {
             Throw-ValidationError $script:ExitContract "tool" (
                 "pinned tool package is missing archive member '$memberPath'")
         }
@@ -1484,7 +2281,7 @@ function Read-ProvenanceContract {
         @($script:LinkerMember, $script:LinkerBytes, $script:LinkerSha256))) {
         $member = $toolMembers[$pin[0].ToLowerInvariant()]
         if ([long]$member.bytes -ne [long]$pin[1] -or
-            $member.sha256 -cne $pin[2]) {
+            (-not (Test-OrdinalStringEqual ($member.sha256) ($pin[2])))) {
             Throw-ValidationError $script:ExitContract "tool" (
                 "pinned tool package member identity is incorrect: '$($pin[0])'")
         }
@@ -1972,8 +2769,8 @@ function Get-PeClassification {
         }
         default { "unknown" }
     }
-    $hasMsys = $imports -ccontains "msys-2.0.dll"
-    $hasCygwin = $imports -ccontains "cygwin1.dll"
+    $hasMsys = Test-OrdinalStringInCollection "msys-2.0.dll" $imports
+    $hasCygwin = Test-OrdinalStringInCollection "cygwin1.dll" $imports
     if ($hasMsys -and $hasCygwin) {
         Throw-ValidationError $script:ExitStatic "personality" (
             "PE '$DisplayPath' mixes MSYS and Cygwin imports")
@@ -1993,6 +2790,35 @@ function Get-PeClassification {
         personality = $personality
         imports = $imports
         clrFlags = $clrFlags
+    }
+}
+
+# Get-ChildItem does not enumerate NTFS alternate data streams and
+# Get-FileSha256 only hashes ::$DATA, so undeclared bytes could otherwise ride
+# along inside an authoritative member.
+function Assert-NoAlternateStream {
+    param(
+        [Parameter(Mandatory = $true)][string] $FullPath,
+        [Parameter(Mandatory = $true)][string] $Relative
+    )
+
+    try {
+        $streams = @(Get-Item -LiteralPath $FullPath -Stream * `
+            -ErrorAction Stop)
+    } catch {
+        if ($_.Exception.Message -match
+            "(?i)(alternate data streams are not supported|provider does not support|stream parameter)") {
+            return
+        }
+        Throw-ValidationError $script:ExitContract "stream" (
+            "could not enumerate alternate data streams for payload member " +
+            "'$Relative': $($_.Exception.Message)")
+    }
+    foreach ($stream in $streams) {
+        if ((-not (Test-OrdinalStringEqual ([string]$stream.Stream) (":`$DATA")))) {
+            Throw-ValidationError $script:ExitContract "stream" (
+                "payload member '$Relative' carries alternate data stream '$($stream.Stream)'")
+        }
     }
 }
 
@@ -2043,7 +2869,7 @@ function Get-HardlinkNames {
         Throw-ValidationError $script:ExitContract "hardlink" (
             "$Description could not be enumerated by fsutil")
     }
-    $names = @()
+    $names = [Collections.Generic.HashSet[string]]::new($script:PathComparer)
     foreach ($line in @($output)) {
         $text = ([string]$line).Trim()
         if ($text.Length -eq 0) {
@@ -2054,9 +2880,38 @@ function Get-HardlinkNames {
         } else {
             $volume + $text
         }
-        $names += [IO.Path]::GetFullPath($candidate)
+        [void]$names.Add([IO.Path]::GetFullPath($candidate))
     }
-    return $names
+    if ($names.Count -eq 0 -or -not $names.Contains(
+        [IO.Path]::GetFullPath($FullPath))) {
+        Throw-ValidationError $script:ExitContract "hardlink" (
+            "$Description returned an incomplete hardlink name set")
+    }
+    return @(Sort-OrdinalBy @($names) { param($item) [string]$item })
+}
+
+function Get-DeclaredFileIdentity {
+    param(
+        [Parameter(Mandatory = $true)][string] $Path,
+        [Parameter(Mandatory = $true)] $FinalMap
+    )
+
+    $visited = [Collections.Generic.HashSet[string]]::new($script:PathComparer)
+    $cursor = $Path
+    while ($true) {
+        if (-not $visited.Add($cursor) -or
+            -not $FinalMap.ContainsKey($cursor.ToLowerInvariant())) {
+            return $null
+        }
+        $member = $FinalMap[$cursor.ToLowerInvariant()]
+        if ((Test-OrdinalStringEqual ($member.type) ("file"))) {
+            return $member.destinationPath
+        }
+        if ((-not (Test-OrdinalStringEqual ($member.type) ("hardlink")))) {
+            return $null
+        }
+        $cursor = [string]$member.linkTarget
+    }
 }
 
 function Get-RootInventory {
@@ -2066,11 +2921,31 @@ function Get-RootInventory {
     )
 
     $members = @()
+    $declaredIdentityGroups =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+    foreach ($member in $FinalMap.Values) {
+        if ((-not (Test-OrdinalStringInCollection ($member.type) (@("file", "hardlink"))))) {
+            continue
+        }
+        $canonical = Get-DeclaredFileIdentity $member.destinationPath $FinalMap
+        if ($null -eq $canonical) {
+            Throw-ValidationError $script:ExitContract "hardlink" (
+                "provenance file identity for '$($member.destinationPath)' is invalid")
+        }
+        $key = $canonical.ToLowerInvariant()
+        if (-not $declaredIdentityGroups.ContainsKey($key)) {
+            $declaredIdentityGroups[$key] =
+                [Collections.Generic.HashSet[string]]::new($script:PathComparer)
+        }
+        [void]$declaredIdentityGroups[$key].Add($member.destinationPath)
+    }
+    Assert-NoAlternateStream $RootPath "."
     foreach ($item in Get-ChildItem -LiteralPath $RootPath -Force -Recurse) {
         $relative = [IO.Path]::GetRelativePath(
             $RootPath,
             $item.FullName).Replace("\", "/")
-        if ($relative -ieq "preview-evidence" -or
+        if ($script:PathComparer.Equals($relative, "preview-evidence") -or
             $relative.StartsWith(
                 "preview-evidence/",
                 [StringComparison]::OrdinalIgnoreCase)) {
@@ -2083,7 +2958,7 @@ function Get-RootInventory {
         $hardlinkTargets = @()
         $contentPath = $item.FullName
         if ($isReparse) {
-            if ($item.PSIsContainer -or $item.LinkType -cne "SymbolicLink") {
+            if ($item.PSIsContainer -or (-not (Test-OrdinalStringEqual ($item.LinkType) ("SymbolicLink")))) {
                 Throw-ValidationError $script:ExitContract "reparse" (
                     "payload contains an undeclared or unsupported reparse point: '$relative'")
             }
@@ -2105,37 +2980,68 @@ function Get-RootInventory {
         } elseif ($item.PSIsContainer) {
             $type = "directory"
         } else {
-            # Every name of a multiply linked file reports LinkType HardLink,
-            # so provenance decides which name is the canonical file and which
-            # is the declared alias.
             $declared = $FinalMap[$relative.ToLowerInvariant()]
-            if ($null -ne $declared -and [string]$declared.type -ceq "hardlink") {
-                $type = "hardlink"
-                $hardlinkTargets = @(Get-HardlinkNames $item.FullName `
-                    "payload hardlink '$relative'")
-                if ($hardlinkTargets.Count -lt 2) {
+            $declaredType = if ($null -eq $declared) {
+                $null
+            } else {
+                [string]$declared.type
+            }
+            $names = @(Get-HardlinkNames $item.FullName `
+                "payload member '$relative'")
+            $observedNames =
+                [Collections.Generic.HashSet[string]]::new($script:PathComparer)
+            foreach ($name in $names) {
+                if (-not (Test-PathWithin $RootPath $name)) {
+                    Throw-ValidationError $script:ExitContract "hardlink" (
+                        "payload member '$relative' shares its file identity outside Root")
+                }
+                $observed = [IO.Path]::GetRelativePath(
+                    $RootPath, $name).Replace("\", "/")
+                Assert-NormalizedPath $observed `
+                    "payload member '$relative' hardlink name"
+                [void]$observedNames.Add($observed)
+            }
+            $canonical = if ($null -eq $declared) {
+                $null
+            } else {
+                Get-DeclaredFileIdentity $relative $FinalMap
+            }
+            $expectedNames = if ($null -eq $canonical) {
+                $null
+            } else {
+                $declaredIdentityGroups[$canonical.ToLowerInvariant()]
+            }
+            if ($names.Count -gt 1 -or (Test-OrdinalStringEqual ($declaredType) ("hardlink"))) {
+                if ($null -eq $expectedNames -or
+                    $expectedNames.Count -ne $observedNames.Count -or
+                    @($observedNames | Where-Object {
+                        -not $expectedNames.Contains($_)
+                    }).Count -ne 0) {
+                    Throw-ValidationError $script:ExitContract "hardlink" (
+                        "payload member '$relative' has an undeclared hardlink name or file identity")
+                }
+            }
+            if ((Test-OrdinalStringEqual ($declaredType) ("hardlink"))) {
+                if ($names.Count -lt 2) {
                     Throw-ValidationError $script:ExitContract "hardlink" (
                         "payload hardlink '$relative' does not share a file identity")
                 }
-                foreach ($name in $hardlinkTargets) {
-                    if (-not (Test-PathWithin $RootPath $name)) {
-                        Throw-ValidationError $script:ExitContract "hardlink" (
-                            "payload hardlink '$relative' shares its file identity outside Root")
-                    }
-                }
+                $type = "hardlink"
+                $hardlinkTargets = $names
             } else {
                 $type = "file"
             }
         }
+        Assert-NoAlternateStream $item.FullName $relative
         $members += [ordered]@{
             path = $relative
             type = $type
-            bytes = if ($type -ceq "directory") {
+            bytes = if ((Test-OrdinalStringEqual ($type) ("directory"))) {
                 [long]0
             } else {
                 [long][IO.FileInfo]::new($contentPath).Length
             }
-            sha256 = if ($type -ceq "directory") {
+            sha256 = if ((Test-OrdinalStringEqual ($type) ("directory"))) {
                 $null
             } else {
                 Get-FileSha256 $contentPath
@@ -2176,8 +3082,8 @@ function Read-PayloadContract {
     Assert-LowerSha256 $PayloadObject.lockSha256 "payload manifest.lockSha256"
     Assert-LowerSha256 $PayloadObject.provenanceSha256 `
         "payload manifest.provenanceSha256"
-    if ($PayloadObject.lockSha256 -cne $LockSha256 -or
-        $PayloadObject.provenanceSha256 -cne $ProvenanceSha256) {
+    if ((-not (Test-OrdinalStringEqual ($PayloadObject.lockSha256) ($LockSha256))) -or
+        (-not (Test-OrdinalStringEqual ($PayloadObject.provenanceSha256) ($ProvenanceSha256)))) {
         Throw-ValidationError $script:ExitContract "digest" (
             "payload manifest does not bind the exact lock and provenance")
     }
@@ -2185,9 +3091,9 @@ function Read-PayloadContract {
         "root", "excludedPrefixes") "payload manifest.scope"
     Assert-JsonArray $PayloadObject.scope.excludedPrefixes `
         "payload manifest.scope.excludedPrefixes"
-    if ($PayloadObject.scope.root -cne "." -or
+    if ((-not (Test-OrdinalStringEqual ($PayloadObject.scope.root) ("."))) -or
         @($PayloadObject.scope.excludedPrefixes).Count -ne 1 -or
-        @($PayloadObject.scope.excludedPrefixes)[0] -cne "preview-evidence/") {
+        (-not (Test-OrdinalStringEqual (@($PayloadObject.scope.excludedPrefixes)[0]) ("preview-evidence/")))) {
         Throw-ValidationError $script:ExitContract "scope" (
             "payload manifest scope must be root '.' excluding only preview-evidence/")
     }
@@ -2203,65 +3109,66 @@ function Read-PayloadContract {
             "payload manifest, root, and provenance member counts differ")
     }
     $classifications = @()
-    $entryMap = @{}
+    $classificationMap =
+        [Collections.Generic.Dictionary[string, object]]::new(
+            [StringComparer]::OrdinalIgnoreCase)
+    $entryMap = [Collections.Generic.Dictionary[string, object]]::new(
+        [StringComparer]::OrdinalIgnoreCase)
     for ($index = 0; $index -lt $entries.Count; $index++) {
         $entry = $entries[$index]
         Assert-ExactProperties $entry @(
-            "path", "type", "bytes", "sha256", "architecture", "machine",
-            "personality", "imports", "clrFlags", "linkTarget") `
+            "path", "type", "bytes", "sha256", "linkTarget") `
             "payload manifest entry"
         Assert-NormalizedPath $entry.path "payload manifest entry path"
         Assert-JsonInteger $entry.bytes `
             "payload manifest entry '$($entry.path)'.bytes" 0
-        Assert-JsonArray $entry.imports `
-            "payload manifest entry '$($entry.path)'.imports"
         $actual = $inventory.Members[$index]
-        if ($entry.path -cne $actual.path -or $entry.type -cne $actual.type) {
+        if ((-not (Test-OrdinalStringEqual ($entry.path) ($actual.path))) -or (-not (Test-OrdinalStringEqual ($entry.type) ($actual.type)))) {
             Throw-ValidationError $script:ExitContract "member" (
                 "payload manifest does not ordinally cover root member '$($actual.path)'")
         }
         $provenanceMember = $ProvenanceContext.FinalMap[
             $entry.path.ToLowerInvariant()]
         if ($null -eq $provenanceMember -or
-            $provenanceMember.destinationPath -cne $entry.path -or
-            $provenanceMember.type -cne $entry.type) {
+            (-not (Test-OrdinalStringEqual ($provenanceMember.destinationPath) ($entry.path))) -or
+            (-not (Test-OrdinalStringEqual ($provenanceMember.type) ($entry.type)))) {
             Throw-ValidationError $script:ExitContract "member" (
                 "payload member '$($entry.path)' lacks exact final provenance ownership")
         }
-        if ($entry.type -ceq "directory") {
+        if ((Test-OrdinalStringEqual ($entry.type) ("directory"))) {
             if ([long]$entry.bytes -ne 0 -or $null -ne $entry.sha256 -or
-                $null -ne $entry.architecture -or $null -ne $entry.machine -or
-                $null -ne $entry.personality -or @($entry.imports).Count -ne 0 -or
-                $null -ne $entry.clrFlags -or $null -ne $entry.linkTarget) {
+                $null -ne $entry.linkTarget) {
                 Throw-ValidationError $script:ExitContract "member" (
                     "directory '$($entry.path)' has invalid payload metadata")
             }
-        } elseif ($entry.type -cin @("file", "symlink", "hardlink")) {
-            if ($entry.type -ceq "file" -and $null -ne $entry.linkTarget) {
+        } elseif ((Test-OrdinalStringInCollection ($entry.type) (@("file", "symlink", "hardlink")))) {
+            if ((Test-OrdinalStringEqual ($entry.type) ("file")) -and $null -ne $entry.linkTarget) {
                 Throw-ValidationError $script:ExitContract "member" (
                     "ordinary file '$($entry.path)' must have linkTarget=null")
             }
-            if ($entry.type -cin @("symlink", "hardlink")) {
+            if ((Test-OrdinalStringInCollection ($entry.type) (@("symlink", "hardlink")))) {
                 Assert-NormalizedPath $entry.linkTarget `
                     "payload link '$($entry.path)'.linkTarget"
-                if ($entry.linkTarget -cne $provenanceMember.linkTarget -or
+                if ((-not (Test-OrdinalStringEqual ($entry.linkTarget) ($provenanceMember.linkTarget))) -or
                     -not $entryMap.ContainsKey(
                         $entry.linkTarget.ToLowerInvariant()) -and
-                    @($entries | Where-Object path -CEQ $entry.linkTarget).
-                        Count -ne 1) {
+                @($entries | Where-Object {
+                    Test-OrdinalStringEqual $_.path $entry.linkTarget
+                }).
+                    Count -ne 1) {
                     Throw-ValidationError $script:ExitContract "member" (
                         "payload link '$($entry.path)' target is not declared")
                 }
-                if ($entry.type -ceq "symlink" -and
-                    $actual.linkTarget -cne $entry.linkTarget) {
+                if ((Test-OrdinalStringEqual ($entry.type) ("symlink")) -and
+                    (-not (Test-OrdinalStringEqual ($actual.linkTarget) ($entry.linkTarget)))) {
                     Throw-ValidationError $script:ExitContract "reparse" (
                         "payload symlink '$($entry.path)' target differs from provenance")
                 }
-                if ($entry.type -ceq "hardlink") {
+                if ((Test-OrdinalStringEqual ($entry.type) ("hardlink"))) {
                     $expectedTargetFull = Join-Path $RootPath (
                         $entry.linkTarget.Replace("/", "\"))
                     if (@($actual.hardlinkTargets | Where-Object {
-                        $_ -ieq $expectedTargetFull
+                        $script:PathComparer.Equals($_, $expectedTargetFull)
                     }).Count -eq 0) {
                         Throw-ValidationError $script:ExitContract "hardlink" (
                             "payload hardlink '$($entry.path)' does not share its declared file identity")
@@ -2269,31 +3176,28 @@ function Read-PayloadContract {
                 }
             }
             if ([long]$entry.bytes -ne $actual.bytes -or
-                $entry.sha256 -cne $actual.sha256 -or
+                (-not (Test-OrdinalStringEqual ($entry.sha256) ($actual.sha256))) -or
                 [long]$provenanceMember.bytes -ne $actual.bytes -or
-                $provenanceMember.sha256 -cne $actual.sha256) {
+                (-not (Test-OrdinalStringEqual ($provenanceMember.sha256) ($actual.sha256)))) {
                 Throw-ValidationError $script:ExitContract "member" (
                     "payload file '$($entry.path)' bytes/hash do not match its archive member")
             }
+            # The validator alone owns classification; the payload manifest
+            # carries no producer-supplied architecture to compare against.
             $classification = Get-PeClassification $actual.fullPath $entry.path
-            if ($entry.architecture -cne $classification.architecture -or
-                $entry.machine -cne $classification.machine -or
-                $entry.personality -cne $classification.personality -or
-                (@($entry.imports) -join "`0") -cne
-                    (@($classification.imports) -join "`0") -or
-                $entry.clrFlags -ne $classification.clrFlags) {
-                Throw-ValidationError $script:ExitStatic "classification" (
-                    "payload classification for '$($entry.path)' is not authoritative")
-            }
-            $classifications += [ordered]@{
+            $classificationRow = [ordered]@{
                 path = $entry.path
                 architecture = $classification.architecture
                 machine = $classification.machine
                 personality = $classification.personality
                 imports = @($classification.imports)
+                clrFlags = $classification.clrFlags
                 inputId = $provenanceMember.inputId
                 sourceMember = $provenanceMember.sourceMember
             }
+            $classifications += $classificationRow
+            $classificationMap[$entry.path.ToLowerInvariant()] =
+                $classificationRow
         } else {
             Throw-ValidationError $script:ExitContract "member" (
                 "payload entry '$($entry.path)' has invalid type")
@@ -2303,7 +3207,9 @@ function Read-PayloadContract {
     $script:ReportData.summary.payloadMembers = $entries.Count
     $script:ReportData.summary.peFiles = @(
         $classifications |
-            Where-Object architecture -CNE "non-pe").Count
+            Where-Object {
+                -not (Test-OrdinalStringEqual $_.architecture "non-pe")
+            }).Count
     $script:ReportData.classifications = $classifications
     $script:ReportData.digests.rootInventorySha256 = $inventory.Sha256
     return [ordered]@{
@@ -2311,6 +3217,7 @@ function Read-PayloadContract {
         EntryMap = $entryMap
         Inventory = $inventory
         Classifications = $classifications
+        ClassificationMap = $classificationMap
     }
 }
 
@@ -2323,7 +3230,7 @@ function Assert-PseudoReloc {
 
     $detected = @(Sort-OrdinalBy @($PayloadContext.Classifications |
         Where-Object {
-            $_.architecture -ceq "arm64" -and $_.personality -ceq "msys"
+            (Test-OrdinalStringEqual ($_.architecture) ("arm64")) -and (Test-OrdinalStringEqual ($_.personality) ("msys"))
         }) { param($item) [string]$item.path })
     $declared = @($ProvenanceContext.PseudoReloc.candidates)
     if ($detected.Count -ne $declared.Count) {
@@ -2331,9 +3238,9 @@ function Assert-PseudoReloc {
             "pseudo-reloc candidates must be selected from detected ARM64 MSYS PEs")
     }
     for ($index = 0; $index -lt $detected.Count; $index++) {
-        if ($declared[$index].destinationPath -cne $detected[$index].path -or
-            $declared[$index].inputId -cne $detected[$index].inputId -or
-            $declared[$index].sourceMember -cne $detected[$index].sourceMember) {
+        if ((-not (Test-OrdinalStringEqual ($declared[$index].destinationPath) ($detected[$index].path))) -or
+            (-not (Test-OrdinalStringEqual ($declared[$index].inputId) ($detected[$index].inputId))) -or
+            (-not (Test-OrdinalStringEqual ($declared[$index].sourceMember) ($detected[$index].sourceMember)))) {
             Throw-ValidationError $script:ExitContract "candidate" (
                 "pseudo-reloc candidate '$($declared[$index].destinationPath)' " +
                 "does not match detected payload personality/ownership")
@@ -2354,7 +3261,7 @@ function Assert-PseudoReloc {
         $RootPath.StartsWith(
             "$toolRootPath\",
             [StringComparison]::OrdinalIgnoreCase) -or
-        $toolRootPath -ieq $RootPath) {
+        $script:PathComparer.Equals($toolRootPath, $RootPath)) {
         Throw-ValidationError $script:ExitScanner "tool" (
             "ToolRoot and payload Root must be disjoint")
     }
@@ -2362,7 +3269,7 @@ function Assert-PseudoReloc {
     $scannerPath = Join-Path $repoRoot $script:ScannerRelativePath
     if (-not [IO.File]::Exists($scannerPath) -or
         [IO.FileInfo]::new($scannerPath).Length -ne $script:ScannerBytes -or
-        (Get-FileSha256 $scannerPath) -cne $script:ScannerSha256) {
+        (-not (Test-OrdinalStringEqual ((Get-FileSha256 $scannerPath)) ($script:ScannerSha256)))) {
         Throw-ValidationError $script:ExitScanner "scanner" (
             "committed pseudo-reloc scanner does not match its built-in pin")
     }
@@ -2382,7 +3289,7 @@ function Assert-PseudoReloc {
         $actualBytes = [IO.FileInfo]::new($tool[0]).Length
         $actualHash = Get-FileSha256 $tool[0]
         if ($actualBytes -ne [long]$member.bytes -or
-            $actualHash -cne $member.sha256) {
+            (-not (Test-OrdinalStringEqual ($actualHash) ($member.sha256)))) {
             Throw-ValidationError $script:ExitScanner "tool" (
                 "ToolRoot member '$($tool[1])' does not match its verified archive record")
         }
@@ -2415,35 +3322,53 @@ function Assert-PseudoReloc {
                 Throw-ValidationError $script:ExitScanner "scanner" (
                     "pseudo-reloc scanner report is malformed for '$($candidate.path)'")
             }
-            if ($scannerExit -eq 2 -or $scannerReport.result -ceq "error") {
+            if ($scannerExit -eq 2 -or (Test-OrdinalStringEqual ($scannerReport.result) ("error"))) {
                 Throw-ValidationError $script:ExitScanner "scanner" (
                     "pseudo-reloc scanner failed for '$($candidate.path)': " +
                     "$($scannerReport.error)")
             }
-            if ($scannerExit -ne 0 -or $scannerReport.result -cne "pass") {
+            if ($scannerExit -ne 0 -or (-not (Test-OrdinalStringEqual ($scannerReport.result) ("pass")))) {
                 Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
                     "pseudo-reloc policy rejected '$($candidate.path)'")
             }
-            if ($scannerReport.table_format -ceq "v1" -and
-                [long]$scannerReport.record_count -ne 0) {
-                Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
-                    "pseudo-reloc v1 records are forbidden for '$($candidate.path)'")
-            }
-            if ($scannerReport.table_format -ceq "v2") {
-                foreach ($flag in @($scannerReport.flags)) {
-                    if ([long]$flag -ne 64) {
+            Assert-JsonInteger $scannerReport.record_count `
+                "pseudo-reloc scanner record_count for '$($candidate.path)'" 0 `
+                $script:ExitScanner
+            Assert-JsonArray $scannerReport.flags `
+                "pseudo-reloc scanner flags for '$($candidate.path)'" `
+                $script:ExitScanner
+            $flags = @($scannerReport.flags)
+            if ((Test-OrdinalStringEqual ($scannerReport.table_format) ("empty"))) {
+                if ([long]$scannerReport.record_count -ne 0 -or
+                    $flags.Count -ne 0 -or
+                    [long]$scannerReport.byte_length -ne 0) {
+                    Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
+                        "empty pseudo-reloc proof is inconsistent for '$($candidate.path)'")
+                }
+            } elseif ((Test-OrdinalStringEqual ($scannerReport.table_format) ("v2"))) {
+                if ($flags.Count -ne [long]$scannerReport.record_count) {
+                    Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
+                        "pseudo-reloc v2 proof is incomplete for '$($candidate.path)'")
+                }
+                foreach ($flag in $flags) {
+                    if (($flag -isnot [int] -and $flag -isnot [long]) -or
+                        [long]$flag -ne 64) {
                         Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
                             "ARM64 lane requires scalar64 pseudo-reloc flags for " +
                             "'$($candidate.path)'")
                     }
                 }
+            } else {
+                Throw-ValidationError $script:ExitStatic "pseudo-reloc" (
+                    "pseudo-reloc proof for '$($candidate.path)' must be an " +
+                    "explicit parsed empty table or scalar64 v2 table")
             }
             $results += [ordered]@{
                 path = $candidate.path
                 result = "pass"
                 tableFormat = $scannerReport.table_format
                 recordCount = [long]$scannerReport.record_count
-                flags = @($scannerReport.flags)
+                flags = $flags
                 objdumpMember = $script:ObjdumpMember
                 objdumpSha256 =
                     $toolMembers[$script:ObjdumpMember.ToLowerInvariant()].sha256
@@ -2475,54 +3400,61 @@ function Assert-StaticPolicy {
                 "native shell closure member is missing from payload: '$path'")
         }
         $entry = $PayloadContext.EntryMap[$path.ToLowerInvariant()]
-        if ($entry.type -cne "file") {
+        if ((-not (Test-OrdinalStringEqual ($entry.type) ("file")))) {
             Throw-ValidationError $script:ExitContract "closure" (
                 "native shell closure member is not a file: '$path'")
         }
+        $classification =
+            $PayloadContext.ClassificationMap[$path.ToLowerInvariant()]
         $closureRows += [ordered]@{
             path = $path
-            architecture = $entry.architecture
-            personality = $entry.personality
+            architecture = $classification.architecture
+            personality = $classification.personality
         }
     }
     $script:ReportData.nativeShellClosure = $closureRows
 
-    $invalid = @($PayloadContext.Classifications |
-        Where-Object architecture -Cin @("x86", "unknown"))
+    $invalid = @($PayloadContext.Classifications | Where-Object {
+        Test-OrdinalStringInCollection $_.architecture @("x86", "unknown")
+    })
     if ($invalid.Count -ne 0) {
         Throw-ValidationError $script:ExitStatic "architecture" (
             "payload contains forbidden x86 or unknown PE architecture: " +
             (($invalid | ForEach-Object path) -join ", "))
     }
-    $cygwin = @($PayloadContext.Classifications |
-        Where-Object personality -CEQ "cygwin")
+    $cygwin = @($PayloadContext.Classifications | Where-Object {
+        Test-OrdinalStringEqual $_.personality "cygwin"
+    })
     if ($cygwin.Count -ne 0) {
         Throw-ValidationError $script:ExitStatic "personality" (
             "payload contains forbidden Cygwin personality: " +
             (($cygwin | ForEach-Object path) -join ", "))
     }
     $x64 = @(Sort-OrdinalBy @($PayloadContext.Classifications |
-        Where-Object architecture -CEQ "x64" |
+        Where-Object {
+            Test-OrdinalStringEqual $_.architecture "x64"
+        } |
         ForEach-Object path) { param($item) [string]$item })
     $script:ReportData.remainingX64 = $x64
     $script:ReportData.summary.remainingX64 = $x64.Count
-    if ($AdmissionMode -ceq "Final" -and $LockContext.Unresolved.Count -ne 0) {
+    if ((Test-OrdinalStringEqual ($AdmissionMode) ("Final")) -and $LockContext.Unresolved.Count -ne 0) {
         Throw-ValidationError $script:ExitContract "unresolved" (
             "Final admission rejects unresolved lock inputs: " +
             ($LockContext.Unresolved -join ", "))
     }
-    if ($AdmissionMode -ceq "Final" -and $x64.Count -ne 0) {
+    if ((Test-OrdinalStringEqual ($AdmissionMode) ("Final")) -and $x64.Count -ne 0) {
         Throw-ValidationError $script:ExitStatic "architecture" (
             "Final admission rejects all x64 payload files: $($x64 -join ', ')")
     }
-    $nonArm64Closure = @($closureRows |
-        Where-Object architecture -CNE "arm64")
-    if ($AdmissionMode -ceq "Final" -and $nonArm64Closure.Count -ne 0) {
+    $nonArm64Closure = @($closureRows | Where-Object {
+        -not (Test-OrdinalStringEqual $_.architecture "arm64")
+    })
+    if ((Test-OrdinalStringEqual ($AdmissionMode) ("Final")) -and $nonArm64Closure.Count -ne 0) {
         Throw-ValidationError $script:ExitStatic "closure" (
             "Final admission requires ARM64 native shell closure members: " +
             (($nonArm64Closure | ForEach-Object path) -join ", "))
     }
-    if ($AdmissionMode -ceq "Preview" -and $x64.Count -ne 0) {
+    if ((Test-OrdinalStringEqual ($AdmissionMode) ("Preview")) -and $x64.Count -ne 0) {
         $baselinePath = Join-Path (Split-Path -Parent $PSCommandPath) `
             "arm64-x64-payload-baseline.txt"
         if (-not [IO.File]::Exists($baselinePath)) {
@@ -2563,11 +3495,11 @@ function Assert-AbsoluteObservedPath {
             "$Context must be a normalized local absolute Windows path")
     }
     $full = [IO.Path]::GetFullPath($Value)
-    if ($full -cne $Value.TrimEnd("\")) {
+    if ((-not (Test-OrdinalStringEqual ($full) ($Value.TrimEnd("\"))))) {
         Throw-ValidationError $script:ExitRuntime "runtime-path" (
             "$Context is not canonical: '$Value'")
     }
-    if ($full -ieq "C:\msys64" -or
+    if ($script:PathComparer.Equals($full, "C:\msys64") -or
         $full.StartsWith(
             "C:\msys64\",
             [StringComparison]::OrdinalIgnoreCase)) {
@@ -2597,19 +3529,27 @@ function Get-ObservedClassification {
                 "$Context is not in the payload manifest: '$ObservedPath'")
         }
         $entry = $PayloadContext.EntryMap[$relative.ToLowerInvariant()]
-        if ($entry.type -cne "file") {
+        if ((-not (Test-OrdinalStringEqual ($entry.type) ("file")))) {
             Throw-ValidationError $script:ExitRuntime "runtime-path" (
                 "$Context does not reference a file")
         }
         return [ordered]@{
             Sha256 = $entry.sha256
-            Architecture = $entry.architecture
-            Personality = $entry.personality
+            Architecture =
+                $PayloadContext.ClassificationMap[
+                    $relative.ToLowerInvariant()].architecture
+            Personality =
+                $PayloadContext.ClassificationMap[
+                    $relative.ToLowerInvariant()].personality
         }
     }
-    if ($ObservedPath.StartsWith(
-        "C:\Windows\",
-        [StringComparison]::OrdinalIgnoreCase)) {
+    $trustedWindowsRoots = @(
+        "C:\Windows\System32",
+        "C:\Windows\SysArm32",
+        "C:\Windows\WinSxS")
+    if (@($trustedWindowsRoots | Where-Object {
+        Test-PathWithin $_ $ObservedPath
+    }).Count -ne 0) {
         if (-not [IO.File]::Exists($ObservedPath)) {
             Throw-ValidationError $script:ExitRuntime "runtime-path" (
                 "$Context Windows system module does not exist")
@@ -2621,8 +3561,16 @@ function Get-ObservedClassification {
             Personality = $classification.personality
         }
     }
+    if ($ObservedPath.StartsWith(
+        "C:\Windows\",
+        [StringComparison]::OrdinalIgnoreCase)) {
+        Throw-ValidationError $script:ExitRuntime "external-module" (
+            "$Context is outside the trusted Windows system directories: " +
+            "'$ObservedPath'")
+    }
     Throw-ValidationError $script:ExitRuntime "external-module" (
-        "$Context is outside the staged root and C:\Windows: '$ObservedPath'")
+        "$Context is outside the staged root and trusted Windows system " +
+        "directories: '$ObservedPath'")
 }
 
 function Assert-AssemblyEvidenceContract {
@@ -2632,13 +3580,14 @@ function Assert-AssemblyEvidenceContract {
         [Parameter(Mandatory = $true)][string] $LockSha256,
         [Parameter(Mandatory = $true)][string] $ProvenanceSha256,
         [Parameter(Mandatory = $true)][string] $PayloadSha256,
-        [Parameter(Mandatory = $true)][string] $RootInventorySha256
+        [Parameter(Mandatory = $true)][string] $RootInventorySha256,
+        [Parameter(Mandatory = $true)][string] $StaticReportSha256
     )
 
     Assert-ExactProperties $AssemblyObject @(
         "schemaVersion", "previewId", "sourceLockSha256", "lockSha256", "provenanceSha256",
-        "payloadManifestSha256", "rootInventorySha256", "host",
-        "observedUtc", "externalObservation") "assembly evidence" `
+        "payloadManifestSha256", "rootInventorySha256", "staticReportSha256",
+        "host", "observedUtc", "externalObservation") "assembly evidence" `
         $script:ExitRuntime
     Assert-SchemaVersion $AssemblyObject "assembly evidence" $script:ExitRuntime
     if ($AssemblyObject.previewId -isnot [string] -or
@@ -2652,10 +3601,11 @@ function Assert-AssemblyEvidenceContract {
         @("lockSha256", $LockSha256),
         @("provenanceSha256", $ProvenanceSha256),
         @("payloadManifestSha256", $PayloadSha256),
-        @("rootInventorySha256", $RootInventorySha256))) {
+        @("rootInventorySha256", $RootInventorySha256),
+        @("staticReportSha256", $StaticReportSha256))) {
         Assert-LowerSha256 $AssemblyObject.($binding[0]) `
             "assembly evidence.$($binding[0])" $script:ExitRuntime
-        if ($AssemblyObject.($binding[0]) -cne $binding[1]) {
+        if ((-not (Test-OrdinalStringEqual ($AssemblyObject.($binding[0])) ($binding[1])))) {
             Throw-ValidationError $script:ExitRuntime "digest" (
                 "assembly evidence $($binding[0]) does not match its bound input")
         }
@@ -2663,9 +3613,9 @@ function Assert-AssemblyEvidenceContract {
     Assert-ExactProperties $AssemblyObject.host @(
         "os", "architecture", "processArchitecture") `
         "assembly evidence.host" $script:ExitRuntime
-    if ($AssemblyObject.host.os -cne "Windows" -or
-        $AssemblyObject.host.architecture -cnotin @("AMD64", "ARM64") -or
-        $AssemblyObject.host.processArchitecture -cnotin @("AMD64", "ARM64")) {
+    if ((-not (Test-OrdinalStringEqual ($AssemblyObject.host.os) ("Windows"))) -or
+        (-not (Test-OrdinalStringInCollection ($AssemblyObject.host.architecture) (@("AMD64", "ARM64")))) -or
+        (-not (Test-OrdinalStringInCollection ($AssemblyObject.host.processArchitecture) (@("AMD64", "ARM64"))))) {
         Throw-ValidationError $script:ExitRuntime "host" (
             "assembly evidence host/process architecture must be Windows AMD64 or ARM64")
     }
@@ -2691,28 +3641,32 @@ function Assert-RuntimeContract {
         [Parameter(Mandatory = $true)][string] $LockSha256,
         [Parameter(Mandatory = $true)][string] $ProvenanceSha256,
         [Parameter(Mandatory = $true)][string] $PayloadSha256,
+        [Parameter(Mandatory = $true)] $LockContext,
+        [Parameter(Mandatory = $true)] $ProvenanceContext,
         [Parameter(Mandatory = $true)] $PayloadContext,
         [Parameter(Mandatory = $true)][string] $RootPath,
-        [Parameter(Mandatory = $true)] $AssemblyContext
+        [Parameter(Mandatory = $true)] $AssemblyContext,
+        [Parameter(Mandatory = $true)][string] $StaticReportSha256
     )
 
     Assert-ExactProperties $RuntimeObject @(
         "schemaVersion", "previewId", "admissionMode", "sourceLockSha256", "lockSha256",
         "provenanceSha256", "payloadManifestSha256", "rootInventorySha256",
-        "validator", "host", "collector", "collectedUtc", "scenarios") `
+        "staticReportSha256", "validator", "host", "collector",
+        "collectedUtc", "scenarios") `
         "runtime evidence" $script:ExitRuntime
     Assert-SchemaVersion $RuntimeObject "runtime evidence" $script:ExitRuntime
-    if ($RuntimeObject.previewId -cne $AssemblyContext.PreviewId) {
+    if ((-not (Test-OrdinalStringEqual ($RuntimeObject.previewId) ($AssemblyContext.PreviewId)))) {
         Throw-ValidationError $script:ExitRuntime "identity" (
             "runtime evidence previewId does not match assembly evidence")
     }
-    if ($RuntimeObject.admissionMode -cnotin @("Preview", "Final")) {
+    if ((-not (Test-OrdinalStringInCollection ($RuntimeObject.admissionMode) (@("Preview", "Final"))))) {
         Throw-ValidationError $script:ExitRuntime "schema" (
             "runtime evidence admissionMode must be Preview or Final")
     }
     foreach ($digest in @(
         "lockSha256", "provenanceSha256", "payloadManifestSha256",
-        "rootInventorySha256")) {
+        "rootInventorySha256", "staticReportSha256")) {
         Assert-LowerSha256 $RuntimeObject.$digest "runtime evidence.$digest" `
             $script:ExitRuntime
     }
@@ -2721,8 +3675,9 @@ function Assert-RuntimeContract {
         @("lockSha256", $LockSha256),
         @("provenanceSha256", $ProvenanceSha256),
         @("payloadManifestSha256", $PayloadSha256),
-        @("rootInventorySha256", $PayloadContext.Inventory.Sha256))) {
-        if ($RuntimeObject.($binding[0]) -cne $binding[1]) {
+        @("rootInventorySha256", $PayloadContext.Inventory.Sha256),
+        @("staticReportSha256", $StaticReportSha256))) {
+        if ((-not (Test-OrdinalStringEqual ($RuntimeObject.($binding[0])) ($binding[1])))) {
             Throw-ValidationError $script:ExitRuntime "digest" (
                 "runtime evidence $($binding[0]) does not match its bound input " +
                 "(recorded=$($RuntimeObject.($binding[0])) actual=$($binding[1]))")
@@ -2730,8 +3685,8 @@ function Assert-RuntimeContract {
     }
     Assert-ExactProperties $RuntimeObject.host @("os", "architecture") `
         "runtime evidence.host" $script:ExitRuntime
-    if ($RuntimeObject.host.os -cne "Windows" -or
-        $RuntimeObject.host.architecture -cne "ARM64") {
+    if ((-not (Test-OrdinalStringEqual ($RuntimeObject.host.os) ("Windows"))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.host.architecture) ("ARM64")))) {
         Throw-ValidationError $script:ExitRuntime "host" (
             "runtime evidence host must be native Windows ARM64")
     }
@@ -2739,9 +3694,9 @@ function Assert-RuntimeContract {
         "repository", "commit", "path", "bytes", "sha256", "mode") `
         "runtime evidence.validator" `
         $script:ExitRuntime
-    if ($RuntimeObject.validator.repository -cne "crutkas/build-extra" -or
-        $RuntimeObject.validator.path -cne "validate-arm64-bundle.ps1" -or
-        $RuntimeObject.validator.mode -cne "Runtime") {
+    if ((-not (Test-OrdinalStringEqual ($RuntimeObject.validator.repository) ("crutkas/build-extra"))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.validator.path) ("validate-arm64-bundle.ps1"))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.validator.mode) ("Runtime")))) {
         Throw-ValidationError $script:ExitRuntime "validator" (
             "runtime evidence validator repository/mode is invalid")
     }
@@ -2751,47 +3706,81 @@ function Assert-RuntimeContract {
         "runtime evidence.validator.bytes" 1 $script:ExitRuntime
     Assert-LowerSha256 $RuntimeObject.validator.sha256 `
         "runtime evidence.validator.sha256" $script:ExitRuntime
-    $repositoryRootResult = @(& git -C (Split-Path -Parent $PSCommandPath) `
-        rev-parse --show-toplevel 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $repositoryRootResult.Count -ne 1) {
+    $checkout = Get-AuthoritativeCheckout $script:ExitRuntime
+    if ((-not (Test-OrdinalStringEqual ($RuntimeObject.validator.commit) ($checkout.Head)))) {
         Throw-ValidationError $script:ExitRuntime "validator" (
-            "could not identify the validator repository checkout")
+            "runtime evidence validator commit must equal the checked-out " +
+            "authoritative branch HEAD")
     }
-    $repositoryRoot = $repositoryRootResult[0].Trim()
-    $claimedBlob = @(& git -C $repositoryRoot rev-parse (
+    $claimedBlob = @(& git -C $checkout.Root rev-parse (
         "$($RuntimeObject.validator.commit):validate-arm64-bundle.ps1") 2>$null)
-    $currentBlob = @(& git -C $repositoryRoot hash-object $PSCommandPath 2>$null)
+    $currentBlob = @(& git -C $checkout.Root hash-object $PSCommandPath 2>$null)
     $currentBytes = [IO.FileInfo]::new($PSCommandPath).Length
     $currentSha256 = Get-FileSha256 $PSCommandPath
     if ($LASTEXITCODE -ne 0 -or $claimedBlob.Count -ne 1 -or
         $currentBlob.Count -ne 1 -or
-        $claimedBlob[0].Trim() -cne $currentBlob[0].Trim() -or
+        (-not (Test-OrdinalStringEqual ($claimedBlob[0].Trim()) ($currentBlob[0].Trim()))) -or
         [long]$RuntimeObject.validator.bytes -ne $currentBytes -or
-        $RuntimeObject.validator.sha256 -cne $currentSha256) {
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.validator.sha256) ($currentSha256)))) {
         Throw-ValidationError $script:ExitRuntime "validator" (
             "runtime evidence validator identity does not match the committed executable")
     }
     Assert-ExactProperties $RuntimeObject.collector @(
-        "repository", "commit", "path", "bytes", "sha256", "method") `
+        "inputId", "repository", "commit", "sourcePath", "url", "bytes",
+        "sha256", "method") `
         "runtime evidence.collector" $script:ExitRuntime
-    if ($RuntimeObject.collector.repository -cnotmatch
-        "^crutkas/[A-Za-z0-9_.-]+$" -or
-        $RuntimeObject.collector.method -cne
-            "ETW-Kernel-Process-ImageLoad") {
+    if (-not $LockContext.InputMap.ContainsKey(
+        [string]$RuntimeObject.collector.inputId)) {
         Throw-ValidationError $script:ExitRuntime "collector" (
-            "runtime collector must be an immutable crutkas ETW collector")
+            "runtime collector inputId does not resolve in the canonical lock")
+    }
+    $collectorInput =
+        $LockContext.InputMap[[string]$RuntimeObject.collector.inputId]
+    if ((-not (Test-OrdinalStringEqual ($collectorInput.status) ("resolved"))) -or
+        (-not (Test-OrdinalStringEqual ($collectorInput.role) ("validation-tool"))) -or
+        (-not (Test-OrdinalStringEqual ($collectorInput.resolution.method) ("github-raw-commit"))) -or
+        $null -eq $collectorInput.release -or
+        $null -eq $collectorInput.asset -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.collector.method) ("ETW-Kernel-Process-ImageLoad")))) {
+        Throw-ValidationError $script:ExitRuntime "collector" (
+            "runtime collector must bind a resolved raw-commit validation-tool input")
     }
     Assert-LowerCommit $RuntimeObject.collector.commit `
         "runtime evidence.collector.commit" $script:ExitRuntime
-    Assert-NormalizedPath $RuntimeObject.collector.path `
-        "runtime evidence.collector.path" -ExitCode $script:ExitRuntime
+    Assert-NormalizedPath $RuntimeObject.collector.sourcePath `
+        "runtime evidence.collector.sourcePath" -ExitCode $script:ExitRuntime
     Assert-LowerSha256 $RuntimeObject.collector.sha256 `
         "runtime evidence.collector.sha256" $script:ExitRuntime
     Assert-JsonInteger $RuntimeObject.collector.bytes `
         "runtime evidence.collector.bytes" 1 $script:ExitRuntime
-    if ([long]$RuntimeObject.collector.bytes -le 0) {
+    if ((-not (Test-OrdinalStringEqual ($RuntimeObject.collector.repository) ($collectorInput.release.repository))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.collector.commit) ($collectorInput.release.targetCommit))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.collector.sourcePath) ($collectorInput.release.sourcePath))) -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.collector.url) ($collectorInput.asset.url))) -or
+        [long]$RuntimeObject.collector.bytes -ne
+            [long]$collectorInput.asset.bytes -or
+        (-not (Test-OrdinalStringEqual ($RuntimeObject.collector.sha256) ($collectorInput.asset.sha256)))) {
         Throw-ValidationError $script:ExitRuntime "collector" (
-            "runtime collector byte count must be positive")
+            "runtime collector identity differs from its canonical lock input")
+    }
+    $collectorMembers =
+        $ProvenanceContext.ArchiveByInput[$collectorInput.id]
+    if ($null -eq $collectorMembers -or
+        -not $collectorMembers.ContainsKey(
+            $RuntimeObject.collector.sourcePath.ToLowerInvariant())) {
+        Throw-ValidationError $script:ExitRuntime "collector" (
+            "runtime collector sourcePath is absent from provenance")
+    }
+    $collectorMember = $collectorMembers[
+        $RuntimeObject.collector.sourcePath.ToLowerInvariant()]
+    if ((-not (Test-OrdinalStringEqual ($collectorMember.type) ("file"))) -or
+        $collectorMember.selected -ne $false -or
+        $null -ne $collectorMember.destinationPath -or
+        [long]$collectorMember.bytes -ne
+            [long]$RuntimeObject.collector.bytes -or
+        (-not (Test-OrdinalStringEqual ($collectorMember.sha256) ($RuntimeObject.collector.sha256)))) {
+        Throw-ValidationError $script:ExitRuntime "collector" (
+            "runtime collector identity differs from its provenance archive member")
     }
     Assert-UtcTimestamp $RuntimeObject.collectedUtc `
         "runtime evidence.collectedUtc" $script:ExitRuntime
@@ -2819,16 +3808,46 @@ function Assert-RuntimeContract {
             "id", "status", "reason", "command", "behavior", "trace") `
             "runtime scenario" $script:ExitRuntime
         if (-not $scenarioNames.Add($scenario.id) -or
-            -not $script:RequiredScenarios.Contains($scenario.id)) {
+            -not (Test-OrdinalStringInCollection `
+                $scenario.id @($script:RequiredScenarios.Keys))) {
             Throw-ValidationError $script:ExitRuntime "scenario" (
                 "runtime scenario is unknown, duplicate, or case-colliding: '$($scenario.id)'")
         }
-        if ($scenario.id -cne $expectedScenarioNames[$scenarioIndex]) {
+        if ((-not (Test-OrdinalStringEqual ($scenario.id) ($expectedScenarioNames[$scenarioIndex])))) {
             Throw-ValidationError $script:ExitRuntime "scenario" (
                 "runtime scenarios must use the canonical order")
         }
-        if ($scenario.status -ceq "unresolved") {
-            if ($RuntimeObject.admissionMode -cne "Preview" -or
+        Assert-JsonArray $scenario.command `
+            "runtime scenario '$($scenario.id)'.command" $script:ExitRuntime
+        $command = @($scenario.command)
+        if ($command.Count -eq 0 -or
+            @($command | Where-Object {
+                $_ -isnot [string] -or [string]::IsNullOrEmpty($_)
+            }).Count -ne 0) {
+            Throw-ValidationError $script:ExitRuntime "command" (
+                "runtime scenario '$($scenario.id)' needs an exact command vector")
+        }
+        $commandContract = $script:RequiredCommandContracts[$scenario.id]
+        $expectedCommand = @(
+            (Join-Path $RootPath (
+                $commandContract.executable.Replace("/", "\")))) +
+            @($commandContract.arguments)
+        if ($command.Count -ne $expectedCommand.Count) {
+            Throw-ValidationError $script:ExitRuntime "command" (
+                "runtime scenario '$($scenario.id)' command must match its " +
+                "closed required argument vector")
+        }
+        for ($argumentIndex = 0;
+            $argumentIndex -lt $expectedCommand.Count;
+            $argumentIndex++) {
+            if ((-not (Test-OrdinalStringEqual ($command[$argumentIndex]) ($expectedCommand[$argumentIndex])))) {
+                Throw-ValidationError $script:ExitRuntime "command" (
+                    "runtime scenario '$($scenario.id)' command must match its " +
+                    "closed required argument vector")
+            }
+        }
+        if ((Test-OrdinalStringEqual ($scenario.status) ("unresolved"))) {
+            if ((-not (Test-OrdinalStringEqual ($RuntimeObject.admissionMode) ("Preview"))) -or
                 $scenario.reason -isnot [string] -or
                 [string]::IsNullOrWhiteSpace($scenario.reason) -or
                 $null -ne $scenario.behavior -or $null -ne $scenario.trace) {
@@ -2841,7 +3860,7 @@ function Assert-RuntimeContract {
             }
             continue
         }
-        if ($scenario.status -cne "pass" -or $null -ne $scenario.reason) {
+        if ((-not (Test-OrdinalStringEqual ($scenario.status) ("pass"))) -or $null -ne $scenario.reason) {
             Throw-ValidationError $script:ExitRuntime "scenario" (
                 "runtime scenario '$($scenario.id)' must pass")
         }
@@ -2851,22 +3870,11 @@ function Assert-RuntimeContract {
         Assert-JsonInteger $scenario.behavior.exitCode `
             "runtime scenario '$($scenario.id)'.behavior.exitCode" 0 `
             $script:ExitRuntime
-        if ($scenario.behavior.operation -cne
-                $script:RequiredOperations[$scenario.id] -or
+        if ((-not (Test-OrdinalStringEqual ($scenario.behavior.operation) ($script:RequiredOperations[$scenario.id]))) -or
             $scenario.behavior.passed -ne $true -or
             [long]$scenario.behavior.exitCode -ne 0) {
             Throw-ValidationError $script:ExitRuntime "behavior" (
                 "runtime scenario '$($scenario.id)' lacks its required successful behavior proof")
-        }
-        Assert-JsonArray $scenario.command `
-            "runtime scenario '$($scenario.id)'.command" $script:ExitRuntime
-        $command = @($scenario.command)
-        if ($command.Count -eq 0 -or
-            @($command | Where-Object {
-                $_ -isnot [string] -or [string]::IsNullOrEmpty($_)
-            }).Count -ne 0) {
-            Throw-ValidationError $script:ExitRuntime "command" (
-                "runtime scenario '$($scenario.id)' needs an exact command vector")
         }
         $trace = $scenario.trace
         Assert-ExactProperties $trace @(
@@ -2904,13 +3912,15 @@ function Assert-RuntimeContract {
             Throw-ValidationError $script:ExitRuntime "trace" (
                 "runtime scenario '$($scenario.id)' observed no processes")
         }
-        $roleProcesses = @($processes | Where-Object role -CEQ "role")
+        $roleProcesses = @($processes | Where-Object {
+            Test-OrdinalStringEqual $_.role "role"
+        })
         if ($roleProcesses.Count -ne 1) {
             Throw-ValidationError $script:ExitRuntime "role" (
                 "runtime scenario '$($scenario.id)' needs exactly one role process")
         }
         $scenarioInstances = [Collections.Generic.HashSet[string]]::new(
-            $script:PathComparer)
+            [StringComparer]::Ordinal)
         $parentLinks = @()
         foreach ($process in $processes) {
             Assert-ExactProperties $process @(
@@ -2928,7 +3938,7 @@ function Assert-RuntimeContract {
             Assert-JsonInteger $process.processId `
                 "runtime process '$($process.instanceId)'.processId" 1 `
                 $script:ExitRuntime
-            if ($process.role -cnotin @("role", "support")) {
+            if ((-not (Test-OrdinalStringInCollection ($process.role) (@("role", "support"))))) {
                 Throw-ValidationError $script:ExitRuntime "process" (
                     "runtime process '$($process.instanceId)' has invalid PID/role")
             }
@@ -2956,7 +3966,7 @@ function Assert-RuntimeContract {
                 Throw-ValidationError $script:ExitRuntime "trace" (
                     "runtime process '$($process.instanceId)' lies outside its trace interval")
             }
-            if ($process.role -ceq "role") {
+            if ((Test-OrdinalStringEqual ($process.role) ("role"))) {
                 if ($null -ne $process.parentInstanceId) {
                     Throw-ValidationError $script:ExitRuntime "instance" (
                         "runtime role process must have parentInstanceId=null")
@@ -2979,16 +3989,16 @@ function Assert-RuntimeContract {
             Assert-LowerSha256 $process.sha256 `
                 "runtime process '$($process.instanceId)'.sha256" `
                 $script:ExitRuntime
-            if ($process.sha256 -cne $actual.Sha256 -or
-                $process.architecture -cne $actual.Architecture -or
-                $process.personality -cne $actual.Personality) {
+            if ((-not (Test-OrdinalStringEqual ($process.sha256) ($actual.Sha256))) -or
+                (-not (Test-OrdinalStringEqual ($process.architecture) ($actual.Architecture))) -or
+                (-not (Test-OrdinalStringEqual ($process.personality) ($actual.Personality)))) {
                 Throw-ValidationError $script:ExitRuntime "process" (
                     "runtime process '$($process.instanceId)' identity is not authoritative")
             }
-            if ($process.architecture -cnotin @(
-                    "arm64", "arm64ec", "anycpu") -or
-                $process.personality -cnotin @(
-                    "msys", "mingw", "managed")) {
+            if ((-not (Test-OrdinalStringInCollection ($process.architecture) (@(
+                    "arm64", "arm64ec", "anycpu")))) -or
+                (-not (Test-OrdinalStringInCollection ($process.personality) (@(
+                    "msys", "mingw", "managed"))))) {
                 Throw-ValidationError $script:ExitRuntime "architecture" (
                     "runtime process '$($process.instanceId)' violates architecture/personality policy")
             }
@@ -3020,16 +4030,16 @@ function Assert-RuntimeContract {
                     $RootPath $PayloadContext "runtime module"
                 Assert-LowerSha256 $module.sha256 "runtime module.sha256" `
                     $script:ExitRuntime
-                if ($module.sha256 -cne $moduleActual.Sha256 -or
-                    $module.architecture -cne $moduleActual.Architecture -or
-                    $module.personality -cne $moduleActual.Personality) {
+                if ((-not (Test-OrdinalStringEqual ($module.sha256) ($moduleActual.Sha256))) -or
+                    (-not (Test-OrdinalStringEqual ($module.architecture) ($moduleActual.Architecture))) -or
+                    (-not (Test-OrdinalStringEqual ($module.personality) ($moduleActual.Personality)))) {
                     Throw-ValidationError $script:ExitRuntime "module" (
                         "runtime module '$modulePath' identity is not authoritative")
                 }
-                if ($module.architecture -cnotin @(
-                        "arm64", "arm64ec", "anycpu") -or
-                    $module.personality -cnotin @(
-                        "msys", "mingw", "managed")) {
+                if ((-not (Test-OrdinalStringInCollection ($module.architecture) (@(
+                        "arm64", "arm64ec", "anycpu")))) -or
+                    (-not (Test-OrdinalStringInCollection ($module.personality) (@(
+                        "msys", "mingw", "managed"))))) {
                     Throw-ValidationError $script:ExitRuntime "architecture" (
                         "runtime module '$modulePath' violates architecture/personality policy")
                 }
@@ -3037,37 +4047,39 @@ function Assert-RuntimeContract {
         }
         foreach ($link in $parentLinks) {
             if (-not $scenarioInstances.Contains($link.parent) -or
-                $link.child -ieq $link.parent) {
+                $script:PathComparer.Equals($link.child, $link.parent)) {
                 Throw-ValidationError $script:ExitRuntime "instance" (
                     "runtime support process '$($link.child)' has an invalid parent")
             }
         }
-        $parentByChild = @{}
+        $parentByChild =
+            [Collections.Generic.Dictionary[string, string]]::new(
+                [StringComparer]::Ordinal)
         foreach ($link in $parentLinks) {
-            $parentByChild[$link.child.ToLowerInvariant()] = $link.parent
+            $parentByChild[$link.child] = $link.parent
         }
         foreach ($link in $parentLinks) {
             $visited = [Collections.Generic.HashSet[string]]::new(
                 $script:PathComparer)
             $cursor = $link.child
-            while ($parentByChild.ContainsKey($cursor.ToLowerInvariant())) {
+            while ($parentByChild.ContainsKey($cursor)) {
                 if (-not $visited.Add($cursor)) {
                     Throw-ValidationError $script:ExitRuntime "instance" (
                         "runtime process tree contains a parent cycle")
                 }
-                $cursor = $parentByChild[$cursor.ToLowerInvariant()]
+                $cursor = $parentByChild[$cursor]
             }
-            if ($cursor -cne $roleProcesses[0].instanceId) {
+            if ((-not (Test-OrdinalStringEqual ($cursor) ($roleProcesses[0].instanceId)))) {
                 Throw-ValidationError $script:ExitRuntime "instance" (
                     "runtime support process '$($link.child)' is not in the role process tree")
             }
         }
         $expectedPersonality = $script:RequiredScenarios[$scenario.id]
-        if ($roleProcesses[0].personality -cne $expectedPersonality) {
+        if ((-not (Test-OrdinalStringEqual ($roleProcesses[0].personality) ($expectedPersonality)))) {
             Throw-ValidationError $script:ExitRuntime "role" (
                 "runtime scenario '$($scenario.id)' role process must be $expectedPersonality")
         }
-        if ($command[0] -cne $roleProcesses[0].path) {
+        if ((-not (Test-OrdinalStringEqual ($command[0]) ($roleProcesses[0].path)))) {
             Throw-ValidationError $script:ExitRuntime "command" (
                 "runtime scenario '$($scenario.id)' command does not start with its role process")
         }
@@ -3105,7 +4117,7 @@ try {
         Throw-ValidationError $script:ExitScanner "runtime" (
             "validate-arm64-bundle.ps1 requires PowerShell 7.5 or newer")
     }
-    if ($Mode -eq "Runtime") {
+    if (Test-OrdinalStringEqual $Mode "Runtime") {
         if ([string]::IsNullOrWhiteSpace($AssemblyEvidence)) {
             Throw-ValidationError $script:ExitRuntime "schema" (
                 "-AssemblyEvidence is required only for -Mode Runtime")
@@ -3114,6 +4126,13 @@ try {
             Throw-ValidationError $script:ExitRuntime "schema" (
                 "-RuntimeEvidence is required only for -Mode Runtime")
         }
+        if ([string]::IsNullOrWhiteSpace($StaticReport)) {
+            Throw-ValidationError $script:ExitRuntime "schema" (
+                "-StaticReport is required only for -Mode Runtime")
+        }
+    } elseif (-not [string]::IsNullOrWhiteSpace($StaticReport)) {
+        Throw-ValidationError $script:ExitContract "schema" (
+            "-StaticReport applies only to -Mode Runtime")
     }
 
     $rootPath = Assert-LocalSafeRoot $Root "Root"
@@ -3127,7 +4146,7 @@ try {
     $runtimeDocument = $null
     $assemblyDocument = $null
     $admissionMode = $Mode
-    if ($Mode -eq "Runtime") {
+    if (Test-OrdinalStringEqual $Mode "Runtime") {
         $assemblyDocument = Read-JsonDocument $AssemblyEvidence `
             "assembly evidence" $script:ExitRuntime
         $runtimeDocument = Read-JsonDocument $RuntimeEvidence `
@@ -3138,7 +4157,7 @@ try {
             $runtimeDocument.Sha256
         $admissionMode = Get-RequiredProperty $runtimeDocument.Object `
             "admissionMode" "runtime evidence" $script:ExitRuntime
-        if ($admissionMode -cnotin @("Preview", "Final")) {
+        if ((-not (Test-OrdinalStringInCollection ($admissionMode) (@("Preview", "Final"))))) {
             Throw-ValidationError $script:ExitRuntime "schema" (
                 "runtime evidence admissionMode must be Preview or Final")
         }
@@ -3149,6 +4168,15 @@ try {
         $lockDocument.Object $lockDocument $rootPath
     $script:ReportData.digests.sourceLockSha256 =
         $lockContext.SourceLock.sha256
+    $baseTreeManifestSha256 = @(
+        $lockContext.BaseTrees.Values |
+            ForEach-Object { $_.Sha256 })
+    $script:ReportData.digests.baseTreeManifestSha256 =
+        if ($baseTreeManifestSha256.Count -eq 0) {
+            $null
+        } else {
+            $baseTreeManifestSha256[0]
+        }
     $provenanceContext = Read-ProvenanceContract `
         $provenanceDocument.Object $lockContext $lockDocument.Sha256
     $payloadContext = Read-PayloadContract `
@@ -3160,25 +4188,44 @@ try {
     Assert-PseudoReloc $provenanceContext $payloadContext $rootPath
     Assert-StaticPolicy $admissionMode $lockContext $payloadContext
 
-    if ($Mode -eq "Runtime") {
+    if (Test-OrdinalStringEqual $Mode "Runtime") {
+        if (-not $script:ReportData.readyForFinal) {
+            Throw-ValidationError $script:ExitRuntime "admission" (
+                "Runtime requires a static state that is readyForFinal")
+        }
+        $staticReportContext = Assert-StaticReportContract `
+            $StaticReport `
+            $lockContext.SourceLock.sha256 `
+            $lockDocument.Sha256 `
+            $provenanceDocument.Sha256 `
+            $payloadDocument.Sha256 `
+            $payloadContext.Inventory.Sha256
+        $script:ReportData.digests.staticReportSha256 =
+            $staticReportContext.Sha256
         $assemblyContext = Assert-AssemblyEvidenceContract `
             $assemblyDocument.Object `
             $lockContext.SourceLock.sha256 `
             $lockDocument.Sha256 `
             $provenanceDocument.Sha256 `
             $payloadDocument.Sha256 `
-            $payloadContext.Inventory.Sha256
+            $payloadContext.Inventory.Sha256 `
+            $staticReportContext.Sha256
         Assert-RuntimeContract `
             $runtimeDocument.Object `
             $lockContext.SourceLock.sha256 `
             $lockDocument.Sha256 `
             $provenanceDocument.Sha256 `
             $payloadDocument.Sha256 `
+            $lockContext `
+            $provenanceContext `
             $payloadContext `
             $rootPath `
-            $assemblyContext
+            $assemblyContext `
+            $staticReportContext.Sha256
     }
-    Write-ValidationReport 0 "pass"
+    if (-not (Write-ValidationReport 0 "pass")) {
+        $exitCode = $script:ExitScanner
+    }
 } catch {
     $exitCode = $script:ExitScanner
     $category = "internal"
@@ -3191,6 +4238,6 @@ try {
         message = $_.Exception.Message
     })
     [Console]::Error.WriteLine($_.Exception.Message)
-    Write-ValidationReport $exitCode "fail"
+    [void](Write-ValidationReport $exitCode "fail")
 }
 exit $exitCode
