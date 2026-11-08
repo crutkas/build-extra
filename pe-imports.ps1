@@ -16,6 +16,7 @@
 [CmdletBinding(PositionalBinding = $false)]
 param(
     [switch]$ArchitectureOnly,
+    [switch]$FailOnMalformedPe,
     [string]$Root,
     [string]$FileList,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -67,7 +68,7 @@ foreach ($file in $inputFiles) {
         if ($peSignatureOffset + 24 -gt $bytes.Length -or
             $bytes[$peSignatureOffset] -ne 0x50 -or $bytes[$peSignatureOffset+1] -ne 0x45 -or
             $bytes[$peSignatureOffset+2] -ne 0 -or $bytes[$peSignatureOffset+3] -ne 0) {
-            if (-not $ArchitectureOnly) {
+            if (-not $ArchitectureOnly -or $FailOnMalformedPe) {
                 Write-Error "pe-imports: ${file}: bad PE signature"
             }
             continue
@@ -100,7 +101,7 @@ foreach ($file in $inputFiles) {
             }
         }
         if ($dataDirBase -eq 0) {
-            if ($ArchitectureOnly) {
+            if ($ArchitectureOnly -and -not $FailOnMalformedPe) {
                 Write-Output "${file}$([char]9)x86$([char]9)0x014C"
             } else {
                 Write-Error "pe-imports: ${file}: unknown optional header magic 0x$($magic.ToString('X4'))"

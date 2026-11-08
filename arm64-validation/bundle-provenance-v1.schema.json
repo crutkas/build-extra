@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/bundle-provenance-v1.schema.json",
+  "title": "ARM64 bundle provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lockSha256",
+    "assemblerCommit",
+    "host",
+    "createdAt",
+    "inputs",
+    "overlayOrder",
+    "scanner",
+    "externalObservations"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "lockSha256": { "$ref": "#/$defs/sha256" },
+    "assemblerCommit": { "$ref": "#/$defs/commit" },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture"],
+      "properties": {
+        "os": { "const": "windows" },
+        "architecture": { "const": "arm64" }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inputVerification" }
+    },
+    "overlayOrder": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/overlay" }
+    },
+    "scanner": { "$ref": "#/$defs/scanner" },
+    "externalObservations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/externalObservation" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "tag", "targetCommit"],
+      "properties": {
+        "repository": { "type": "string" },
+        "tag": { "type": "string" },
+        "targetCommit": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "name", "bytes", "sha256"],
+      "properties": {
+        "url": { "type": "string" },
+        "name": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "packageIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "personality"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "personality": {
+          "enum": ["mixed", "mingw", "msys", "managed", "windows"]
+        }
+      }
+    },
+    "inputVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "release", "asset", "package"],
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "const": "verified" },
+        "release": { "$ref": "#/$defs/release" },
+        "asset": { "$ref": "#/$defs/asset" },
+        "package": { "$ref": "#/$defs/packageIdentity" }
+      }
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceMember",
+        "destinationPath",
+        "type",
+        "replacesSourceInput"
+      ],
+      "properties": {
+        "sourceMember": { "type": "string" },
+        "destinationPath": { "type": "string" },
+        "type": { "enum": ["file", "directory", "symlink"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "linkTarget": { "type": "string" },
+        "replacesSourceInput": { "type": ["string", "null"] }
+      }
+    },
+    "overlay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["index", "inputId", "members"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "inputId": { "type": "string" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/member" }
+        }
+      }
+    },
+    "scannerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "tool": { "type": "string" },
+        "path": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "scanner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script", "candidates"],
+      "properties": {
+        "script": { "$ref": "#/$defs/scannerIdentity" },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scannerIdentity" }
+        },
+        "pseudoReloc": { "$ref": "#/$defs/pseudoReloc" }
+      }
+    },
+    "pseudoRelocTool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "sourceInput"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sourceInput": { "type": "string" }
+      }
+    },
+    "pseudoRelocScript": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit",
+        "sourceMember",
+        "path",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "repository": { "const": "crutkas/MSYS2-packages" },
+        "commit": {
+          "const": "3356eec1411983cc252b04afac32bca5f3b8d824"
+        },
+        "sourceMember": {
+          "const": ".ci/check-aarch64-pseudo-relocs.ps1"
+        },
+        "path": { "type": "string" },
+        "bytes": { "const": 10569 },
+        "sha256": {
+          "const": "888939b57d1bce2e3c119e7c4824703e893bd449d49a5142f040dd935741ddb9"
+        }
+      }
+    },
+    "pseudoReloc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "script",
+        "toolPackageInput",
+        "objdump",
+        "nm",
+        "linker",
+        "targets"
+      ],
+      "properties": {
+        "status": { "enum": ["resolved", "unresolved"] },
+        "script": {
+          "oneOf": [
+            { "$ref": "#/$defs/pseudoRelocScript" },
+            { "type": "null" }
+          ]
+        },
+        "toolPackageInput": { "type": ["string", "null"] },
+        "objdump": {
+          "oneOf": [
+            { "$ref": "#/$defs/pseudoRelocTool" },
+            { "type": "null" }
+          ]
+        },
+        "nm": {
+          "oneOf": [
+            { "$ref": "#/$defs/pseudoRelocTool" },
+            { "type": "null" }
+          ]
+        },
+        "linker": {
+          "oneOf": [
+            { "$ref": "#/$defs/pseudoRelocTool" },
+            { "type": "null" }
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "observationSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["log", "database"],
+      "properties": {
+        "log": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["bytes", "sha256"],
+          "properties": {
+            "bytes": { "type": "integer", "minimum": 0 },
+            "sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files", "manifestSha256"],
+          "properties": {
+            "files": { "type": "integer", "minimum": 0 },
+            "manifestSha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "externalObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "authoritative",
+        "cutoff",
+        "before",
+        "after",
+        "commands"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "authoritative": { "const": false },
+        "cutoff": { "type": "string", "format": "date-time" },
+        "before": { "$ref": "#/$defs/observationSnapshot" },
+        "after": { "$ref": "#/$defs/observationSnapshot" },
+        "commands": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

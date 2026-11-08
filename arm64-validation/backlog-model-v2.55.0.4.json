@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "manifest": "arm64-payload-architecture-v2.55.0.4.tsv",
+    "manifestSha256": "ae1e311fd81258150c2300d02c58655f30b190a15bcbe3ea8bbaccc1ce8c1c9a",
+    "x64Paths": "arm64-x64-payload-baseline.txt",
+    "x64Count": 432,
+    "ownershipRepository": "crutkas/git-sdk-arm64",
+    "ownershipCommit": "7a77c0c5ff81d1c979302c9cc49a62f26f68d17c",
+    "ownershipDatabasePath": "var/lib/pacman/local"
+  },
+  "busyBoxRetained": "arm64-validation/busybox-retained-v2.55.0.4.tsv",
+  "deltas": [
+    {
+      "id": "native-leaf-tools",
+      "status": "green",
+      "resolution": "safe-native-mingw-substitution",
+      "expectedCount": 11,
+      "source": {
+        "repository": "crutkas/build-extra",
+        "pullRequest": 3,
+        "head": "39ffc22208aa99e287a9f433431fb9a56f443b62"
+      },
+      "paths": [
+        "usr/bin/bunzip2.exe",
+        "usr/bin/bzcat.exe",
+        "usr/bin/bzip2.exe",
+        "usr/bin/bzip2recover.exe",
+        "usr/bin/nettle-hash.exe",
+        "usr/bin/nettle-lfib-stream.exe",
+        "usr/bin/nettle-pbkdf2.exe",
+        "usr/bin/p11-kit.exe",
+        "usr/bin/pkcs1-conv.exe",
+        "usr/bin/sexp-conv.exe",
+        "usr/bin/trust.exe"
+      ]
+    },
+    {
+      "id": "busybox",
+      "status": "green",
+      "resolution": "safe-busybox-substitution",
+      "expectedCount": 59,
+      "source": {
+        "repository": "crutkas/build-extra",
+        "pullRequest": 4,
+        "head": "50de8f12409d8cc8e16aef190629073db1a8606d",
+        "workflowRun": 31771293786
+      },
+      "paths": [
+        "usr/bin/[.exe",
+        "usr/bin/arch.exe",
+        "usr/bin/base32.exe",
+        "usr/bin/base64.exe",
+        "usr/bin/basename.exe",
+        "usr/bin/cat.exe",
+        "usr/bin/cksum.exe",
+        "usr/bin/cmp.exe",
+        "usr/bin/comm.exe",
+        "usr/bin/cp.exe",
+        "usr/bin/cut.exe",
+        "usr/bin/diff.exe",
+        "usr/bin/dirname.exe",
+        "usr/bin/echo.exe",
+        "usr/bin/env.exe",
+        "usr/bin/expand.exe",
+        "usr/bin/expr.exe",
+        "usr/bin/false.exe",
+        "usr/bin/find.exe",
+        "usr/bin/fold.exe",
+        "usr/bin/head.exe",
+        "usr/bin/join.exe",
+        "usr/bin/ln.exe",
+        "usr/bin/md5sum.exe",
+        "usr/bin/mkdir.exe",
+        "usr/bin/mktemp.exe",
+        "usr/bin/mv.exe",
+        "usr/bin/nl.exe",
+        "usr/bin/nproc.exe",
+        "usr/bin/od.exe",
+        "usr/bin/paste.exe",
+        "usr/bin/printf.exe",
+        "usr/bin/rm.exe",
+        "usr/bin/rmdir.exe",
+        "usr/bin/seq.exe",
+        "usr/bin/sha1sum.exe",
+        "usr/bin/sha256sum.exe",
+        "usr/bin/sha384sum.exe",
+        "usr/bin/sha512sum.exe",
+        "usr/bin/sort.exe",
+        "usr/bin/split.exe",
+        "usr/bin/sum.exe",
+        "usr/bin/tac.exe",
+        "usr/bin/tail.exe",
+        "usr/bin/tee.exe",
+        "usr/bin/test.exe",
+        "usr/bin/touch.exe",
+        "usr/bin/tr.exe",
+        "usr/bin/true.exe",
+        "usr/bin/truncate.exe",
+        "usr/bin/tsort.exe",
+        "usr/bin/uname.exe",
+        "usr/bin/unexpand.exe",
+        "usr/bin/uniq.exe",
+        "usr/bin/unlink.exe",
+        "usr/bin/unzip.exe",
+        "usr/bin/wc.exe",
+        "usr/bin/xargs.exe",
+        "usr/bin/yes.exe"
+      ]
+    },
+    {
+      "id": "win32-openssh",
+      "status": "green",
+      "resolution": "native-port-and-dependency-removal",
+      "expectedCount": 14,
+      "source": {
+        "repository": "crutkas/build-extra",
+        "pullRequest": 8,
+        "head": "be0217cb572704f27ea04c9abde8bb992b8ef0c0",
+        "workflowRun": 31902748835
+      },
+      "sourcePackages": ["openssh", "libedit", "libfido2", "libcbor"]
+    },
+    {
+      "id": "dos2unix",
+      "status": "green",
+      "resolution": "safe-native-mingw-substitution",
+      "expectedCount": 6,
+      "source": {
+        "repository": "crutkas/build-extra",
+        "pullRequest": 9,
+        "head": "bc3ec5555a95355dfc6832dcd5e38ada98ff6e45",
+        "workflowRun": 32518400757
+      },
+      "sourcePackages": ["dos2unix"]
+    },
+    {
+      "id": "gawk",
+      "status": "green",
+      "resolution": "native-port",
+      "expectedCount": 17,
+      "source": {
+        "repository": "crutkas/build-extra",
+        "pullRequest": 10,
+        "head": "1f3dc3b7edb59417f3bb3b0b5f49de10aa528829"
+      },
+      "sourcePackages": ["gawk"]
+    },
+    {
+      "id": "vim",
+      "status": "green-source-candidate",
+      "resolution": "native-port",
+      "expectedCount": 7,
+      "source": {
+        "repository": "crutkas/MINGW-packages",
+        "pullRequest": 7,
+        "head": "d012f9f8a8d05a3a51a40fe33668295a3e31c221"
+      },
+      "sourcePackages": ["vim"]
+    },
+    {
+      "id": "msys2-runtime",
+      "status": "modeled-unresolved",
+      "resolution": "native-port",
+      "expectedCount": 31,
+      "immutableInput": null,
+      "source": {
+        "repository": "crutkas/MSYS2-packages",
+        "pullRequest": 10,
+        "head": "3f92608bfeea71102da9ee093c4db1d67f513a5c",
+        "replacementPackage": "msys2-runtime 3.6.10-1"
+      },
+      "sourcePackages": ["msys2-runtime"]
+    },
+    {
+      "id": "ncurses",
+      "status": "modeled-unresolved",
+      "resolution": "native-port",
+      "expectedCount": 12,
+      "immutableInput": null,
+      "source": {
+        "repository": "crutkas/MSYS2-packages",
+        "pullRequest": 11,
+        "head": "61e084be245499250da18f0b6f58461d29f59f47",
+        "replacementPackage": "ncurses 6.6-2"
+      },
+      "sourcePackages": ["ncurses"]
+    },
+    {
+      "id": "readline",
+      "status": "modeled-unresolved",
+      "resolution": "native-port",
+      "expectedCount": 1,
+      "immutableInput": null,
+      "source": {
+        "repository": "crutkas/MSYS2-packages",
+        "pullRequest": 14,
+        "head": "6d7cbd4f8b8a90092cedb6505a30af4217989b16",
+        "replacementPackage": "libreadline 8.3.003-1"
+      },
+      "sourcePackages": ["libreadline"]
+    },
+    {
+      "id": "bash",
+      "status": "modeled-unresolved",
+      "resolution": "native-port",
+      "expectedCount": 2,
+      "immutableInput": null,
+      "source": {
+        "repository": "crutkas/MSYS2-packages",
+        "pullRequest": 17,
+        "head": "512074a4f206c261fef85d34a73fc8b2badd7211",
+        "replacementPackage": "bash 5.3.015-2"
+      },
+      "sourcePackages": ["bash"]
+    }
+  ],
+  "packageDispositions": [
+    {
+      "sourcePackages": ["perl", "gnupg", "winpty", "gdbm", "less", "nano", "pinentry"],
+      "action": "native-port",
+      "dependencyRemovalOpportunity": null
+    },
+    {
+      "sourcePackages": [
+        "subversion",
+        "heimdal-libs",
+        "libsasl",
+        "apr",
+        "apr-util",
+        "libserf"
+      ],
+      "action": "dependency-removal",
+      "dependencyRemovalOpportunity": "remove or split git-svn and its authentication closure"
+    },
+    {
+      "sourcePackages": [
+        "libopenssl",
+        "libgcrypt",
+        "libgpg-error",
+        "libassuan",
+        "libksba",
+        "libnpth",
+        "libtasn1"
+      ],
+      "action": "dependency-removal",
+      "dependencyRemovalOpportunity": "replace the remaining MSYS GnuPG closure"
+    }
+  ],
+  "productScopes": {
+    "source": {
+      "repository": "crutkas/build-extra",
+      "workflowRun": 31902748835,
+      "head": "be0217cb572704f27ea04c9abde8bb992b8ef0c0"
+    },
+    "products": [
+      {
+        "id": "installer",
+        "allModeledPaths": true,
+        "expectedCount": 46
+      },
+      {
+        "id": "portable",
+        "allModeledPaths": true,
+        "expectedCount": 46
+      },
+      {
+        "id": "mingit",
+        "allModeledPaths": false,
+        "expectedCount": 13,
+        "paths": [
+          "usr/bin/chattr.exe",
+          "usr/bin/cygwin-console-helper.exe",
+          "usr/bin/gencat.exe",
+          "usr/bin/getfacl.exe",
+          "usr/bin/gmondump.exe",
+          "usr/bin/lsattr.exe",
+          "usr/bin/msys-2.0.dll",
+          "usr/bin/msys-ncursesw6.dll",
+          "usr/bin/msys-readline8.dll",
+          "usr/bin/newgrp.exe",
+          "usr/bin/profiler.exe",
+          "usr/bin/sh.exe",
+          "usr/libexec/getprocaddr64.exe"
+        ]
+      },
+      {
+        "id": "busybox-mingit",
+        "allModeledPaths": false,
+        "expectedCount": 9,
+        "paths": [
+          "usr/bin/chattr.exe",
+          "usr/bin/cygwin-console-helper.exe",
+          "usr/bin/gencat.exe",
+          "usr/bin/gmondump.exe",
+          "usr/bin/lsattr.exe",
+          "usr/bin/msys-2.0.dll",
+          "usr/bin/newgrp.exe",
+          "usr/bin/profiler.exe",
+          "usr/libexec/getprocaddr64.exe"
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "greenOrCandidateRemoved": 114,
+    "modeledRemoved": 46,
+    "remaining": 272
+  }
+}

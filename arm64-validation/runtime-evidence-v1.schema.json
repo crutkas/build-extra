@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/runtime-evidence-v1.schema.json",
+  "title": "ARM64 runtime process/module evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "mode",
+    "lockSha256",
+    "provenanceSha256",
+    "payloadSha256",
+    "host",
+    "createdAt",
+    "collector",
+    "scenarios"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "mode": { "enum": ["preview", "final"] },
+    "lockSha256": { "$ref": "#/$defs/sha256" },
+    "provenanceSha256": { "$ref": "#/$defs/sha256" },
+    "payloadSha256": { "$ref": "#/$defs/sha256" },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "nativeArchitecture"],
+      "properties": {
+        "os": { "const": "windows" },
+        "architecture": { "const": "arm64" },
+        "nativeArchitecture": { "const": "arm64" }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "collector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "path", "sha256", "method"],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^crutkas/[^/]+$"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "path": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "method": { "const": "etw-kernel-process-image-load" }
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/scenario" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "architecture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "machine", "personality"],
+      "properties": {
+        "kind": {
+          "enum": ["anycpu", "arm64", "arm64ec", "x64", "x86"]
+        },
+        "machine": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{4}$"
+        },
+        "personality": {
+          "enum": ["managed", "mingw", "msys", "cygwin", "mixed", "windows"]
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "payloadPath",
+        "origin",
+        "sha256",
+        "architecture"
+      ],
+      "properties": {
+        "path": { "type": "string" },
+        "payloadPath": { "type": ["string", "null"] },
+        "origin": { "enum": ["payload", "windows"] },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "architecture": { "$ref": "#/$defs/architecture" }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "processId",
+        "parentProcessId",
+        "startedAt",
+        "endedAt",
+        "path",
+        "payloadPath",
+        "sha256",
+        "architecture",
+        "modulesComplete",
+        "modules"
+      ],
+      "properties": {
+        "role": { "type": "string" },
+        "processId": { "type": "integer", "minimum": 1 },
+        "parentProcessId": { "type": "integer", "minimum": 0 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "endedAt": { "type": "string", "format": "date-time" },
+        "path": { "type": "string" },
+        "payloadPath": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "architecture": { "$ref": "#/$defs/architecture" },
+        "modulesComplete": { "const": true },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/module" }
+        }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "command", "processes"],
+      "properties": {
+        "id": {
+          "enum": [
+            "git-bash",
+            "git",
+            "ssh",
+            "gpg",
+            "hook",
+            "submodule",
+            "rebase",
+            "git-svn"
+          ]
+        },
+        "status": { "enum": ["passed", "unresolved"] },
+        "command": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reason": { "type": "string" },
+        "exitCode": { "type": "integer" },
+        "traceComplete": { "type": "boolean" },
+        "processes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/process" }
+        }
+      }
+    }
+  }
+}

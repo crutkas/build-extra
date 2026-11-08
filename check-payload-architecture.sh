@@ -11,7 +11,8 @@ usage () {
 
 	  --manifest=<file>      write the deterministic TSV manifest here
 	  --baseline=<file>      allow the x64 paths listed in this file
-	  --strict               fail if the payload contains any x64 PE file
+	  --mode=<preview|final> preview allows only baseline x64 paths; final allows none
+	  --strict               alias for --mode=final
 	  --root=<directory>     read payload files below this directory
 	  --file-list=<file>     use this installer file list instead of generating one
 	  --package-list=<file>  use this "pacman -Ql" output instead of querying pacman
@@ -26,7 +27,7 @@ baseline="$thisdir/arm64-x64-payload-baseline.txt"
 root=/
 file_list=
 package_list=
-strict=
+mode=preview
 
 while test $# -gt 0
 do
@@ -36,7 +37,9 @@ do
 	--root=*) root=${1#*=};;
 	--file-list=*) file_list=${1#*=};;
 	--package-list=*) package_list=${1#*=};;
-	--strict) strict=t;;
+	--mode=preview) mode=preview;;
+	--mode=final|--strict) mode=final;;
+	--mode=*) die "Unknown mode: ${1#*=}";;
 	-h|--help) usage; exit 0;;
 	*) die "Unknown option: $1";;
 	esac
@@ -143,6 +146,7 @@ awk '{ printf "%s\t%d\n", $2, $1 }' >"$tmp.summary"
 
 echo "Payload PE architecture summary:"
 awk -F '	' '{ printf "  %-12s %d\n", $1, $2 }' "$tmp.summary"
+echo "Mode: $mode"
 echo "Manifest: $manifest"
 
 if test -n "$GITHUB_STEP_SUMMARY"
@@ -162,11 +166,11 @@ tail -n +2 "$manifest" |
 awk -F '	' '$2 == "x64" { print $1 }' |
 LC_ALL=C sort >"$tmp.x64"
 
-if test -n "$strict"
+if test final = "$mode"
 then
 	if test -s "$tmp.x64"
 	then
-		echo "Strict mode rejects these x64 payload files:" >&2
+		echo "Final mode rejects these x64 payload files:" >&2
 		cat "$tmp.x64" >&2
 		exit 1
 	fi

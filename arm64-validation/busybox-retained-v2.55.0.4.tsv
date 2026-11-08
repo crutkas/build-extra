@@ -1,0 +1,79 @@
+path	reason
+usr/bin/awk.exe	BusyBox awk does not provide GNU awk extensions
+usr/bin/chmod.exe	Native Windows ACL and MSYS executable-bit semantics are not proven
+usr/bin/date.exe	GNU date parsing and timezone semantics are not proven
+usr/bin/dd.exe	Device, signal, and GNU operand semantics are not proven
+usr/bin/df.exe	MSYS mount and filesystem reporting semantics are not proven
+usr/bin/du.exe	MSYS symlink and allocation reporting semantics are not proven
+usr/bin/factor.exe	GNU option and large-integer semantics are not proven
+usr/bin/groups.exe	MSYS identity mapping semantics are not proven
+usr/bin/id.exe	MSYS identity mapping semantics are not proven
+usr/bin/install.exe	MSYS ownership, mode, and backup semantics are not proven
+usr/bin/link.exe	MSYS link semantics are not proven
+usr/bin/logname.exe	MSYS identity mapping semantics are not proven
+usr/bin/ls.exe	BusyBox has a known piped UTF-8 filename display gap
+usr/bin/printenv.exe	GNU option and environment encoding semantics are not proven
+usr/bin/pwd.exe	MSYS POSIX path rendering semantics are not proven
+usr/bin/readlink.exe	MSYS symlink and POSIX path rendering semantics are not proven
+usr/bin/realpath.exe	MSYS symlink and POSIX path rendering semantics are not proven
+usr/bin/shred.exe	Windows filesystem overwrite guarantees are not proven
+usr/bin/shuf.exe	GNU random-source and option semantics are not proven
+usr/bin/sleep.exe	BusyBox sleep does not observe MSYS SIGTERM
+usr/bin/stat.exe	GNU format and MSYS filesystem metadata semantics are not proven
+usr/bin/stty.exe	MSYS terminal and signal semantics are not proven
+usr/bin/sync.exe	Windows durability semantics are not proven
+usr/bin/timeout.exe	MSYS signal forwarding semantics are not proven
+usr/bin/whoami.exe	MSYS identity mapping semantics are not proven
+usr/bin/b2sum.exe	No exact ARM64 BusyBox applet
+usr/bin/basenc.exe	No exact ARM64 BusyBox applet
+usr/bin/chcon.exe	No exact ARM64 BusyBox applet
+usr/bin/chgrp.exe	No exact ARM64 BusyBox applet
+usr/bin/chown.exe	No exact ARM64 BusyBox applet
+usr/bin/chroot.exe	No exact ARM64 BusyBox applet
+usr/bin/csplit.exe	No exact ARM64 BusyBox applet
+usr/bin/dir.exe	No exact ARM64 BusyBox applet
+usr/bin/dircolors.exe	No exact ARM64 BusyBox applet
+usr/bin/fmt.exe	No exact ARM64 BusyBox applet
+usr/bin/gkill.exe	No exact ARM64 BusyBox applet
+usr/bin/hostid.exe	No exact ARM64 BusyBox applet
+usr/bin/hostname.exe	No exact ARM64 BusyBox applet
+usr/bin/mkfifo.exe	No exact ARM64 BusyBox applet
+usr/bin/mknod.exe	No exact ARM64 BusyBox applet
+usr/bin/nice.exe	No exact ARM64 BusyBox applet
+usr/bin/nohup.exe	No exact ARM64 BusyBox applet
+usr/bin/numfmt.exe	No exact ARM64 BusyBox applet
+usr/bin/pathchk.exe	No exact ARM64 BusyBox applet
+usr/bin/pinky.exe	No exact ARM64 BusyBox applet
+usr/bin/pr.exe	No exact ARM64 BusyBox applet
+usr/bin/ptx.exe	No exact ARM64 BusyBox applet
+usr/bin/runcon.exe	No exact ARM64 BusyBox applet
+usr/bin/sha224sum.exe	No exact ARM64 BusyBox applet
+usr/bin/stdbuf.exe	No exact ARM64 BusyBox applet
+usr/bin/tty.exe	No exact ARM64 BusyBox applet
+usr/bin/users.exe	No exact ARM64 BusyBox applet
+usr/bin/vdir.exe	No exact ARM64 BusyBox applet
+usr/bin/who.exe	No exact ARM64 BusyBox applet
+usr/lib/coreutils/libstdbuf.dll	BusyBox does not replace support libraries or extensions
+usr/bin/gawk-5.4.0.exe	No exact ARM64 BusyBox applet
+usr/bin/gawk.exe	No exact ARM64 BusyBox applet
+usr/lib/awk/grcat.exe	No exact ARM64 BusyBox applet
+usr/lib/awk/pwcat.exe	No exact ARM64 BusyBox applet
+usr/lib/gawk/filefuncs.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/fnmatch.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/fork.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/inplace.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/intdiv.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/ordchr.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/readdir.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/readfile.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/revoutput.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/revtwoway.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/rwarray.dll	BusyBox does not replace support libraries or extensions
+usr/lib/gawk/time.dll	BusyBox does not replace support libraries or extensions
+usr/bin/diff3.exe	No exact ARM64 BusyBox applet
+usr/bin/sdiff.exe	No exact ARM64 BusyBox applet
+usr/bin/locate.exe	No exact ARM64 BusyBox applet
+usr/libexec/frcode.exe	No exact ARM64 BusyBox applet
+usr/bin/funzip.exe	No exact ARM64 BusyBox applet
+usr/bin/unzipsfx.exe	No exact ARM64 BusyBox applet
+usr/bin/zipinfo.exe	No exact ARM64 BusyBox applet

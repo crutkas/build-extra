@@ -103,7 +103,7 @@ if "$root/check-payload-architecture.sh" \
 	--root="$trash/root" \
 	--file-list="$trash/files" \
 	--package-list="$trash/packages" \
-	--strict \
+	--mode=final \
 	--manifest="$trash/strict-manifest" >"$trash/strict-output" 2>"$trash/strict-error"
 then
 	die "x64 payload unexpectedly passed strict mode"
@@ -116,7 +116,7 @@ grep -v '^usr/bin/' "$trash/files" >"$trash/native-files"
 	--root="$trash/root" \
 	--file-list="$trash/native-files" \
 	--package-list="$trash/packages" \
-	--strict \
+	--mode=final \
 	--manifest="$trash/native-manifest" >/dev/null ||
 die "Zero-x64 payload failed strict mode"
 

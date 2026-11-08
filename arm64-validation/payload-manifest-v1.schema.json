@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/crutkas/build-extra/arm64-validation/payload-manifest-v1.schema.json",
+  "title": "ARM64 payload manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lockSha256",
+    "provenanceSha256",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "lockSha256": { "$ref": "#/$defs/sha256" },
+    "provenanceSha256": { "$ref": "#/$defs/sha256" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "architecture": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["kind", "machine", "personality"],
+      "properties": {
+        "kind": {
+          "enum": ["anycpu", "arm64", "arm64ec", "x64", "x86"]
+        },
+        "machine": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{4}$"
+        },
+        "personality": {
+          "enum": ["managed", "mingw", "msys", "cygwin", "mixed"]
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "sourceInput",
+        "sourcePackage",
+        "sourceMember"
+      ],
+      "properties": {
+        "path": { "type": "string" },
+        "type": { "enum": ["file", "directory", "symlink"] },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "linkTarget": { "type": "string" },
+        "sourceInput": { "type": "string" },
+        "sourcePackage": { "type": "string" },
+        "sourceMember": { "type": "string" },
+        "architecture": { "$ref": "#/$defs/architecture" }
+      }
+    }
+  }
+}

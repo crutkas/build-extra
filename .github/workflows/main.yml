@@ -65,17 +65,28 @@ jobs:
           exit $?
 
           test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
-            check-for-missing-dlls.sh check-payload-architecture.sh \
+            check-for-missing-dlls.sh)" ||
+          echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
+
+          test -z "$(git diff ${{github.event.pull_request.base.sha}}.. -- \
+            check-payload-architecture.sh validate-arm64-bundle.ps1 \
+            generate-arm64-x64-backlog.ps1 \
             arm64-payload-architecture-v2.55.0.4.tsv \
             arm64-payload-baseline-v2.55.0.4.json \
-            arm64-x64-payload-baseline.txt pe-imports.ps1 \
-            t/check-payload-architecture.sh)" ||
-          echo "check-for-missing-dlls=true" >>$GITHUB_OUTPUT
+            arm64-x64-payload-baseline.txt \
+            arm64-x64-ownership-v2.55.0.4.tsv \
+            arm64-x64-backlog-v2.55.0.4.json \
+            arm64-validation pe-imports.ps1 \
+            t/check-payload-architecture.sh \
+            t/validate-arm64-bundle.ps1 \
+            t/check-arm64-x64-backlog.ps1)" ||
+          echo "test-arm64-payload-gate=true" >>$GITHUB_OUTPUT
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
       artifacts: ${{ steps.set-matrix.outputs.artifacts }}
       test-sdk-artifacts: ${{ steps.set-matrix.outputs.test-sdk-artifacts }}
       check-for-missing-dlls: ${{ steps.set-matrix.outputs.check-for-missing-dlls }}
+      test-arm64-payload-gate: ${{ steps.set-matrix.outputs.test-arm64-payload-gate }}
   build-packages:
     needs: determine-packages
     if: needs.determine-packages.outputs.matrix != '[""]'
@@ -353,6 +364,24 @@ jobs:
           sed -i 's|git@ssh.dev.azure.com:v3/git-for-windows/git/git|https://github.com/git/git|' $checklist &&
           sh -x $checklist &&
           git update-git-for-windows --test-version-compare
+  arm64-payload-gate:
+    needs: determine-packages
+    if: needs.determine-packages.outputs.test-arm64-payload-gate == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: test payload architecture inventory
+        shell: bash
+        run: ./t/check-payload-architecture.sh
+      - name: test bundle provenance and runtime evidence
+        shell: pwsh
+        run: ./t/validate-arm64-bundle.ps1
+      - name: test x64 ownership backlog
+        shell: pwsh
+        run: |
+          ./t/check-arm64-x64-backlog.ps1
+          Get-ChildItem arm64-validation/*.json |
+            ForEach-Object { Get-Content $_ -Raw | ConvertFrom-Json | Out-Null }
   check-for-missing-dlls:
     needs: determine-packages
     if: needs.determine-packages.outputs.test-sdk-artifacts == 'true' || needs.determine-packages.outputs.check-for-missing-dlls == 'true'
@@ -384,10 +413,6 @@ jobs:
     runs-on: ${{ matrix.arch.runner }}
     steps:
       - uses: actions/checkout@v7
-      - name: test payload architecture check
-        if: matrix.arch.name == 'x86_64'
-        shell: bash
-        run: ./t/check-payload-architecture.sh
       - name: initialize bare SDK clone
         shell: bash
         run: |
